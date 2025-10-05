@@ -1,0 +1,242 @@
+class Gallery {
+    constructor() {
+        this.currentPage = 1;
+        this.isLoading = false;
+        this.hasMore = true;
+        this.selectedItems = new Set();
+        
+        this.galleryContainer = document.getElementById('gallery-grid');
+        this.loadingIndicator = document.getElementById('loading-indicator');
+        
+        if (this.galleryContainer) {
+            this.init();
+        }
+    }
+    
+    init() {
+        this.setupInfiniteScroll();
+        this.setupBulkActions();
+        
+        // Load initial page if empty
+        if (this.galleryContainer.children.length === 0) {
+            this.loadPage();
+        }
+    }
+    
+    setupInfiniteScroll() {
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting && !this.isLoading && this.hasMore) {
+                    this.loadPage();
+                }
+            });
+        }, {
+            rootMargin: '200px'
+        });
+        
+        if (this.loadingIndicator) {
+            observer.observe(this.loadingIndicator);
+        }
+    }
+    
+    async loadPage() {
+        if (this.isLoading || !this.hasMore) return;
+        
+        this.isLoading = true;
+        this.showLoading();
+        
+        try {
+            const params = new URLSearchParams(window.location.search);
+            params.set('page', this.currentPage);
+            params.set('limit', 30);
+            
+            // Add rating filter
+            const ratingFilter = document.querySelector('input[name="rating"]:checked');
+            if (ratingFilter) {
+                params.set('rating', ratingFilter.value);
+            }
+            
+            const endpoint = params.has('q') ? '/api/search' : '/api/media/';
+            const response = await fetch(`${endpoint}?${params.toString()}`);
+            const data = await response.json();
+            
+            this.renderItems(data.items);
+            
+            this.currentPage++;
+            this.hasMore = this.currentPage <= data.pages;
+            
+        } catch (error) {
+            console.error('Error loading gallery:', error);
+        } finally {
+            this.isLoading = false;
+            this.hideLoading();
+        }
+    }
+    
+    renderItems(items) {
+        items.forEach(item => {
+            const element = this.createGalleryItem(item);
+            this.galleryContainer.appendChild(element);
+        });
+    }
+    
+    createGalleryItem(media) {
+        const item = document.createElement('div');
+        item.className = `gallery-item ${media.file_type}`;
+        item.dataset.id = media.id;
+        
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'checkbox';
+        checkbox.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                this.selectedItems.add(media.id);
+                item.classList.add('selected');
+            } else {
+                this.selectedItems.delete(media.id);
+                item.classList.remove('selected');
+            }
+            this.updateBulkActionsUI();
+        });
+        
+        const img = document.createElement('img');
+        img.src = `/api/media/${media.id}/thumbnail`;
+        img.alt = media.filename;
+        img.loading = 'lazy';
+        
+        const link = document.createElement('a');
+        link.href = `/media/${media.id}`;
+        link.appendChild(img);
+        
+        item.appendChild(checkbox);
+        item.appendChild(link);
+        
+        // Add share icon if shared
+        if (media.is_shared) {
+            const shareIcon = document.createElement('div');
+            shareIcon.className = 'share-icon';
+            shareIcon.textContent = 'SHARED';
+            item.appendChild(shareIcon);
+        }
+        
+        return item;
+    }
+    
+    setupBulkActions() {
+        const bulkTagBtn = document.getElementById('bulk-tag-btn');
+        const bulkDeleteBtn = document.getElementById('bulk-delete-btn');
+        const bulkAlbumBtn = document.getElementById('bulk-album-btn');
+        
+        if (bulkTagBtn) {
+            bulkTagBtn.addEventListener('click', () => this.bulkTag());
+        }
+        
+        if (bulkDeleteBtn) {
+            bulkDeleteBtn.addEventListener('click', () => this.bulkDelete());
+        }
+        
+        if (bulkAlbumBtn) {
+            bulkAlbumBtn.addEventListener('click', () => this.bulkAddToAlbum());
+        }
+    }
+    
+    updateBulkActionsUI() {
+        const bulkActions = document.getElementById('bulk-actions');
+        if (bulkActions) {
+            bulkActions.style.display = this.selectedItems.size > 0 ? 'block' : 'none';
+        }
+        
+        const count = document.getElementById('selected-count');
+        if (count) {
+            count.textContent = this.selectedItems.size;
+        }
+    }
+    
+    async bulkTag() {
+        const tags = prompt('Enter tags (comma-separated):');
+        if (!tags) return;
+        
+        const tagList = tags.split(',').map(t => t.trim());
+        
+        for (const id of this.selectedItems) {
+            try {
+                await app.apiCall(`/api/media/${id}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ tags: tagList })
+                });
+            } catch (error) {
+                console.error(`Error tagging media ${id}:`, error);
+            }
+        }
+        
+        alert('Tags updated!');
+        this.clearSelection();
+    }
+    
+    async bulkDelete() {
+        if (!confirm(`Delete ${this.selectedItems.size} items?`)) return;
+        
+        for (const id of this.selectedItems) {
+            try {
+                await app.apiCall(`/api/media/${id}`, {
+                    method: 'DELETE'
+                });
+                
+                const element = document.querySelector(`[data-id="${id}"]`);
+                if (element) {
+                    element.remove();
+                }
+            } catch (error) {
+                console.error(`Error deleting media ${id}:`, error);
+            }
+        }
+        
+        this.clearSelection();
+    }
+    
+    async bulkAddToAlbum() {
+        // Show album selector modal
+        const albumId = prompt('Enter album ID:');
+        if (!albumId) return;
+        
+        for (const id of this.selectedItems) {
+            try {
+                await app.apiCall(`/api/albums/${albumId}/media/${id}`, {
+                    method: 'POST'
+                });
+            } catch (error) {
+                console.error(`Error adding media ${id} to album:`, error);
+            }
+        }
+        
+        alert('Added to album!');
+        this.clearSelection();
+    }
+    
+    clearSelection() {
+        this.selectedItems.clear();
+        document.querySelectorAll('.gallery-item').forEach(item => {
+            item.classList.remove('selected');
+            const checkbox = item.querySelector('.checkbox');
+            if (checkbox) checkbox.checked = false;
+        });
+        this.updateBulkActionsUI();
+    }
+    
+    showLoading() {
+        if (this.loadingIndicator) {
+            this.loadingIndicator.style.display = 'block';
+        }
+    }
+    
+    hideLoading() {
+        if (this.loadingIndicator) {
+            this.loadingIndicator.style.display = 'none';
+        }
+    }
+}
+
+// Initialize gallery if on gallery page
+if (document.getElementById('gallery-grid')) {
+    const gallery = new Gallery();
+}

@@ -1,0 +1,352 @@
+{% extends "base.html" %}
+
+{% block title %}Media - {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="media-detail">
+        <div class="media-content">
+            <div id="media-container"></div>
+        </div>
+        
+        <div class="media-sidebar">
+            <div class="media-info">
+                <h3>Information</h3>
+                <div id="media-info-content"></div>
+            </div>
+            
+            <div class="tags-section">
+                <h3>Tags</h3>
+                <div id="tags-container"></div>
+                
+                <!-- Edit Tags (Admin Mode Only) -->
+                <div id="edit-tags-section" style="display: none; margin-top: 1rem;">
+                    <form id="edit-tags-form">
+                        <div class="form-group">
+                            <label for="tags-input">Edit Tags</label>
+                            <input type="text" id="tags-input" class="tag-input" placeholder="tag1, tag2, tag3">
+                        </div>
+                        <button type="submit" class="btn btn-sm">Save Tags</button>
+                    </form>
+                </div>
+            </div>
+            
+            <div class="actions-section" style="margin-top: 2rem;">
+                <h3>Actions</h3>
+                
+                <!-- Public Actions -->
+                <div class="action-buttons">
+                    <a id="download-btn" href="#" download class="btn btn-secondary btn-sm">Download</a>
+                </div>
+                
+                <!-- Admin Actions -->
+                <div id="admin-actions" style="display: none; margin-top: 1rem;">
+                    <div class="form-group">
+                        <label for="rating-select">Rating</label>
+                        <select id="rating-select">
+                            <option value="safe">Safe</option>
+                            <option value="questionable">Questionable</option>
+                            <option value="explicit">Explicit</option>
+                        </select>
+                    </div>
+                    
+                    <button id="add-to-favorites-btn" class="btn btn-sm">Add to Favorites</button>
+                    <button id="share-btn" class="btn btn-sm">Share</button>
+                    <button id="delete-btn" class="btn btn-sm btn-danger">Delete</button>
+                </div>
+            </div>
+            
+            <!-- Share Link Display -->
+            <div id="share-link-section" style="display: none; margin-top: 1rem;">
+                <h4>Share Link</h4>
+                <input type="text" id="share-link-input" readonly style="width: 100%;">
+                <button id="copy-share-link-btn" class="btn btn-sm">Copy Link</button>
+                <button id="unshare-btn" class="btn btn-sm btn-secondary">Remove Share</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Related/Similar Media -->
+    <div style="margin-top: 3rem;">
+        <h2>Related Media</h2>
+        <div id="related-media" class="gallery-grid"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/tag-autocomplete.js"></script>
+<script>
+    const mediaId = "{{ media_id }}";
+    let currentMedia = null;
+    
+    async function loadMedia() {
+        try {
+            const response = await fetch(`/api/media/${mediaId}`);
+            currentMedia = await response.json();
+            
+            renderMedia(currentMedia);
+            renderInfo(currentMedia);
+            renderTags(currentMedia);
+            
+            if (app.isAdminMode) {
+                document.getElementById('edit-tags-section').style.display = 'block';
+                document.getElementById('admin-actions').style.display = 'block';
+            }
+            
+            if (currentMedia.is_shared) {
+                showShareLink(currentMedia.share_uuid);
+            }
+            
+            loadRelatedMedia();
+            
+        } catch (error) {
+            console.error('Error loading media:', error);
+        }
+    }
+    
+    function renderMedia(media) {
+        const container = document.getElementById('media-container');
+        
+        if (media.file_type === 'video') {
+            container.innerHTML = `
+                <video controls>
+                    <source src="/api/media/${media.id}/file" type="${media.mime_type}">
+                </video>
+            `;
+        } else {
+            container.innerHTML = `<img src="/api/media/${media.id}/file" alt="${media.filename}">`;
+        }
+        
+        document.getElementById('download-btn').href = `/api/media/${media.id}/file`;
+        document.getElementById('download-btn').download = media.filename;
+    }
+    
+    function renderInfo(media) {
+        const container = document.getElementById('media-info-content');
+        
+        const info = [
+            { label: 'Filename', value: media.filename },
+            { label: 'Type', value: media.file_type },
+            { label: 'Size', value: formatFileSize(media.file_size) },
+            { label: 'Dimensions', value: `${media.width}x${media.height}` },
+            { label: 'Rating', value: media.rating },
+            { label: 'Uploaded', value: new Date(media.uploaded_at).toLocaleDateString() }
+        ];
+        
+        if (media.duration) {
+            info.push({ label: 'Duration', value: formatDuration(media.duration) });
+        }
+        
+        container.innerHTML = info.map(item => `
+            <div class="info-row">
+                <span>${item.label}</span>
+                <strong>${item.value}</strong>
+            </div>
+        `).join('');
+        
+        // Set rating select
+        const ratingSelect = document.getElementById('rating-select');
+        if (ratingSelect) {
+            ratingSelect.value = media.rating;
+        }
+    }
+    
+    function renderTags(media) {
+        const container = document.getElementById('tags-container');
+        
+        // Group tags by category
+        const categorized = {
+            artist: [],
+            character: [],
+            copyright: [],
+            general: [],
+            meta: []
+        };
+        
+        media.tags.forEach(tag => {
+            categorized[tag.category].push(tag);
+        });
+        
+        let html = '';
+        
+        Object.entries(categorized).forEach(([category, tags]) => {
+            if (tags.length === 0) return;
+            
+            // Sort tags alphabetically
+            tags.sort((a, b) => a.name.localeCompare(b.name));
+            
+            html += `
+                <div class="tag-category">
+                    <h4>${category}</h4>
+                    <div class="tag-list">
+                        ${tags.map(tag => `
+                            <a href="/?q=${encodeURIComponent(tag.name)}" class="tag ${category}">
+                                ${tag.name}
+                            </a>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        });
+        
+        container.innerHTML = html || '<p>No tags</p>';
+        
+        // Populate tags input for editing
+        const tagsInput = document.getElementById('tags-input');
+        if (tagsInput) {
+            tagsInput.value = media.tags.map(t => t.name).join(', ');
+        }
+    }
+    
+    async function loadRelatedMedia() {
+        if (!currentMedia || currentMedia.tags.length === 0) return;
+        
+        // Search for media with similar tags
+        const tagQuery = currentMedia.tags.slice(0, 3).map(t => t.name).join(' ');
+        
+        try {
+            const response = await fetch(`/api/search?q=${encodeURIComponent(tagQuery)}&limit=12`);
+            const data = await response.json();
+            
+            // Filter out current media
+            const relatedItems = data.items.filter(item => item.id !== mediaId);
+            
+            const container = document.getElementById('related-media');
+            container.innerHTML = relatedItems.slice(0, 12).map(item => `
+                <a href="/media/${item.id}" class="gallery-item ${item.file_type}">
+                    <img src="/api/media/${item.id}/thumbnail" alt="${item.filename}" loading="lazy">
+                </a>
+            `).join('');
+            
+        } catch (error) {
+            console.error('Error loading related media:', error);
+        }
+    }
+    
+    // Edit tags form
+    document.getElementById('edit-tags-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const tagsInput = document.getElementById('tags-input');
+        const tags = tagsInput.value.split(',').map(t => t.trim()).filter(t => t);
+        
+        try {
+            await app.apiCall(`/api/media/${mediaId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ tags })
+            });
+            
+            alert('Tags updated!');
+            location.reload();
+        } catch (error) {
+            alert('Error updating tags: ' + error.message);
+        }
+    });
+    
+    // Rating change
+    document.getElementById('rating-select').addEventListener('change', async (e) => {
+        try {
+            await app.apiCall(`/api/media/${mediaId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ rating: e.target.value })
+            });
+            
+            alert('Rating updated!');
+        } catch (error) {
+            alert('Error updating rating: ' + error.message);
+        }
+    });
+    
+    // Add to favorites
+    document.getElementById('add-to-favorites-btn').addEventListener('click', async () => {
+        try {
+            // Favorites is album ID 1 (created during onboarding)
+            await app.apiCall(`/api/albums/1/media/${mediaId}`, {
+                method: 'POST'
+            });
+            
+            alert('Added to favorites!');
+        } catch (error) {
+            alert('Error: ' + error.message);
+        }
+    });
+    
+    // Share
+    document.getElementById('share-btn').addEventListener('click', async () => {
+        try {
+            const result = await app.apiCall(`/api/media/${mediaId}/share`, {
+                method: 'POST'
+            });
+            
+            showShareLink(result.share_url.split('/').pop());
+        } catch (error) {
+            alert('Error creating share link: ' + error.message);
+        }
+    });
+    
+    function showShareLink(uuid) {
+        const section = document.getElementById('share-link-section');
+        const input = document.getElementById('share-link-input');
+        
+        input.value = `${window.location.origin}/shared/${uuid}`;
+        section.style.display = 'block';
+    }
+    
+    // Copy share link
+    document.getElementById('copy-share-link-btn').addEventListener('click', () => {
+        const input = document.getElementById('share-link-input');
+        input.select();
+        document.execCommand('copy');
+        alert('Link copied to clipboard!');
+    });
+    
+    // Unshare
+    document.getElementById('unshare-btn').addEventListener('click', async () => {
+        try {
+            await app.apiCall(`/api/media/${mediaId}/share`, {
+                method: 'DELETE'
+            });
+            
+            document.getElementById('share-link-section').style.display = 'none';
+            alert('Share link removed!');
+        } catch (error) {
+            alert('Error removing share: ' + error.message);
+        }
+    });
+    
+    // Delete
+    document.getElementById('delete-btn').addEventListener('click', async () => {
+        if (!confirm('Are you sure you want to delete this media?')) return;
+        
+        try {
+            await app.apiCall(`/api/media/${mediaId}`, {
+                method: 'DELETE'
+            });
+            
+            alert('Media deleted!');
+            window.location.href = '/';
+        } catch (error) {
+            alert('Error deleting media: ' + error.message);
+        }
+    });
+    
+    // Utility functions
+    function formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+    }
+    
+    function formatDuration(seconds) {
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+    
+    // Load media on page load
+    loadMedia();
+</script>
+{% endblock %}

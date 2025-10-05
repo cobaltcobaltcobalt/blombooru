@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <!-- Rating Filter -->
+    <div class="rating-filter">
+        <label>
+            <input type="radio" name="rating" value="safe">
+            <span class="rating-option">Safe Only</span>
+        </label>
+        <label>
+            <input type="radio" name="rating" value="questionable">
+            <span class="rating-option">Safe + Questionable</span>
+        </label>
+        <label>
+            <input type="radio" name="rating" value="explicit" checked>
+            <span class="rating-option">All Ratings</span>
+        </label>
+    </div>
+    
+    <!-- Bulk Actions (Admin Mode Only) -->
+    <div id="bulk-actions" style="display: none;">
+        <p><span id="selected-count">0</span> items selected</p>
+        <button id="bulk-tag-btn" class="btn btn-sm">Tag Selected</button>
+        <button id="bulk-album-btn" class="btn btn-sm">Add to Album</button>
+        <button id="bulk-delete-btn" class="btn btn-sm btn-danger">Delete Selected</button>
+    </div>
+    
+    <!-- Gallery Grid -->
+    <div id="gallery-grid" class="gallery-grid"></div>
+    
+    <!-- Loading Indicator -->
+    <div id="loading-indicator" class="loading">
+        <div class="spinner"></div>
+        <p>Loading...</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/gallery.js"></script>
+{% endblock %}

@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}Albums - {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+        <h1>Albums</h1>
+        <button id="create-album-btn" class="btn" style="display: none;">Create Album</button>
+    </div>
+    
+    <div id="albums-grid" class="gallery-grid"></div>
+    
+    <!-- Create Album Modal -->
+    <div id="create-album-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h2>Create Album</h2>
+            
+            <form id="create-album-form">
+                <div class="form-group">
+                    <label for="album-name">Name</label>
+                    <input type="text" id="album-name" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="album-description">Description</label>
+                    <textarea id="album-description"></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label for="album-rating">Rating</label>
+                    <select id="album-rating">
+                        <option value="safe">Safe</option>
+                        <option value="questionable">Questionable</option>
+                        <option value="explicit">Explicit</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="album-tags">Tags</label>
+                    <input type="text" id="album-tags" class="tag-input" placeholder="tag1, tag2, tag3">
+                </div>
+                
+                <button type="submit" class="btn">Create</button>
+                <button type="button" id="cancel-create-btn" class="btn btn-secondary">Cancel</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/tag-autocomplete.js"></script>
+<script>
+    let albums = [];
+    
+    async function loadAlbums() {
+        try {
+            const response = await fetch('/api/albums/');
+            albums = await response.json();
+            
+            renderAlbums();
+        } catch (error) {
+            console.error('Error loading albums:', error);
+        }
+    }
+    
+    function renderAlbums() {
+        const container = document.getElementById('albums-grid');
+        
+        container.innerHTML = albums.map(album => {
+            const coverUrl = album.cover_media_id 
+                ? `/api/media/${album.cover_media_id}/thumbnail`
+                : '/static/images/default-album.jpg';
+            
+            return `
+                <a href="/albums/${album.id}" class="gallery-item">
+                    <img src="${coverUrl}" alt="${album.name}" loading="lazy">
+                    <div style="position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.8); padding: 0.5rem;">
+                        <strong>${album.name}</strong>
+                        ${album.is_system ? '<span style="color: var(--warning);"> (System)</span>' : ''}
+                        <br>
+                        <small>${album.media_count} items</small>
+                    </div>
+                    ${album.is_shared ? '<div class="share-icon">SHARED</div>' : ''}
+                </a>
+            `;
+        }).join('');
+    }
+    
+    // Show create button in admin mode
+    if (app.isAdminMode) {
+        document.getElementById('create-album-btn').style.display = 'block';
+    }
+    
+    // Create album modal
+    document.getElementById('create-album-btn').addEventListener('click', () => {
+        document.getElementById('create-album-modal').style.display = 'flex';
+    });
+    
+    document.getElementById('cancel-create-btn').addEventListener('click', () => {
+        document.getElementById('create-album-modal').style.display = 'none';
+    });
+    
+    document.getElementById('create-album-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const name = document.getElementById('album-name').value;
+        const description = document.getElementById('album-description').value;
+        const rating = document.getElementById('album-rating').value;
+        const tags = document.getElementById('album-tags').value.split(',').map(t => t.trim()).filter(t => t);
+        
+        try {
+            await app.apiCall('/api/albums/', {
+                method: 'POST',
+                body: JSON.stringify({ name, description, rating, tags })
+            });
+            
+            document.getElementById('create-album-modal').style.display = 'none';
+            loadAlbums();
+        } catch (error) {
+            alert('Error creating album: ' + error.message);
+        }
+    });
+    
+    loadAlbums();
+</script>
+
+<style>
+    .modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.8);
+        z-index: 1000;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .modal-content {
+        background: var(--surface);
+        padding: 2rem;
+        border-radius: 0.5rem;
+        max-width: 500px;
+        width: 90%;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+</style>
+{% endblock %}
