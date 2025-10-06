@@ -1,162 +1,199 @@
 class TagAutocomplete {
-    constructor(inputElement) {
-        this.input = inputElement;
-        this.dropdown = null;
-        this.currentFocus = -1;
-        this.debounceTimer = null;
+    constructor(input, options = {}) {
+        this.input = input;
+        this.options = {
+            onSelect: null,
+            multipleValues: false,
+            ...options
+        };
         
-        this.init();
+        this.setupAutocomplete();
     }
     
-    init() {
-        // Create dropdown element
-        this.dropdown = document.createElement('div');
-        this.dropdown.className = 'autocomplete-dropdown';
-        this.input.parentNode.appendChild(this.dropdown);
+    setupAutocomplete() {
+        // Create suggestions container
+        this.suggestionsEl = document.createElement('div');
+        this.suggestionsEl.className = 'tag-suggestions hidden';
+        this.input.parentNode.insertBefore(this.suggestionsEl, this.input.nextSibling);
         
-        // Setup event listeners
-        this.input.addEventListener('input', (e) => this.onInput(e));
-        this.input.addEventListener('keydown', (e) => this.onKeyDown(e));
-        
-        // Close dropdown when clicking outside
+        // Add event listeners
+        this.input.addEventListener('input', this.onInput.bind(this));
+        this.input.addEventListener('keydown', this.onKeydown.bind(this));
         document.addEventListener('click', (e) => {
-            if (e.target !== this.input) {
-                this.hideDropdown();
+            if (!this.input.contains(e.target) && !this.suggestionsEl.contains(e.target)) {
+                this.hideSuggestions();
             }
         });
+        
+        // Add styles
+        const style = document.createElement('style');
+        style.textContent = `
+            .tag-suggestions {
+                position: absolute;
+                z-index: 1000;
+                background: #1e293b;
+                border: 1px solid #334155;
+                border-top: none;
+                max-height: 200px;
+                overflow-y: auto;
+                width: 100%;
+            }
+            
+            .tag-suggestion {
+                padding: 0.5rem;
+                cursor: pointer;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                border-bottom: 1px solid #334155;
+            }
+            
+            .tag-suggestion:hover,
+            .tag-suggestion.selected {
+                background: #334155;
+            }
+            
+            .tag-suggestion .tag-name {
+                color: #f1f5f9;
+            }
+            
+            .tag-suggestion .tag-count {
+                color: #94a3b8;
+                font-size: 0.8em;
+            }
+            
+            .tag-category {
+                display: inline-block;
+                padding: 0.1rem 0.3rem;
+                border-radius: 2px;
+                margin-right: 0.5rem;
+                font-size: 0.7em;
+                text-transform: uppercase;
+            }
+        `;
+        document.head.appendChild(style);
     }
     
-    onInput(e) {
-        clearTimeout(this.debounceTimer);
-        
-        const value = this.getCurrentTag();
-        
-        if (value.length < 1) {
-            this.hideDropdown();
+    async onInput() {
+        const query = this.getCurrentQuery();
+        if (query.length < 1) {
+            this.hideSuggestions();
             return;
         }
         
-        this.debounceTimer = setTimeout(() => {
-            this.fetchSuggestions(value);
-        }, 200);
-    }
-    
-    getCurrentTag() {
-        const cursorPos = this.input.selectionStart;
-        const text = this.input.value.substring(0, cursorPos);
-        const tags = text.split(',');
-        return tags[tags.length - 1].trim();
-    }
-    
-    async fetchSuggestions(query) {
         try {
-            const response = await fetch(`/api/tags/autocomplete?q=${encodeURIComponent(query)}`);
-            const suggestions = await response.json();
+            const suggestions = await this.fetchSuggestions(query);
             this.showSuggestions(suggestions);
         } catch (error) {
             console.error('Error fetching suggestions:', error);
         }
     }
     
+    getCurrentQuery() {
+        if (!this.options.multipleValues) {
+            return this.input.value.trim();
+        }
+        
+        const cursorPos = this.input.selectionStart;
+        const value = this.input.value;
+        const beforeCursor = value.substring(0, cursorPos);
+        const lastComma = beforeCursor.lastIndexOf(',');
+        return beforeCursor.substring(lastComma + 1).trim();
+    }
+    
+    async fetchSuggestions(query) {
+        const response = await fetch(`/api/tags/suggest?q=${encodeURIComponent(query)}`);
+        if (!response.ok) throw new Error('Failed to fetch suggestions');
+        return response.json();
+    }
+    
     showSuggestions(suggestions) {
-        if (suggestions.length === 0) {
-            this.hideDropdown();
+        if (!suggestions.length) {
+            this.hideSuggestions();
             return;
         }
         
-        this.dropdown.innerHTML = '';
+        this.suggestionsEl.innerHTML = suggestions.map((tag, index) => `
+            <div class="tag-suggestion" data-index="${index}" data-name="${tag.name}">
+                <span>
+                    <span class="tag-category ${tag.category}">${tag.category}</span>
+                    <span class="tag-name">${tag.name}</span>
+                </span>
+                <span class="tag-count">${tag.count}</span>
+            </div>
+        `).join('');
         
-        suggestions.forEach((suggestion, index) => {
-            const item = document.createElement('div');
-            item.className = 'autocomplete-item';
-            
-            const name = document.createElement('span');
-            name.className = `tag-name tag ${suggestion.category}`;
-            name.textContent = suggestion.name;
-            
-            const count = document.createElement('span');
-            count.className = 'tag-count';
-            count.textContent = suggestion.count;
-            
-            item.appendChild(name);
-            item.appendChild(count);
-            
-            item.addEventListener('click', () => {
-                this.selectSuggestion(suggestion.name);
-            });
-            
-            this.dropdown.appendChild(item);
+        this.suggestionsEl.classList.remove('hidden');
+        
+        // Add click handlers
+        this.suggestionsEl.querySelectorAll('.tag-suggestion').forEach(el => {
+            el.addEventListener('click', () => this.selectSuggestion(el.dataset.name));
         });
-        
-        this.dropdown.classList.add('show');
-        this.currentFocus = -1;
     }
     
-    hideDropdown() {
-        this.dropdown.classList.remove('show');
-        this.currentFocus = -1;
+    hideSuggestions() {
+        this.suggestionsEl.classList.add('hidden');
     }
     
     selectSuggestion(tagName) {
-        const cursorPos = this.input.selectionStart;
-        const text = this.input.value;
-        const beforeCursor = text.substring(0, cursorPos);
-        const afterCursor = text.substring(cursorPos);
+        if (!this.options.multipleValues) {
+            this.input.value = tagName;
+        } else {
+            const cursorPos = this.input.selectionStart;
+            const value = this.input.value;
+            const beforeCursor = value.substring(0, cursorPos);
+            const afterCursor = value.substring(cursorPos);
+            const lastComma = beforeCursor.lastIndexOf(',');
+            
+            const newValue = lastComma === -1
+                ? tagName + (afterCursor.startsWith(',') ? '' : ', ') + afterCursor
+                : beforeCursor.substring(0, lastComma + 1) + ' ' + tagName + (afterCursor.startsWith(',') ? '' : ', ') + afterCursor;
+            
+            this.input.value = newValue;
+        }
         
-        const tags = beforeCursor.split(',');
-        tags[tags.length - 1] = ' ' + tagName;
-        
-        const newValue = tags.join(',') + ',' + afterCursor;
-        this.input.value = newValue;
-        
-        // Set cursor position after the inserted tag
-        const newCursorPos = tags.join(',').length + 1;
-        this.input.setSelectionRange(newCursorPos, newCursorPos);
-        
-        this.hideDropdown();
+        this.hideSuggestions();
         this.input.focus();
-    }
-    
-    onKeyDown(e) {
-        const items = this.dropdown.querySelectorAll('.autocomplete-item');
         
-        if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            this.currentFocus++;
-            this.setActive(items);
-        } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            this.currentFocus--;
-            this.setActive(items);
-        } else if (e.key === 'Enter') {
-            if (this.currentFocus > -1 && items[this.currentFocus]) {
-                e.preventDefault();
-                items[this.currentFocus].click();
-            }
-        } else if (e.key === 'Escape') {
-            this.hideDropdown();
+        if (this.options.onSelect) {
+            this.options.onSelect(tagName);
         }
     }
     
-    setActive(items) {
-        if (!items || items.length === 0) return;
+    onKeydown(e) {
+        const suggestions = this.suggestionsEl.querySelectorAll('.tag-suggestion');
+        const selected = this.suggestionsEl.querySelector('.tag-suggestion.selected');
+        const selectedIndex = selected ? parseInt(selected.dataset.index) : -1;
         
-        // Remove active class from all items
-        items.forEach(item => item.classList.remove('active'));
-        
-        // Wrap around
-        if (this.currentFocus >= items.length) this.currentFocus = 0;
-        if (this.currentFocus < 0) this.currentFocus = items.length - 1;
-        
-        // Add active class to current item
-        items[this.currentFocus].classList.add('active');
-        items[this.currentFocus].scrollIntoView({ block: 'nearest' });
+        switch (e.key) {
+            case 'ArrowDown':
+                e.preventDefault();
+                if (selectedIndex < suggestions.length - 1) {
+                    if (selected) selected.classList.remove('selected');
+                    suggestions[selectedIndex + 1].classList.add('selected');
+                    suggestions[selectedIndex + 1].scrollIntoView({ block: 'nearest' });
+                }
+                break;
+                
+            case 'ArrowUp':
+                e.preventDefault();
+                if (selectedIndex > 0) {
+                    if (selected) selected.classList.remove('selected');
+                    suggestions[selectedIndex - 1].classList.add('selected');
+                    suggestions[selectedIndex - 1].scrollIntoView({ block: 'nearest' });
+                }
+                break;
+                
+            case 'Enter':
+                if (selected) {
+                    e.preventDefault();
+                    this.selectSuggestion(selected.dataset.name);
+                }
+                break;
+                
+            case 'Escape':
+                this.hideSuggestions();
+                break;
+        }
     }
 }
-
-// Initialize tag autocomplete on all tag inputs
-document.addEventListener('DOMContentLoaded', () => {
-    document.querySelectorAll('.tag-input').forEach(input => {
-        new TagAutocomplete(input);
-    });
-});

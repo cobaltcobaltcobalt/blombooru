@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, func, or_
+from sqlalchemy import desc, func, or_, and_
 from typing import List, Optional
 
 from ..database import get_db
@@ -143,3 +143,82 @@ async def get_related_tags(
         }
         for t, co in related
     ]
+
+@router.get("/suggest")
+async def suggest_tags(
+    q: str = Query(..., min_length=1),
+    limit: int = Query(20, gt=0),
+    db: Session = Depends(get_db)
+):
+    # Direct matches first
+    query = db.query(
+        Tag,
+        func.count(blombooru_media_tags.c.media_id).label('usage_count')
+    ).outerjoin(
+        blombooru_media_tags
+    ).group_by(Tag.id)
+
+    # Search conditions
+    conditions = [
+        Tag.name.startswith(q.lower()),  # Exact prefix match
+        Tag.name.like(f"%_{q.lower()}%"),  # Contains with word boundary
+    ]
+    
+    results = query.filter(
+        or_(*conditions)
+    ).order_by(
+        func.length(Tag.name),  # Shorter names first
+        desc('usage_count')  # More frequently used tags first
+    ).limit(limit).all()
+
+    return [{
+        "id": tag.id,
+        "name": tag.name,
+        "category": tag.category,
+        "count": count
+    } for tag, count in results]
+
+@router.get("/related")
+async def related_tags(
+    tags: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    # Split input tags
+    tag_list = [t.strip() for t in tags.split(',') if t.strip()]
+    if not tag_list:
+        return []
+
+    # Find media that has any of the input tags
+    subquery = db.query(
+        Media.id
+    ).join(
+        blombooru_media_tags
+    ).join(
+        Tag
+    ).filter(
+        Tag.name.in_(tag_list)
+    ).subquery()
+
+    # Find commonly co-occurring tags
+    related = db.query(
+        Tag,
+        func.count(blombooru_media_tags.c.media_id).label('frequency')
+    ).join(
+        blombooru_media_tags
+    ).filter(
+        and_(
+            blombooru_media_tags.c.media_id.in_(subquery),
+            ~Tag.name.in_(tag_list)  # Exclude input tags
+        )
+    ).group_by(
+        Tag.id
+    ).order_by(
+        desc('frequency')
+    ).limit(20).all()
+
+    return [{
+        "id": tag.id,
+        "name": tag.name,
+        "category": tag.category,
+        "frequency": freq
+    } for tag, freq in related]

@@ -34,7 +34,7 @@
         <div class="container mx-auto px-4 py-2">
             <div class="flex items-center justify-between gap-4">
                 <a href="/" class="text-lg font-bold text-blue-500 hover:text-blue-400">
-                    <span class="flex gap-1">
+                    <span class="flex gap-2">
                         <image src="/static/favicon.ico" alt="{{ app_name }} Logo" class="h-7 w-7"></image> {{ app_name }}
                     </span>
                 </a>
@@ -72,6 +72,13 @@
     </main>
     
     <script src="/static/js/main.js"></script>
-    {% block extra_js %}{% endblock %}
+    {% block extra_js %}
+    <script>
+        const searchInput = document.getElementById('search-input');
+        if (searchInput) {
+            new TagAutocomplete(searchInput);
+        }
+    </script>
+    {% endblock %}
 </body>
 </html>

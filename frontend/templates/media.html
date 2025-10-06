@@ -283,6 +283,17 @@ document.addEventListener('DOMContentLoaded', () => {
     el('share-link-section').style.display = 'block';
   }
 
+  // Initialize tag autocomplete
+  const tagsInput = document.getElementById('tags-input');
+  if (tagsInput) {
+      new TagAutocomplete(tagsInput, {
+          multipleValues: true,
+          onSelect: () => {
+              document.getElementById('edit-tags-form').submit();
+          }
+      });
+  }
+
   loadMedia();
 });
 </script>
