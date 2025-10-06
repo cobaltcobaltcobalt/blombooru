@@ -233,10 +233,21 @@ document.addEventListener('DOMContentLoaded', () => {
   async function loadMediaMembership() {
     try {
       const res = await fetch(`/api/media/${mediaId}/albums`);
-      const data = await res.json();
+      if (!res.ok) {
+        console.warn('Media membership endpoint returned:', res.status);
+        mediaAlbumIds = new Set();
+        return;
+      }
+      const text = await res.text();
+      if (!text) {
+        mediaAlbumIds = new Set();
+        return;
+      }
+      const data = JSON.parse(text);
       mediaAlbumIds = new Set(data.album_ids || []);
     } catch (e) {
       console.error('loadMediaMembership error', e);
+      mediaAlbumIds = new Set();
     }
   }
 
