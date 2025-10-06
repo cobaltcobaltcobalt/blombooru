@@ -33,7 +33,11 @@
     <header class="bg-[#1e293b] border-b border-[#334155]">
         <div class="container mx-auto px-4 py-2">
             <div class="flex items-center justify-between gap-4">
-                <a href="/" class="text-lg font-bold text-blue-500 hover:text-blue-400">{{ app_name }}</a>
+                <a href="/" class="text-lg font-bold text-blue-500 hover:text-blue-400">
+                    <span class="flex gap-1">
+                        <image src="/static/favicon.ico" alt="{{ app_name }} Logo" class="h-7 w-7"></image> {{ app_name }}
+                    </span>
+                </a>
                 
                 <div class="flex-1 max-w-2xl">
                     <form id="search-form">
