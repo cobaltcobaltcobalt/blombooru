@@ -8,7 +8,7 @@ import shutil
 from pathlib import Path
 from ..database import get_db
 from ..auth import require_admin_mode, get_current_user
-from ..models import Media, Tag, User, blombooru_media_tags
+from ..models import Media, Tag, User, blombooru_media_tags, blombooru_album_media
 from ..schemas import MediaResponse, MediaUpdate, MediaCreate, RatingEnum, MediaAlbumUpdate
 from ..config import settings
 from ..utils.media_processor import process_media_file
