@@ -69,7 +69,7 @@
                 <input type="text" id="share-link-input" readonly class="w-full px-2 py-1 bg-white border border-amber-700 text-xs mb-2 text-black">
                 <div class="space-y-1">
                     <button id="copy-share-link-btn" class="w-full px-3 py-1 bg-black hover:bg-gray-900 text-white text-xs">Copy Link</button>
-                    <button id="unshare-btn" class="w-full px-3 py-1 bg-gray-700 hover:bg-gray-800 text-white text-xs">Remove Share</button>
+                    <button id="unshare-btn" class="w-full px-3 py-1 bg-gray-700 hover:bg-gray-800 text-white text-xs" style="display: none;">Remove Share</button>
                 </div>
             </div>
         </div>
@@ -160,6 +160,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (app.isAdminMode) {
         el('edit-tags-section').style.display = 'block';
         el('admin-actions').style.display = 'block';
+        el('unshare-btn').style.display = 'block';
       }
       if (currentMedia.is_shared) showShareLink(currentMedia.share_uuid);
       await loadRelatedMedia();
