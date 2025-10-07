@@ -144,40 +144,6 @@ async def get_related_tags(
         for t, co in related
     ]
 
-@router.get("/suggest")
-async def suggest_tags(
-    q: str = Query(..., min_length=1),
-    limit: int = Query(20, gt=0),
-    db: Session = Depends(get_db)
-):
-    # Direct matches first
-    query = db.query(
-        Tag,
-        func.count(blombooru_media_tags.c.media_id).label('usage_count')
-    ).outerjoin(
-        blombooru_media_tags
-    ).group_by(Tag.id)
-
-    # Search conditions
-    conditions = [
-        Tag.name.startswith(q.lower()),  # Exact prefix match
-        Tag.name.like(f"%_{q.lower()}%"),  # Contains with word boundary
-    ]
-    
-    results = query.filter(
-        or_(*conditions)
-    ).order_by(
-        func.length(Tag.name),  # Shorter names first
-        desc('usage_count')  # More frequently used tags first
-    ).limit(limit).all()
-
-    return [{
-        "id": tag.id,
-        "name": tag.name,
-        "category": tag.category,
-        "count": count
-    } for tag, count in results]
-
 @router.get("/related")
 async def related_tags(
     tags: str = Query(...),
