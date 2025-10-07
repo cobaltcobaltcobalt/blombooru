@@ -75,236 +75,171 @@
         </div>
     </div>
 </div>
-
-<style>
-    #media-container img,
-    #media-container video {
-        max-width: 100%;
-        max-height: 80vh;
-        margin: 0 auto;
-    }
-    
-    .info-row {
-        display: flex;
-        justify-content: space-between;
-        padding: 0.5rem 0;
-        border-bottom: 1px solid var(--border);
-    }
-    
-    .tag-category {
-        margin-bottom: 1rem;
-    }
-    
-    .tag-category h4 {
-        font-size: 0.7rem;
-        text-transform: uppercase;
-        color: var(--text-secondary);
-        margin-bottom: 0.5rem;
-        font-weight: bold;
-    }
-    
-    .tag-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.25rem;
-    }
-    
-    .tag {
-        display: inline-block;
-        padding: 0.2rem 0.5rem;
-        font-size: 0.7rem;
-        text-decoration: none;
-        color: white;
-        transition: opacity 0.2s;
-    }
-    
-    .tag:hover {
-        opacity: 0.8;
-    }
-    
-    #related-media .gallery-item {
-        position: relative;
-        aspect-ratio: 1;
-        overflow: hidden;
-        border: 1px solid var(--border);
-    }
-    
-    #related-media .gallery-item:hover {
-        border-color: var(--primary-color);
-    }
-    
-    #related-media .gallery-item img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-</style>
 {% endblock %}
 
 {% block extra_js %}
 <script src="/static/js/tag-autocomplete.js"></script>
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-  const mediaId = "{{ media_id }}";
-  let currentMedia = null;
+    document.addEventListener('DOMContentLoaded', () => {
+        const mediaId = "{{ media_id }}";
+        let currentMedia = null;
 
-  const el = id => document.getElementById(id);
+        const el = id => document.getElementById(id);
 
-  async function loadMedia() {
-    try {
-      const res = await fetch(`/api/media/${mediaId}`);
-      currentMedia = await res.json();
-      renderMedia(currentMedia);
-      renderInfo(currentMedia);
-      renderTags(currentMedia);
-      if (app.isAdminMode) {
-        el('edit-tags-section').style.display = 'block';
-        el('admin-actions').style.display = 'block';
-        el('unshare-btn').style.display = 'block';
-      }
-      if (currentMedia.is_shared) showShareLink(currentMedia.share_uuid);
-      await loadRelatedMedia();
-    } catch (e) {
-      console.error('loadMedia error', e);
-    }
-  }
+        async function loadMedia() {
+            try {
+                const res = await fetch(`/api/media/${mediaId}`);
+                currentMedia = await res.json();
+                renderMedia(currentMedia);
+                renderInfo(currentMedia);
+                renderTags(currentMedia);
+                if (app.isAdminMode) {
+                    el('edit-tags-section').style.display = 'block';
+                    el('admin-actions').style.display = 'block';
+                    el('unshare-btn').style.display = 'block';
+                }
+                if (currentMedia.is_shared) showShareLink(currentMedia.share_uuid);
+                await loadRelatedMedia();
+            } catch (e) {
+                console.error('loadMedia error', e);
+            }
+        }
 
-  function renderMedia(media) {
-    const c = el('media-container');
-    c.innerHTML = media.file_type === 'video'
-      ? `<video controls><source src="/api/media/${media.id}/file" type="${media.mime_type}"></video>`
-      : `<img src="/api/media/${media.id}/file" alt="${media.filename}">`;
-    el('download-btn').href = `/api/media/${media.id}/file`;
-    el('download-btn').download = media.filename;
-  }
+        function renderMedia(media) {
+            const c = el('media-container');
+            c.innerHTML = media.file_type === 'video'
+                ? `<video controls><source src="/api/media/${media.id}/file" type="${media.mime_type}"></video>`
+                : `<img src="/api/media/${media.id}/file" alt="${media.filename}">`;
+            el('download-btn').href = `/api/media/${media.id}/file`;
+            el('download-btn').download = media.filename;
+        }
 
-  function renderInfo(m) {
-    el('media-info-content').innerHTML = `
-      <div class="info-row"><span>Filename</span><strong>${m.filename}</strong></div>
-      <div class="info-row"><span>Type</span><strong>${m.file_type}</strong></div>
-      <div class="info-row"><span>Size</span><strong>${formatFileSize(m.file_size)}</strong></div>
-      <div class="info-row"><span>Dimensions</span><strong>${m.width}x${m.height}</strong></div>
-      <div class="info-row"><span>Rating</span><strong>${m.rating}</strong></div>
-      <div class="info-row"><span>Uploaded</span><strong>${new Date(m.uploaded_at).toLocaleDateString()}</strong></div>
-      ${m.duration ? `<div class="info-row"><span>Duration</span><strong>${formatDuration(m.duration)}</strong></div>` : ''}
-    `;
-    const sel = el('rating-select');
-    if (sel) sel.value = m.rating;
-  }
+        function renderInfo(m) {
+            el('media-info-content').innerHTML = `
+                <div class="info-row"><span>Filename</span><strong>${m.filename}</strong></div>
+                <div class="info-row"><span>Type</span><strong>${m.file_type}</strong></div>
+                <div class="info-row"><span>Size</span><strong>${formatFileSize(m.file_size)}</strong></div>
+                <div class="info-row"><span>Dimensions</span><strong>${m.width}x${m.height}</strong></div>
+                <div class="info-row"><span>Rating</span><strong>${m.rating}</strong></div>
+                <div class="info-row"><span>Uploaded</span><strong>${new Date(m.uploaded_at).toLocaleDateString()}</strong></div>
+                ${m.duration ? `<div class="info-row"><span>Duration</span><strong>${formatDuration(m.duration)}</strong></div>` : ''}
+            `;
+            const sel = el('rating-select');
+            if (sel) sel.value = m.rating;
+        }
 
-  function renderTags(m) {
-    const c = el('tags-container');
-    const groups = { artist: [], character: [], copyright: [], general: [], meta: [] };
-    (m.tags || []).forEach(t => groups[t.category]?.push(t));
-    let html = '';
-    Object.entries(groups).forEach(([cat, tags]) => {
-      if (!tags.length) return;
-      tags.sort((a, b) => a.name.localeCompare(b.name));
-      html += `
-        <div class="tag-category">
-          <h4>${cat}</h4>
-          <div class="tag-list">
-            ${tags.map(t => `<a href="/?q=${encodeURIComponent(t.name)}" class="tag ${cat}">${t.name}</a>`).join('')}
-          </div>
-        </div>`;
+        function renderTags(m) {
+            const c = el('tags-container');
+            const groups = { artist: [], character: [], copyright: [], general: [], meta: [] };
+            (m.tags || []).forEach(t => groups[t.category]?.push(t));
+            let html = '';
+            Object.entries(groups).forEach(([cat, tags]) => {
+                if (!tags.length) return;
+                tags.sort((a, b) => a.name.localeCompare(b.name));
+                html += `
+                    <div class="tag-category">
+                      <h4>${cat}</h4>
+                      <div class="tag-list">
+                        ${tags.map(t => `<a href="/?q=${encodeURIComponent(t.name)}" class="tag ${cat}">${t.name}</a>`).join('')}
+                      </div>
+                    </div>
+                `;
+            });
+            c.innerHTML = html || '<p class="text-xs text-[#94a3b8]">No tags</p>';
+            const input = el('tags-input');
+            if (input) input.value = (m.tags || []).map(t => t.name).join(' ');
+        }
+
+        async function loadRelatedMedia() {
+            if (!currentMedia || !currentMedia.tags || !currentMedia.tags.length) return;
+            let tags = [...currentMedia.tags];
+
+            for (let i = tags.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [tags[i], tags[j]] = [tags[j], tags[i]];
+            }
+
+            const numTags = Math.min(3, Math.max(1, Math.floor(Math.random() * tags.length) + 1));
+            const tagQuery = tags.slice(0, numTags).map(t => t.name).join(' ');
+
+            try {
+                const res = await fetch(`/api/search?q=${encodeURIComponent(tagQuery)}&limit=12`);
+                const data = await res.json();
+                const items = (data.items || []).filter(i => i.id !== mediaId);
+                el('related-media').innerHTML = items.map(i =>`
+                <a href="/media/${i.id}" class="gallery-item ${i.file_type}">
+                    <img src="/api/media/${i.id}/thumbnail" alt="${i.filename}" loading="lazy">
+                </a>
+                `).join('');
+            } catch (e) {
+                console.error('related error', e);
+            }
+        }
+
+        function formatFileSize(bytes) {
+            if (!bytes) return '0 Bytes';
+            const k = 1024, sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i];
+        }
+        function formatDuration(s) {
+            const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+            return `${m}:${String(sec).padStart(2, '0')}`;
+        }
+
+        el('edit-tags-form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const tags = el('tags-input').value.split(/\s+/).filter(t => t.length > 0);
+            try {
+                await app.apiCall(`/api/media/${mediaId}`, { method: 'PATCH', body: JSON.stringify({ tags }) });
+                location.reload();
+            } catch (e) { alert('Error updating tags: ' + e.message); }
+        });
+
+        el('rating-select')?.addEventListener('change', async (e) => {
+            try {
+                await app.apiCall(`/api/media/${mediaId}`, { method: 'PATCH', body: JSON.stringify({ rating: e.target.value }) });
+            } catch (e) { alert('Error updating rating: ' + e.message); }
+        });
+
+        el('share-btn')?.addEventListener('click', async () => {
+            try {
+                const res = await app.apiCall(`/api/media/${mediaId}/share`, { method: 'POST' });
+                showShareLink(res.share_url.split('/').pop());
+            } catch (e) { alert('Error creating share link: ' + e.message); }
+        });
+        el('copy-share-link-btn')?.addEventListener('click', () => {
+            el('share-link-input').select(); document.execCommand('copy');
+        });
+        el('unshare-btn')?.addEventListener('click', async () => {
+            try {
+                await app.apiCall(`/api/media/${mediaId}/share`, { method: 'DELETE' });
+                el('share-link-section').style.display = 'none';
+            } catch (e) { alert('Error removing share: ' + e.message); }
+        });
+
+        el('delete-btn')?.addEventListener('click', async () => {
+            if (!confirm('Delete this media?')) return;
+            try {
+                await app.apiCall(`/api/media/${mediaId}`, { method: 'DELETE' });
+                window.location.href = '/';
+            } catch (e) { alert('Error deleting media: ' + e.message); }
+        });
+
+        function showShareLink(uuid) {
+            el('share-link-input').value = `${window.location.origin}/shared/${uuid}`;
+            el('share-link-section').style.display = 'block';
+        }
+
+        // Initialize tag autocomplete
+        const tagsInput = document.getElementById('tags-input');
+        if (tagsInput) {
+            new TagAutocomplete(tagsInput, {
+                multipleValues: true
+            });
+        }
+
+        loadMedia();
     });
-    c.innerHTML = html || '<p class="text-xs text-[#94a3b8]">No tags</p>';
-    const input = el('tags-input');
-    if (input) input.value = (m.tags || []).map(t => t.name).join(' ');
-  }
-
-  async function loadRelatedMedia() {
-    if (!currentMedia || !currentMedia.tags || !currentMedia.tags.length) return;
-    let tags = [...currentMedia.tags];
-    
-    for (let i = tags.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [tags[i], tags[j]] = [tags[j], tags[i]];
-    }
-    
-    const numTags = Math.min(3, Math.max(1, Math.floor(Math.random() * tags.length) + 1));
-    const tagQuery = tags.slice(0, numTags).map(t => t.name).join(' ');
-    
-    try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(tagQuery)}&limit=12`);
-      const data = await res.json();
-      const items = (data.items || []).filter(i => i.id !== mediaId);
-      el('related-media').innerHTML = items.map(i =>
-        `<a href="/media/${i.id}" class="gallery-item ${i.file_type}">
-           <img src="/api/media/${i.id}/thumbnail" alt="${i.filename}" loading="lazy">
-         </a>`).join('');
-    } catch (e) {
-      console.error('related error', e);
-    }
-  }
-
-  function formatFileSize(bytes) {
-    if (!bytes) return '0 Bytes';
-    const k = 1024, sizes = ['Bytes','KB','MB','GB','TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i];
-  }
-  function formatDuration(s) {
-    const m = Math.floor(s / 60), sec = Math.floor(s % 60);
-    return `${m}:${String(sec).padStart(2, '0')}`;
-  }
-
-  el('edit-tags-form')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const tags = el('tags-input').value.split(/\s+/).filter(t => t.length > 0);
-    try {
-      await app.apiCall(`/api/media/${mediaId}`, { method: 'PATCH', body: JSON.stringify({ tags }) });
-      location.reload();
-    } catch (e) { alert('Error updating tags: ' + e.message); }
-  });
-
-  el('rating-select')?.addEventListener('change', async (e) => {
-    try {
-      await app.apiCall(`/api/media/${mediaId}`, { method: 'PATCH', body: JSON.stringify({ rating: e.target.value }) });
-    } catch (e) { alert('Error updating rating: ' + e.message); }
-  });
-
-  el('share-btn')?.addEventListener('click', async () => {
-    try {
-      const res = await app.apiCall(`/api/media/${mediaId}/share`, { method: 'POST' });
-      showShareLink(res.share_url.split('/').pop());
-    } catch (e) { alert('Error creating share link: ' + e.message); }
-  });
-  el('copy-share-link-btn')?.addEventListener('click', () => {
-    el('share-link-input').select(); document.execCommand('copy');
-  });
-  el('unshare-btn')?.addEventListener('click', async () => {
-    try {
-      await app.apiCall(`/api/media/${mediaId}/share`, { method: 'DELETE' });
-      el('share-link-section').style.display = 'none';
-    } catch (e) { alert('Error removing share: ' + e.message); }
-  });
-
-  el('delete-btn')?.addEventListener('click', async () => {
-    if (!confirm('Delete this media?')) return;
-    try {
-      await app.apiCall(`/api/media/${mediaId}`, { method: 'DELETE' });
-      window.location.href = '/';
-    } catch (e) { alert('Error deleting media: ' + e.message); }
-  });
-
-  function showShareLink(uuid) {
-    el('share-link-input').value = `${window.location.origin}/shared/${uuid}`;
-    el('share-link-section').style.display = 'block';
-  }
-
-  // Initialize tag autocomplete
-  const tagsInput = document.getElementById('tags-input');
-  if (tagsInput) {
-      new TagAutocomplete(tagsInput, {
-          multipleValues: true,
-          onSelect: () => {
-              document.getElementById('edit-tags-form').submit();
-          }
-      });
-  }
-
-  loadMedia();
-});
 </script>
 {% endblock %}
