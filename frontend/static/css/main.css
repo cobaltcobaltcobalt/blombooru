@@ -73,6 +73,7 @@ input[type="radio"]:checked + span {
     border-radius: 2px;
     transition: opacity 0.2s;
     font-weight: 500;
+    cursor: pointer;
 }
 
 .tag:hover {
