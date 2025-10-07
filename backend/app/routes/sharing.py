@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
-
+from sqlalchemy.orm import Session, joinedload
 from ..database import get_db
 from ..models import Media
 from ..config import settings
@@ -12,7 +11,7 @@ router = APIRouter(prefix="/api/shared", tags=["sharing"])
 async def get_shared_content(share_uuid: str, db: Session = Depends(get_db)):
     """Get shared media"""
     # Check if it's a media share
-    media = db.query(Media).filter(
+    media = db.query(Media).options(joinedload(Media.tags)).filter(
         Media.share_uuid == share_uuid,
         Media.is_shared == True
     ).first()
