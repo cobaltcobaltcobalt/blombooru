@@ -578,3 +578,33 @@ async def clear_all_tags(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=f"Error clearing tags: {str(e)}")
+    
+@router.delete("/tags/{tag_id}")
+async def delete_tag(
+    tag_id: int,
+    current_user: User = Depends(require_admin_mode),
+    db: Session = Depends(get_db)
+):
+    """Delete a single tag and its aliases"""
+    from ..models import Tag
+    
+    try:
+        # Find the tag
+        tag = db.query(Tag).filter(Tag.id == tag_id).first()
+        
+        if not tag:
+            raise HTTPException(status_code=404, detail="Tag not found")
+        
+        tag_name = tag.name
+        
+        # Delete the tag (aliases will be deleted automatically due to CASCADE)
+        db.delete(tag)
+        db.commit()
+        
+        return {"message": f"Tag '{tag_name}' deleted successfully"}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"Error deleting tag: {str(e)}")
