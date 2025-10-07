@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, func, or_, and_
+from sqlalchemy import desc, case, func, or_, and_
 from typing import List, Optional
-
 from ..database import get_db
 from ..auth import require_admin_mode, get_current_user
 from ..models import Tag, Media, User, blombooru_media_tags
@@ -37,13 +36,14 @@ async def autocomplete_tags(
     db: Session = Depends(get_db)
 ):
     """Autocomplete tag suggestions"""
-    # Exact and prefix matches
+    priority = case(
+        (Tag.name.ilike(f"{q}%"), 1),
+        else_=2
+    )
+    
     tags = db.query(Tag).filter(
-        or_(
-            Tag.name.ilike(f"{q}%"),
-            Tag.name.ilike(f"%{q}%")
-        )
-    ).order_by(desc(Tag.post_count)).limit(50).all()
+        Tag.name.ilike(f"%{q}%")
+    ).order_by(priority, desc(Tag.post_count)).limit(50).all()
     
     return [{"name": tag.name, "category": tag.category, "count": tag.post_count} for tag in tags]
 
