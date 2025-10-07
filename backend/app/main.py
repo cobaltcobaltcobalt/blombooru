@@ -4,13 +4,12 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 from apscheduler.schedulers.background import BackgroundScheduler
 from pathlib import Path
-
 from .config import settings
 from .database import get_db, init_db, init_engine
 from .routes import admin, media, tags, search, sharing
 from .utils.file_scanner import scan_for_new_media
 
-app = FastAPI(title="Blombooru", version="1.0.0")
+app = FastAPI(title="Blombooru", version="1.7.3")
 
 # Mount static files
 static_path = Path(__file__).parent.parent.parent / "frontend" / "static"
