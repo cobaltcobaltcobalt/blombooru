@@ -6,7 +6,7 @@ import csv
 import io
 from ..database import get_db
 from ..auth import require_admin_mode
-from ..models import User, Tag, TagAlias, TagImplication, TagCategoryEnum
+from ..models import User, Tag, TagAlias, TagCategoryEnum
 from ..schemas import TagResponse
 
 router = APIRouter(prefix="/api/tags-management", tags=["tag-management"])
@@ -22,16 +22,16 @@ def parse_tag_category(category_num: str) -> TagCategoryEnum:
     }
     return mapping.get(category_num, TagCategoryEnum.general)
 
-def parse_implications(implications_str: str) -> List[str]:
-    """Parse comma-separated implications/aliases"""
-    if not implications_str or implications_str.strip() == '':
+def parse_aliases(aliases_str: str) -> List[str]:
+    """Parse comma-separated aliases"""
+    if not aliases_str or aliases_str.strip() == '':
         return []
     
     # Remove quotes if present
-    implications_str = implications_str.strip('"\'')
+    aliases_str = aliases_str.strip('"\'')
     
     # Split by comma and clean each tag
-    return [tag.strip() for tag in implications_str.split(',') if tag.strip()]
+    return [tag.strip() for tag in aliases_str.split(',') if tag.strip()]
 
 @router.post("/import-csv")
 async def import_tags_csv(
@@ -67,7 +67,7 @@ async def import_tags_csv(
                 tag_name = row[0].strip().lower()
                 category = parse_tag_category(row[1].strip())
                 # Skip row[2] (usage count)
-                implications_str = row[3].strip()
+                aliases_str = row[3].strip()
                 
                 if not tag_name:
                     continue
@@ -91,9 +91,7 @@ async def import_tags_csv(
                     db.flush()  # Get the ID
                     stats["tags_created"] += 1
                 
-                # Process implications as aliases (based on the CSV format provided)
-                # The implications in the CSV are actually aliases/alternate names
-                alias_names = parse_implications(implications_str)
+                alias_names = parse_aliases(aliases_str)
                 
                 for alias_name in alias_names:
                     alias_name = alias_name.lower()
@@ -136,7 +134,6 @@ async def get_tag_stats(
     
     total_tags = db.query(func.count(Tag.id)).scalar()
     total_aliases = db.query(func.count(TagAlias.id)).scalar()
-    total_implications = db.query(func.count(TagImplication.id)).scalar()
     
     category_counts = db.query(
         Tag.category,
@@ -146,7 +143,6 @@ async def get_tag_stats(
     return {
         "total_tags": total_tags or 0,
         "total_aliases": total_aliases or 0,
-        "total_implications": total_implications or 0,
         "tags_by_category": {
             cat.value: count for cat, count in category_counts
         } if category_counts else {}
@@ -168,7 +164,6 @@ async def clear_all_tags(
     
     try:
         # Delete in order due to foreign keys
-        db.query(TagImplication).delete()
         db.query(TagAlias).delete()
         db.query(Tag).delete()
         db.commit()
@@ -201,21 +196,12 @@ async def search_tags(
             TagAlias.target_tag_id == tag.id
         ).all()
         
-        # Get implications
-        implications = db.query(TagImplication).filter(
-            TagImplication.implied_tag_id == tag.id
-        ).all()
-        
         results.append({
             "id": tag.id,
             "name": tag.name,
             "category": tag.category.value,
             "post_count": tag.post_count,
-            "aliases": [a.alias_name for a in aliases],
-            "implications": [
-                db.query(Tag).filter(Tag.id == i.source_tag_id).first().name 
-                for i in implications if db.query(Tag).filter(Tag.id == i.source_tag_id).first()
-            ]
+            "aliases": [a.alias_name for a in aliases]
         })
     
     return results

@@ -77,10 +77,6 @@
                         <div class="text-lg font-bold" id="total-aliases">0</div>
                     </div>
                     <div class="bg-[#0f172a] p-3 border border-[#334155]">
-                        <div class="text-xs text-[#94a3b8]">Implications</div>
-                        <div class="text-lg font-bold" id="total-implications">0</div>
-                    </div>
-                    <div class="bg-[#0f172a] p-3 border border-[#334155]">
                         <div class="text-xs text-[#94a3b8]">Categories</div>
                         <div class="text-lg font-bold" id="total-categories">5</div>
                     </div>
@@ -95,10 +91,7 @@
                             Categories: 0=General, 1=Artist, 3=Copyright, 4=Character, 5=Meta
                         </p>
                         
-                        <div id="csv-upload-area" class="border-2 border-dashed border-[#334155] p-6 text-center cursor-pointer hover:bg-[#1e293b] transition-colors mb-3">
-                            <svg class="mx-auto mb-2" width="24" height="24" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/>
-                            </svg>
+                        <div id="csv-upload-area" class="upload-area">
                             <p class="text-xs">Drop CSV file here or click to browse</p>
                             <input type="file" id="csv-file-input" accept=".csv" class="hidden">
                         </div>
@@ -137,8 +130,8 @@
             <div class="bg-[#1e293b] p-6 border border-[#334155]">
                 <h2 class="text-base font-bold mb-4 pb-3 border-b border-[#334155]">Upload Media (set parameters before uploading media)</h2>
                 
-                <div id="upload-area" class="upload-area mb-4">
-                    <p class="text-xs">Drop files here or click to browse</p>
+                <div id="upload-area" class="upload-area bg-[#0f172a] mb-4">
+                    <p class="text-xs">Drop media files here or click to browse</p>
                     <input type="file" id="file-input" multiple accept="image/*,video/*">
                 </div>
                 

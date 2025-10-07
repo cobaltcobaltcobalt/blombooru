@@ -69,7 +69,6 @@ class Tag(Base):
     
     media = relationship('Media', secondary=blombooru_media_tags, back_populates='tags')
     aliases = relationship('TagAlias', foreign_keys='TagAlias.target_tag_id', back_populates='target_tag')
-    implications = relationship('TagImplication', foreign_keys='TagImplication.source_tag_id', back_populates='source_tag')
 
 class TagAlias(Base):
     __tablename__ = 'blombooru_tag_aliases'
@@ -79,13 +78,3 @@ class TagAlias(Base):
     target_tag_id = Column(Integer, ForeignKey('blombooru_tags.id', ondelete='CASCADE'), nullable=False)
     
     target_tag = relationship('Tag', foreign_keys=[target_tag_id], back_populates='aliases')
-
-class TagImplication(Base):
-    __tablename__ = 'blombooru_tag_implications'
-    
-    id = Column(Integer, primary_key=True, index=True)
-    source_tag_id = Column(Integer, ForeignKey('blombooru_tags.id', ondelete='CASCADE'), nullable=False)
-    implied_tag_id = Column(Integer, ForeignKey('blombooru_tags.id', ondelete='CASCADE'), nullable=False)
-    
-    source_tag = relationship('Tag', foreign_keys=[source_tag_id], back_populates='implications')
-    implied_tag = relationship('Tag', foreign_keys=[implied_tag_id])

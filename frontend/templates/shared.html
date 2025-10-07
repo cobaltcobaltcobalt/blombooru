@@ -62,7 +62,44 @@
         
         function renderSharedMedia(media) {
             const container = document.getElementById('shared-content');
-            
+
+            // Group tags by category
+            const tagsByCategory = {
+                artist: [],
+                character: [],
+                copyright: [],
+                general: [],
+                meta: []
+            };
+
+            if (media.tags && media.tags.length > 0) {
+                media.tags.forEach(tag => {
+                    if (tagsByCategory[tag.category]) {
+                        tagsByCategory[tag.category].push(tag);
+                    }
+                });
+            }
+
+            // Sort tags within each category
+            Object.keys(tagsByCategory).forEach(category => {
+                tagsByCategory[category].sort((a, b) => a.name.localeCompare(b.name));
+            });
+
+            // Generate tags HTML
+            let tagsHTML = '';
+            Object.entries(tagsByCategory).forEach(([category, tags]) => {
+                if (tags.length > 0) {
+                    tagsHTML += `
+                        <div class="mb-3">
+                            <h4 class="text-xs uppercase text-[#94a3b8] mb-2 font-bold">${category}</h4>
+                            <div class="flex flex-wrap gap-1">
+                                ${tags.map(t => `<span class="tag ${category}">${t.name}</span>`).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+            });
+
             container.innerHTML = `
                 <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
                     <div class="lg:col-span-3">
@@ -76,7 +113,7 @@
                             `}
                         </div>
                     </div>
-                    
+
                     <div class="lg:col-span-1">
                         <div class="bg-[#1e293b] p-3 border border-[#334155]">
                             <h3 class="text-sm font-bold mb-3 pb-2 border-b border-[#334155]">Information</h3>
@@ -107,6 +144,13 @@
                                 </a>
                             </div>
                         </div>
+
+                        ${tagsHTML ? `
+                            <div class="bg-[#1e293b] p-3 border border-[#334155]">
+                                <h3 class="text-sm font-bold mb-3 pb-2 border-b border-[#334155]">Tags</h3>
+                                ${tagsHTML}
+                            </div>
+                        ` : ''}
                     </div>
                 </div>
             `;
