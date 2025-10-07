@@ -4,11 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}{{ app_name }}{% endblock %}</title>
-    
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="/static/css/main.css">
-    
     <script>
         tailwind.config = {
             theme: {
@@ -25,10 +23,9 @@
             }
         }
     </script>
-    
     {% block extra_css %}{% endblock %}
 </head>
-<body class="bg-[#0f172a] text-[#f1f5f9] text-xs">
+<body class="bg-[#0f172a] text-[#f1f5f9] text-xs flex flex-col min-h-screen">
     {% block header %}
     <header class="bg-[#1e293b] border-b border-[#334155]">
         <div class="container mx-auto px-4 py-2">
@@ -79,9 +76,27 @@
     </header>
     {% endblock %}
     
-    <main>
+    <main class="flex-1">
         {% block content %}{% endblock %}
     </main>
+    
+    {% block footer %}
+    <footer class="bg-[#1e293b] border-t border-[#334155] mt-8">
+        <div class="container mx-auto px-4 py-6">
+            <div class="flex flex-col md:flex-row justify-between items-center gap-4">
+                <div class="text-[#94a3b8] text-xs">
+                    <p>&copy;  {{ app_name }} {{ get_current_year() }}. Powered by <a href="https://github.com/mrblomblo/blombooru" class="text-blue-500 hover:text-blue-400" target="_blank">Blombooru</a>.</p>
+                </div>
+                
+                <div class="flex gap-4 text-xs">
+                    <a href="https://github.com/mrblomblo/blombooru" class="text-[#94a3b8] hover:text-[#f1f5f9]" target="_blank">GitHub</a>
+                    <span class="text-[#334155]">&#x2022;</span>
+                    <a href="#" class="text-[#94a3b8] hover:text-[#f1f5f9]" onclick="window.scrollTo({top: 0, behavior: 'smooth'}); return false;">Back to Top</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+    {% endblock %}
     
     <script src="/static/js/main.js"></script>
     <script src="/static/js/tag-autocomplete.js"></script>

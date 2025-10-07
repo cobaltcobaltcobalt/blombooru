@@ -8,8 +8,9 @@ from .config import settings
 from .database import get_db, init_db, init_engine
 from .routes import admin, media, tags, search, sharing
 from .utils.file_scanner import scan_for_new_media
+from datetime import datetime
 
-app = FastAPI(title="Blombooru", version="1.7.3")
+app = FastAPI(title="Blombooru", version="1.9.2")
 
 # Mount static files
 static_path = Path(__file__).parent.parent.parent / "frontend" / "static"
@@ -17,6 +18,8 @@ templates_path = Path(__file__).parent.parent.parent / "frontend" / "templates"
 
 app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
 templates = Jinja2Templates(directory=str(templates_path))
+
+templates.env.globals['get_current_year'] = lambda: datetime.now().year
 
 # Include routers
 app.include_router(admin.router)
