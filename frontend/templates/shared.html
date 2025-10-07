@@ -26,6 +26,27 @@
     </script>
 </head>
 <body class="bg-[#0f172a] text-[#f1f5f9] text-xs">
+    <!-- Age Verification Overlay -->
+    <div id="age-verification-overlay" class="age-verification-overlay" style="display: none;">
+        <div class="bg-[#1e293b] border-2 border-red-600 p-8 max-w-md text-center">
+            <svg class="mx-auto mb-4" width="64" height="64" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="#dc2626"/>
+            </svg>
+            <h2 class="text-xl font-bold mb-4 text-red-500">Explicit Content Warning</h2>
+            <p class="text-base mb-6 text-[#f1f5f9]">
+                This media contains explicit content. By clicking "Yes, I am 18+", you confirm that you are over the age of 18 and consent to viewing adult content.
+            </p>
+            <div class="flex gap-4 justify-center">
+                <button id="age-confirm-yes" class="px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-bold text-sm">
+                    Yes, I am 18+
+                </button>
+                <button id="age-confirm-no" class="px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-bold text-sm">
+                    No, I am not 18
+                </button>
+            </div>
+        </div>
+    </div>
+
     <div class="container mx-auto px-4 py-4">
         <div class="bg-amber-600 text-black p-3 mb-4 flex items-center gap-2 text-xs">
             <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
@@ -40,6 +61,7 @@
     <script>
         const shareUuid = '{{ share_uuid }}';
         const el = id => document.getElementById(id);
+        let currentMedia = null;
         
         async function loadSharedContent() {
             try {
@@ -47,7 +69,13 @@
                 const data = await response.json();
                 
                 if (data.type === 'media') {
-                    renderSharedMedia(data.data);
+                    currentMedia = data.data;
+                    renderSharedMedia(currentMedia);
+                    
+                    // Check if content is explicit and show age verification
+                    if (currentMedia.rating === 'explicit') {
+                        showAgeVerification();
+                    }
                 }
             } catch (error) {
                 console.error('Error loading shared content:', error);
@@ -58,6 +86,36 @@
                     </div>
                 `;
             }
+        }
+        
+        function showAgeVerification() {
+            const overlay = el('age-verification-overlay');
+            const mediaContainer = document.querySelector('.lg\\:col-span-3 > div');
+            
+            // Blur the media
+            if (mediaContainer) {
+                mediaContainer.classList.add('media-blurred');
+            }
+            
+            // Show overlay
+            overlay.style.display = 'flex';
+            
+            // Set up button handlers
+            el('age-confirm-yes').addEventListener('click', () => {
+                overlay.style.display = 'none';
+                if (mediaContainer) {
+                    mediaContainer.classList.remove('media-blurred');
+                }
+            });
+            
+            el('age-confirm-no').addEventListener('click', () => {
+                // Try to close the tab/window, or navigate to about:blank
+                window.close();
+                // If window.close() doesn't work (some browsers block it), navigate away
+                setTimeout(() => {
+                    window.location.href = 'about:blank';
+                }, 100);
+            });
         }
         
         function renderSharedMedia(media) {
