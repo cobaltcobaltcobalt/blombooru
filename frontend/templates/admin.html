@@ -107,8 +107,9 @@
                 <div class="mb-4">
                     <h3 class="text-sm font-bold mb-3">Search & Manage Tags</h3>
                     <div class="flex gap-2 mb-3">
-                        <input type="text" id="tag-search-input" placeholder="Search tags..." 
-                               class="flex-1 px-3 py-2 bg-[#0f172a] border border-[#334155] text-xs focus:outline-none focus:border-blue-500">
+                        <div class="w-full">
+                            <input type="text" id="tag-search-input" placeholder="Search tags..." class="flex-1 w-full px-3 py-2 bg-[#0f172a] border border-[#334155] text-xs focus:outline-none focus:border-blue-500">
+                        </div>
                         <button id="tag-search-btn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs">Search</button>
                     </div>
                     <div id="tag-search-results" class="max-h-64 overflow-y-auto"></div>
@@ -143,7 +144,7 @@
                 </div>
                 
                 <div class="mb-4">
-                    <label class="block text-xs font-bold mb-2">Tags (space-separated)</label>
+                    <label class="block text-xs font-bold mb-2">Tags</label>
                     <input type="text" id="upload-tags" class="tag-input w-full px-3 py-2 bg-[#0f172a] border border-[#334155] text-xs focus:outline-none focus:border-blue-500" placeholder="tag1 tag2 tag3">
                 </div>
             </div>
