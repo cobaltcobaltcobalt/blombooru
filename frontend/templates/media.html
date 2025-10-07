@@ -150,31 +150,34 @@
             if (input) input.value = (m.tags || []).map(t => t.name).join(' ');
         }
 
-        async function loadRelatedMedia() {
-            if (!currentMedia || !currentMedia.tags || !currentMedia.tags.length) return;
-            let tags = [...currentMedia.tags];
+    async function loadRelatedMedia() {
+        if (!currentMedia || !currentMedia.tags || !currentMedia.tags.length) return;
 
-            for (let i = tags.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [tags[i], tags[j]] = [tags[j], tags[i]];
-            }
+        let generalTags = currentMedia.tags.filter(t => t.category === 'general');
 
-            const numTags = Math.min(3, Math.max(1, Math.floor(Math.random() * tags.length) + 1));
-            const tagQuery = tags.slice(0, numTags).map(t => t.name).join(' ');
+        if (!generalTags.length) return;
 
-            try {
-                const res = await fetch(`/api/search?q=${encodeURIComponent(tagQuery)}&limit=12`);
-                const data = await res.json();
-                const items = (data.items || []).filter(i => i.id !== mediaId);
-                el('related-media').innerHTML = items.map(i =>`
-                <a href="/media/${i.id}" class="gallery-item ${i.file_type}">
-                    <img src="/api/media/${i.id}/thumbnail" alt="${i.filename}" loading="lazy">
-                </a>
-                `).join('');
-            } catch (e) {
-                console.error('related error', e);
-            }
+        for (let i = generalTags.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [generalTags[i], generalTags[j]] = [generalTags[j], generalTags[i]];
         }
+
+        const numTags = Math.min(3, Math.max(1, Math.floor(Math.random() * generalTags.length) + 1));
+        const tagQuery = generalTags.slice(0, numTags).map(t => t.name).join(' ');
+
+        try {
+            const res = await fetch(`/api/search?q=${encodeURIComponent(tagQuery)}&limit=12`);
+            const data = await res.json();
+            const items = (data.items || []).filter(i => i.id !== mediaId);
+            el('related-media').innerHTML = items.map(i =>`
+            <a href="/media/${i.id}" class="gallery-item ${i.file_type}">
+                <img src="/api/media/${i.id}/thumbnail" alt="${i.filename}" loading="lazy">
+            </a>
+            `).join('');
+        } catch (e) {
+            console.error('related error', e);
+        }
+    }
 
         function formatFileSize(bytes) {
             if (!bytes) return '0 Bytes';
