@@ -203,14 +203,21 @@ class TagAutocomplete {
                     suggestions[prevIndex].scrollIntoView({ block: 'nearest' });
                 }
                 break;
+
+            case 'Tab':
+                e.preventDefault();
+                if (suggestions.length > 0) {
+                    if (selected) selected.classList.remove('selected');
+                    const nextIndex = selectedIndex < suggestions.length - 1 ? selectedIndex + 1 : 0;
+                    suggestions[nextIndex].classList.add('selected');
+                    suggestions[nextIndex].scrollIntoView({ block: 'nearest' });
+                }
+                break;
                 
             case 'Enter':
-                e.preventDefault();
                 if (selected) {
+                    e.preventDefault();
                     this.selectSuggestion(selected.dataset.name);
-                } else if (suggestions.length > 0) {
-                    // Auto-select first suggestion if none is selected
-                    this.selectSuggestion(suggestions[0].dataset.name);
                 }
                 break;
                 
