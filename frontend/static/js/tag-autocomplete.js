@@ -4,6 +4,7 @@ class TagAutocomplete {
         this.options = {
             onSelect: null,
             multipleValues: false,
+            containerClasses: '',
             ...options
         };
         
@@ -13,7 +14,12 @@ class TagAutocomplete {
     setupAutocomplete() {
         // Create suggestions container
         this.suggestionsEl = document.createElement('div');
-        this.suggestionsEl.className = 'tag-suggestions hidden';
+        
+        // Build class list with base classes and optional extra classes
+        const baseClasses = 'tag-suggestions hidden';
+        const extraClasses = this.options.containerClasses ? ' ' + this.options.containerClasses : '';
+        this.suggestionsEl.className = baseClasses + extraClasses;
+        
         this.input.parentNode.insertBefore(this.suggestionsEl, this.input.nextSibling);
         
         // Add event listeners
@@ -250,14 +256,6 @@ class TagAutocomplete {
             case 'Escape':
                 e.preventDefault();
                 this.hideSuggestions();
-                break;
-                
-            case 'Tab':
-                // Allow tab to select the current suggestion
-                if (selected) {
-                    e.preventDefault();
-                    this.selectSuggestion(selected.dataset.name);
-                }
                 break;
         }
     }
