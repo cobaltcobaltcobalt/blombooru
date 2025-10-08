@@ -6,6 +6,7 @@ class Uploader {
         this.selectedFileIndex = null;
         this.baseRating = 'safe';
         this.baseTags = [];
+        this.fileHashes = new Set();
         
         if (this.uploadArea) {
             this.init();
@@ -169,8 +170,8 @@ class Uploader {
         submitDiv.style.display = 'none';
         submitDiv.className = 'flex gap-2';
         submitDiv.innerHTML = `
-            <button id="submit-all-btn" class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold">Submit All Media</button>
             <button id="cancel-all-btn" class="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white text-xs">Cancel & Clear All</button>
+            <button id="submit-all-btn" class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold">Submit All Media</button>
         `;
         
         document.getElementById('preview-grid').parentNode.insertBefore(submitDiv, document.getElementById('preview-grid').nextSibling);
@@ -184,11 +185,37 @@ class Uploader {
         });
     }
     
-    handleFiles(files) {
-        files.forEach(file => {
+    async computeFileHash(file) {
+        // Compute SHA-256 hash of file content
+        const arrayBuffer = await file.arrayBuffer();
+        const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        return hashHex;
+    }
+    
+    async handleFiles(files) {
+        for (const file of files) {
+            // Check if it's a zip or tar.gz file
+            if (file.name.endsWith('.zip') || file.name.endsWith('.tar.gz') || file.name.endsWith('.tgz')) {
+                await this.handleArchive(file);
+                continue;
+            }
+            
             if (this.isValidFile(file)) {
+                // Compute hash for duplicate detection
+                const hash = await this.computeFileHash(file);
+                
+                // Silently ignore duplicates
+                if (this.fileHashes.has(hash)) {
+                    continue;
+                }
+                
+                this.fileHashes.add(hash);
+                
                 const fileData = {
                     file: file,
+                    hash: hash,
                     rating: this.baseRating,
                     additionalTags: [],
                     preview: null
@@ -197,12 +224,78 @@ class Uploader {
                 this.uploadedFiles.push(fileData);
                 this.createPreview(fileData, this.uploadedFiles.length - 1);
             }
-        });
+        }
         
         if (this.uploadedFiles.length > 0) {
             document.getElementById('base-controls').style.display = 'block';
             document.getElementById('preview-grid').style.display = 'block';
             document.getElementById('submit-controls').style.display = 'flex';
+        }
+    }
+    
+    async handleArchive(archiveFile) {
+        // Show loading indicator
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'bg-blue-600 text-white p-2 mb-2 text-xs';
+        loadingDiv.textContent = `Extracting ${archiveFile.name}...`;
+        this.uploadArea.parentNode.insertBefore(loadingDiv, this.uploadArea.nextSibling);
+        
+        try {
+            const formData = new FormData();
+            formData.append('file', archiveFile);
+            
+            const response = await fetch('/api/media/extract-archive', {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Failed to extract archive: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            // result.files contains array of extracted file data
+            for (const extractedFileData of result.files) {
+                // Convert base64 to blob
+                const binaryString = atob(extractedFileData.content);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                const blob = new Blob([bytes], { type: extractedFileData.mime_type });
+                const file = new File([blob], extractedFileData.filename, { type: extractedFileData.mime_type });
+                
+                if (this.isValidFile(file)) {
+                    const hash = await this.computeFileHash(file);
+                    
+                    if (this.fileHashes.has(hash)) {
+                        continue;
+                    }
+                    
+                    this.fileHashes.add(hash);
+                    
+                    const fileData = {
+                        file: file,
+                        hash: hash,
+                        rating: this.baseRating,
+                        additionalTags: [],
+                        preview: null
+                    };
+                    
+                    this.uploadedFiles.push(fileData);
+                    this.createPreview(fileData, this.uploadedFiles.length - 1);
+                }
+            }
+            
+            loadingDiv.textContent = `✓ Extracted ${result.files.length} files from ${archiveFile.name}`;
+            setTimeout(() => loadingDiv.remove(), 3000);
+            
+        } catch (error) {
+            console.error('Archive extraction error:', error);
+            loadingDiv.className = 'bg-red-600 text-white p-2 mb-2 text-xs';
+            loadingDiv.textContent = `✗ Error extracting ${archiveFile.name}: ${error.message}`;
+            setTimeout(() => loadingDiv.remove(), 5000);
         }
     }
     
@@ -247,8 +340,9 @@ class Uploader {
         tagsIndicator.textContent = this.getFullTags(fileData).join(' ') || 'No tags';
         thumbnailDiv.appendChild(tagsIndicator);
         
-        thumbnailDiv.addEventListener('click', () => {
-            this.selectMedia(index);
+        thumbnailDiv.addEventListener('click', (e) => {
+            const clickedIndex = parseInt(e.currentTarget.dataset.index);
+            this.selectMedia(clickedIndex);
         });
         
         container.appendChild(thumbnailDiv);
@@ -257,6 +351,12 @@ class Uploader {
     selectMedia(index) {
         this.selectedFileIndex = index;
         const fileData = this.uploadedFiles[index];
+        
+        // Safety check
+        if (!fileData) {
+            console.error('No file data at index', index);
+            return;
+        }
         
         // Update UI
         document.querySelectorAll('#preview-thumbnails > div').forEach((div, i) => {
@@ -332,6 +432,16 @@ class Uploader {
     }
     
     removeMedia(index) {
+        // If only one file left, cancel all
+        if (this.uploadedFiles.length === 1) {
+            this.cancelAll();
+            return;
+        }
+        
+        // Remove file hash from set
+        const fileData = this.uploadedFiles[index];
+        this.fileHashes.delete(fileData.hash);
+        
         // Remove thumbnail
         const thumbnail = document.querySelector(`#preview-thumbnails > div[data-index="${index}"]`);
         if (thumbnail) {
@@ -346,53 +456,61 @@ class Uploader {
             div.dataset.index = i;
         });
         
-        // Clear selection
-        this.selectedFileIndex = null;
-        document.getElementById('individual-controls').style.display = 'none';
-        
-        // Hide everything if no files left
-        if (this.uploadedFiles.length === 0) {
-            this.cancelAll();
+        // Select the media to the left, or first item if we removed the first
+        const newIndex = Math.min(index > 0 ? index - 1 : 0, this.uploadedFiles.length - 1);
+        if (this.uploadedFiles.length > 0) {
+            this.selectMedia(newIndex);
         }
     }
     
     async submitAll() {
         if (this.uploadedFiles.length === 0) return;
-        
+
         const submitBtn = document.getElementById('submit-all-btn');
         const cancelBtn = document.getElementById('cancel-all-btn');
         const originalText = submitBtn.textContent;
-        
+
         submitBtn.disabled = true;
         cancelBtn.disabled = true;
         submitBtn.textContent = 'Uploading...';
-        
+
         let successCount = 0;
         let failCount = 0;
-        
+        let duplicateCount = 0;
+
         for (let i = 0; i < this.uploadedFiles.length; i++) {
             const fileData = this.uploadedFiles[i];
             submitBtn.textContent = `Uploading ${i + 1}/${this.uploadedFiles.length}...`;
-            
+
             try {
                 await this.uploadFile(fileData);
                 successCount++;
             } catch (error) {
                 console.error('Upload error:', error);
-                failCount++;
+
+                // Check if it's a duplicate error (409 status)
+                if (error.message.includes('409') || error.message.includes('already exists')) {
+                    duplicateCount++;
+                } else {
+                    failCount++;
+                }
             }
         }
-        
+
         // Show results
-        if (failCount === 0) {
-            alert(`Successfully uploaded ${successCount} file(s)!`);
-        } else {
-            alert(`Uploaded ${successCount} file(s). Failed: ${failCount}`);
+        let message = `Successfully uploaded ${successCount} file(s).`;
+        if (duplicateCount > 0) {
+            message += ` ${duplicateCount} duplicate(s) skipped.`;
         }
-        
+        if (failCount > 0) {
+            message += ` ${failCount} failed.`;
+        }
+
+        alert(message);
+
         // Reset
         this.cancelAll();
-        
+
         // Reload gallery if on gallery page
         if (window.gallery) {
             window.location.reload();
@@ -403,21 +521,22 @@ class Uploader {
         const formData = new FormData();
         formData.append('file', fileData.file);
         formData.append('rating', fileData.rating);
-        
+
         const fullTags = this.getFullTags(fileData);
         if (fullTags.length > 0) {
-            formData.append('tags', JSON.stringify(fullTags));
+            formData.append('tags', fullTags.join(' '));
         }
-        
+
         const response = await fetch('/api/media/', {
             method: 'POST',
             body: formData
         });
-        
+
         if (!response.ok) {
-            throw new Error(`Upload failed: ${response.statusText}`);
+            const error = await response.json();
+            throw new Error(`Upload failed (${response.status}): ${error.detail || response.statusText}`);
         }
-        
+
         return await response.json();
     }
     
@@ -427,6 +546,7 @@ class Uploader {
         this.selectedFileIndex = null;
         this.baseTags = [];
         this.baseRating = 'safe';
+        this.fileHashes.clear();
         
         // Clear UI
         document.getElementById('preview-thumbnails').innerHTML = '';

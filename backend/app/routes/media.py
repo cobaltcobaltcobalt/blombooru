@@ -120,6 +120,19 @@ async def upload_media(
 ):
     """Upload new media"""
     try:
+        # Read file contents to calculate hash first
+        contents = await file.read()
+        file_hash = hashlib.sha256(contents).hexdigest()
+        
+        # Check for duplicates BEFORE saving file
+        existing = db.query(Media).filter(Media.hash == file_hash).first()
+        if existing:
+            print(f"Duplicate file detected: {file_hash}")
+            raise HTTPException(
+                status_code=409, 
+                detail=f"Media already exists (duplicate of {existing.filename})"
+            )
+        
         # Generate a single UUID for this upload
         media_uuid = str(uuid.uuid4())
         
@@ -131,20 +144,13 @@ async def upload_media(
         print(f"Uploading file: {file.filename} -> {unique_filename}")
         
         with open(file_path, 'wb') as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            buffer.write(contents)
         
         print(f"File saved to: {file_path}")
         
         # Process media
         metadata = process_media_file(file_path)
         print(f"Media processed: {metadata}")
-        
-        # Check for duplicates
-        existing = db.query(Media).filter(Media.hash == metadata['hash']).first()
-        if existing:
-            file_path.unlink()
-            print(f"Duplicate file detected: {metadata['hash']}")
-            raise HTTPException(status_code=400, detail=f"Duplicate file (already exists as media #{existing.id})")
         
         # Generate thumbnail with same UUID
         thumbnail_filename = f"{media_uuid}.jpg"
@@ -171,7 +177,7 @@ async def upload_media(
             filename=file.filename,
             path=str(relative_path),
             thumbnail_path=str(relative_thumb) if relative_thumb else None,
-            hash=metadata['hash'],
+            hash=file_hash,
             file_type=metadata['file_type'],
             mime_type=metadata['mime_type'],
             file_size=metadata['file_size'],
@@ -183,7 +189,7 @@ async def upload_media(
         
         # Add tags
         if tags:
-            tag_list = [t.strip() for t in tags.split(',') if t.strip()]
+            tag_list = [t.strip() for t in tags.split() if t.strip()]
             media.tags = get_or_create_tags(db, tag_list)
             print(f"Tags added: {tag_list}")
         
@@ -311,3 +317,95 @@ async def unshare_media(
     db.commit()
     
     return {"message": "Share removed"}
+
+@router.post("/extract-archive")
+async def extract_archive(
+    file: UploadFile = File(...),
+    current_user: User = Depends(require_admin_mode)
+):
+    """Extract files from zip or tar.gz archive"""
+    import zipfile
+    import tarfile
+    import tempfile
+    import base64
+    from pathlib import Path
+    
+    # Security: limit file size (100MB max for archives)
+    MAX_ARCHIVE_SIZE = 100 * 1024 * 1024
+    MAX_EXTRACTED_SIZE = 500 * 1024 * 1024
+    
+    contents = await file.read()
+    if len(contents) > MAX_ARCHIVE_SIZE:
+        raise HTTPException(status_code=400, detail="Archive too large (max 100MB)")
+    
+    extracted_files = []
+    total_size = 0
+    
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            archive_path = temp_path / file.filename
+            
+            # Write archive to temp file
+            with open(archive_path, 'wb') as f:
+                f.write(contents)
+            
+            # Extract based on file type
+            if file.filename.endswith('.zip'):
+                with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+                    # Security: check for path traversal
+                    for member in zip_ref.namelist():
+                        if member.startswith('/') or '..' in member:
+                            raise HTTPException(status_code=400, detail="Invalid file path in archive")
+                    
+                    zip_ref.extractall(temp_path)
+                    
+            elif file.filename.endswith(('.tar.gz', '.tgz')):
+                with tarfile.open(archive_path, 'r:gz') as tar_ref:
+                    # Security: check for path traversal
+                    for member in tar_ref.getmembers():
+                        if member.name.startswith('/') or '..' in member.name:
+                            raise HTTPException(status_code=400, detail="Invalid file path in archive")
+                    
+                    tar_ref.extractall(temp_path)
+            else:
+                raise HTTPException(status_code=400, detail="Unsupported archive format")
+            
+            # Process extracted files
+            for extracted_file in temp_path.rglob('*'):
+                if extracted_file.is_file() and extracted_file != archive_path:
+                    # Security: check total extracted size
+                    file_size = extracted_file.stat().st_size
+                    total_size += file_size
+                    
+                    if total_size > MAX_EXTRACTED_SIZE:
+                        raise HTTPException(status_code=400, detail="Extracted files too large (max 500MB)")
+                    
+                    # Read file content
+                    with open(extracted_file, 'rb') as f:
+                        file_content = f.read()
+                    
+                    # Determine MIME type
+                    import mimetypes
+                    mime_type, _ = mimetypes.guess_type(extracted_file.name)
+                    
+                    # Only include valid media files
+                    valid_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/webm']
+                    if mime_type in valid_types:
+                        extracted_files.append({
+                            'filename': extracted_file.name,
+                            'mime_type': mime_type,
+                            'content': base64.b64encode(file_content).decode('utf-8')
+                        })
+            
+            return {
+                'files': extracted_files,
+                'count': len(extracted_files)
+            }
+            
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="Invalid or corrupted zip file")
+    except tarfile.TarError:
+        raise HTTPException(status_code=400, detail="Invalid or corrupted tar.gz file")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error extracting archive: {str(e)}")
