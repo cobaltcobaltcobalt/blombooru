@@ -210,13 +210,13 @@
                             html += `
                                 <div class="ai-data-row">
                                     <span class="text-[#94a3b8]">${formatKey(subKey)}:</span>
-                                    <strong class="text-[#f1f5f9]">${formatValue(subValue)}</strong>
+                                    <div class="text-[#f1f5f9]" style="text-align: right; flex: 1;">${formatValue(subValue, true)}</div>
                                 </div>
                             `;
                         });
                         html += `</div>`;
                     } else {
-                        html += `<div class="text-[#f1f5f9] ml-2">${formatValue(value)}</div>`;
+                        html += `<div class="text-[#f1f5f9] ml-2">${formatValue(value, true)}</div>`;
                     }
 
                     html += `</div>`;
@@ -249,16 +249,23 @@
                 .replace(/Negative Prompt/g, 'Negative Prompt');
         }
 
-        function formatValue(value) {
+        function formatValue(value, isExpandable = true) {
             if (typeof value === 'boolean') {
                 return value ? 'Yes' : 'No';
             }
             if (typeof value === 'string') {
                 // Escape HTML and handle long strings
                 const escaped = value.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                // If it's a long prompt, truncate with expand option
-                if (escaped.length > 100) {
-                    return `<span class="truncate-text" title="${escaped}">${escaped.substring(0, 100)}...</span>`;
+
+                // If it's a long text, make it expandable
+                if (isExpandable && escaped.length > 100) {
+                    const id = 'expand-' + Math.random().toString(36).substr(2, 9);
+                    return `
+                        <div class="expandable-text" onclick="toggleExpand('${id}')" id="${id}-container">
+                            <span class="text-truncated" id="${id}-truncated">${escaped.substring(0, 100)}... <span class="expand-indicator">[click to expand]</span></span>
+                            <span class="text-full" id="${id}-full" style="display: none;">${escaped}</span>
+                        </div>
+                    `;
                 }
                 return escaped;
             }
@@ -266,6 +273,19 @@
                 return value.join(', ');
             }
             return String(value);
+        }
+
+        window.toggleExpand = function(id) {
+            const truncated = document.getElementById(id + '-truncated');
+            const full = document.getElementById(id + '-full');
+
+            if (full.style.display === 'none') {
+                truncated.style.display = 'none';
+                full.style.display = 'inline';
+            } else {
+                truncated.style.display = 'inline';
+                full.style.display = 'none';
+            }
         }
 
         async function loadRelatedMedia() {
