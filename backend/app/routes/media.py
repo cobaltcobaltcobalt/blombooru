@@ -7,6 +7,7 @@ import uuid
 import shutil
 import hashlib
 from pathlib import Path
+from PIL import Image
 from ..database import get_db
 from ..auth import require_admin_mode, get_current_user
 from ..models import Media, Tag, User, blombooru_media_tags
@@ -110,6 +111,61 @@ async def get_media_thumbnail(media_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Thumbnail file not found")
     
     return FileResponse(thumb_path, media_type="image/jpeg")
+
+@router.get("/{media_id}/metadata")
+async def get_media_metadata(
+    media_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get media file metadata (EXIF, parameters, etc.)"""
+    media = db.query(Media).filter(Media.id == media_id).first()
+    if not media:
+        raise HTTPException(status_code=404, detail="Media not found")
+    
+    file_path = settings.BASE_DIR / media.path
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Media file not found")
+    
+    metadata = {}
+    
+    try:
+        from PIL import Image
+        
+        with Image.open(file_path) as img:
+            # Get EXIF data if available
+            if hasattr(img, '_getexif') and img._getexif():
+                metadata['exif'] = img._getexif()
+            
+            # Get PNG text chunks (where AI params are often stored)
+            if hasattr(img, 'info'):
+                for key, value in img.info.items():
+                    # Common keys: parameters, Parameters, prompt, etc.
+                    if key.lower() in ['parameters', 'prompt', 'comment', 'usercomment']:
+                        try:
+                            # Try to parse as JSON
+                            import json
+                            metadata[key] = json.loads(value)
+                        except:
+                            # If not JSON, store as string
+                            metadata[key] = value
+            
+            # For WebP and other formats, check for XMP/EXIF
+            if hasattr(img, 'getexif'):
+                exif = img.getexif()
+                if exif:
+                    # Check for UserComment (often contains AI params)
+                    if 0x9286 in exif:  # UserComment tag
+                        try:
+                            import json
+                            metadata['parameters'] = json.loads(exif[0x9286])
+                        except:
+                            metadata['parameters'] = exif[0x9286]
+        
+        return metadata
+        
+    except Exception as e:
+        print(f"Error reading metadata: {e}")
+        return {}
 
 @router.post("/", response_model=MediaResponse)
 async def upload_media(

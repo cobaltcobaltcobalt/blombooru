@@ -248,6 +248,32 @@ input[type="radio"]:checked + span {
     font-size: 0.7rem;
 }
 
+.ai-section {
+    border-left: 2px solid #3b82f6;
+    padding-left: 0.5rem;
+}
+
+.ai-data-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.3rem 0;
+    border-bottom: 1px solid #334155;
+    gap: 0.5rem;
+}
+
+.ai-data-row:last-child {
+    border-bottom: none;
+}
+
+.ai-data-row span {
+    flex-shrink: 0;
+}
+
+.ai-data-row strong {
+    text-align: right;
+    word-break: break-word;
+}
+
 /* Share icon overlay */
 .share-icon {
     position: absolute;
