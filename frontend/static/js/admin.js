@@ -8,6 +8,7 @@ class AdminPanel {
         this.loadSettings();
         this.setupTagManagement();
         this.loadTagStats();
+        this.loadMediaStats();
     }
     
     setupEventListeners() {
@@ -206,6 +207,25 @@ class AdminPanel {
             if (totalAliasesEl) totalAliasesEl.textContent = stats.total_aliases;
         } catch (error) {
             console.error('Error loading tag stats:', error);
+        }
+    }
+
+    async loadMediaStats() {
+        try {
+            const response = await fetch('/api/admin/media-stats');
+            const stats = await response.json();
+
+            const totalMediaEl = document.getElementById('total-media');
+            const totalImagesEl = document.getElementById('total-images');
+            const totalGifsEl = document.getElementById('total-gifs');
+            const totalVideosEl = document.getElementById('total-videos');
+
+            if (totalMediaEl) totalMediaEl.textContent = stats.total_media;
+            if (totalImagesEl) totalImagesEl.textContent = stats.total_images;
+            if (totalGifsEl) totalGifsEl.textContent = stats.total_gifs;
+            if (totalVideosEl) totalVideosEl.textContent = stats.total_videos;
+        } catch (error) {
+            console.error('Error loading media stats:', error);
         }
     }
     

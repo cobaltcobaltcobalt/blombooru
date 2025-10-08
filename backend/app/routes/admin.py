@@ -276,6 +276,30 @@ async def scan_media(
     result = scan_for_new_media(db)
     return result
 
+@router.get("/media-stats")
+async def get_media_stats(
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Get media statistics"""
+    from ..models import Media
+    from sqlalchemy import func
+    
+    # Get total count
+    total_media = db.query(Media).count()
+    
+    # Get counts by file type
+    total_images = db.query(Media).filter(Media.file_type == 'image').count()
+    total_gifs = db.query(Media).filter(Media.file_type == 'gif').count()
+    total_videos = db.query(Media).filter(Media.file_type == 'video').count()
+    
+    return {
+        "total_media": total_media,
+        "total_images": total_images,
+        "total_gifs": total_gifs,
+        "total_videos": total_videos,
+    }
+
 @router.post("/import-tags-csv")
 async def import_tags_csv(
     file: UploadFile = File(...),
