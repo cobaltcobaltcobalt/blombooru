@@ -101,10 +101,16 @@ class Blombooru {
     async logout() {
         try {
             await fetch('/api/admin/logout', { method: 'POST' });
+            this.isAuthenticated = false;
             window.location.href = '/';
         } catch (error) {
             console.error('Error logging out:', error);
         }
+    }
+    
+    updateAuthStatus(isAuthenticated) {
+        this.isAuthenticated = isAuthenticated;
+        this.updateUI();
     }
     
     updateUI() {

@@ -186,21 +186,22 @@
             if (response.ok) {
                 document.getElementById('login-section').style.display = 'none';
                 document.getElementById('settings-section').style.display = 'block';
-                document.getElementById('logout-btn').style.display = 'block';
                 
+                app.updateAuthStatus(true);
                 await enableAdminMode();
                 
                 return true;
             } else {
                 document.getElementById('login-section').style.display = 'block';
                 document.getElementById('settings-section').style.display = 'none';
-                document.getElementById('logout-btn').style.display = 'none';
+                app.updateAuthStatus(false);
                 return false;
             }
         } catch (error) {
             console.error('Error checking auth:', error);
             document.getElementById('login-section').style.display = 'block';
             document.getElementById('settings-section').style.display = 'none';
+            app.updateAuthStatus(false);
             return false;
         }
     }
@@ -220,7 +221,17 @@
             console.error('Error enabling admin mode:', error);
         }
     }
+
+    async function hideAdminPanelButton() {
+        const isAuthenticated = await checkAuth();
+        if (isAuthenticated) {
+            document.getElementById('admin-mode-toggle').parentElement.style.display = 'none';
+        } else {
+            document.getElementById('admin-mode-toggle').parentElement.style.display = 'block';
+        }
+    }
     
+    hideAdminPanelButton();
     checkAuth();
 </script>
 {% endblock %}
