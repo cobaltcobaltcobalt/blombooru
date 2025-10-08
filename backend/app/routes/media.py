@@ -5,6 +5,7 @@ from sqlalchemy import desc, text, or_, and_
 from typing import List, Optional
 import uuid
 import shutil
+import hashlib
 from pathlib import Path
 from ..database import get_db
 from ..auth import require_admin_mode, get_current_user
