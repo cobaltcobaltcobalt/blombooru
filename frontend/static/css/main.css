@@ -263,7 +263,7 @@ input[type="radio"]:checked + span:hover {
 }
 
 .expandable-text:hover {
-    background-color: color-mix(in srgb, var(--primary-color) 20%, var(--surface));
+    background-color: color-mix(in srgb, var(--primary-color) 20%, transparent);
 }
 
 .expand-indicator {
@@ -418,7 +418,7 @@ input[type="radio"]:checked + span:hover {
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(15, 23, 42, 0.95);
+    background: color-mix(in srgb, var(--background) 95%, transparent);
     display: flex;
     align-items: center;
     justify-content: center;
