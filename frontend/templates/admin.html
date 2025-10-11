@@ -4,41 +4,41 @@
 
 {% block content %}
 <div class="container mx-auto px-4 py-4 max-w-4xl">
-    <h1 class="text-lg font-bold mb-4 pb-3 border-b border-[#334155]">Admin Panel</h1>
+    <h1 class="text-lg font-bold mb-4 pb-3 border-b">Admin Panel</h1>
     
     <div id="admin-panel">
         <!-- Login Section (if not logged in) -->
         <div id="login-section">
-            <div class="bg-[#1e293b] p-6 border border-[#334155] max-w-md">
+            <div class="surface p-6 border max-w-md">
                 <h2 class="text-base font-bold mb-4">Login</h2>
                 
-                <div id="login-error" style="display: none;" class="bg-red-600 text-white p-3 mb-4 text-xs"></div>
+                <div id="login-error" style="display: none;" class="bg-[var(--danger)] tag-text p-3 mb-4 text-xs"></div>
                 
                 <form id="login-form">
                     <div class="mb-4">
                         <label class="block text-xs font-bold mb-2">Username</label>
-                        <input type="text" id="username" required autocomplete="username" class="w-full px-3 py-2 bg-[#0f172a] border border-[#334155] text-xs focus:outline-none focus:border-blue-500">
+                        <input type="text" id="username" required autocomplete="username" class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-[var(--primary-color)]">
                     </div>
                     
                     <div class="mb-4">
                         <label class="block text-xs font-bold mb-2">Password</label>
-                        <input type="password" id="password" required autocomplete="current-password" class="w-full px-3 py-2 bg-[#0f172a] border border-[#334155] text-xs focus:outline-none focus:border-blue-500">
+                        <input type="password" id="password" required autocomplete="current-password" class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-[var(--primary-color)]">
                     </div>
                     
-                    <button type="submit" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs">Login</button>
+                    <button type="submit" class="w-full px-4 py-2 bg-[var(--primary-color)] text-[var(--primary-text)] hover:bg-[var(--primary-hover)] text-xs">Login</button>
                 </form>
             </div>
         </div>
         
         <!-- Settings Section -->
         <div id="settings-section" style="display: none;">
-            <div class="bg-[#1e293b] p-6 border border-[#334155] mb-4">
-                <h2 class="text-base font-bold mb-4 pb-3 border-b border-[#334155]">Settings</h2>
+            <div class="surface p-6 border mb-4">
+                <h2 class="text-base font-bold mb-4 pb-3 border-b">Settings</h2>
                 
                 <form id="settings-form">
                     <div class="mb-4">
                         <label class="block text-xs font-bold mb-2">Application Name</label>
-                        <input type="text" id="app-name" name="app_name" class="w-full px-3 py-2 bg-[#0f172a] border border-[#334155] text-xs focus:outline-none focus:border-blue-500">
+                        <input type="text" id="app-name" name="app_name" class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-[var(--primary-color)]">
                     </div>
                     
                     <div class="mb-4">
@@ -46,56 +46,56 @@
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
                             <label class="flex-1">
                                 <input type="radio" name="default-rating" value="safe" class="hidden">
-                                <span class="block text-center px-3 py-2 border-2 border-[#334155] cursor-pointer hover:bg-[#334155] transition-colors text-xs">Safe Only</span>
+                                <span class="block text-center px-3 py-2 border-2 cursor-pointer surface-hover transition-colors text-xs">Safe Only</span>
                             </label>
                             <label class="flex-1">
                                 <input type="radio" name="default-rating" value="questionable" class="hidden">
-                                <span class="block text-center px-3 py-2 border-2 border-[#334155] cursor-pointer hover:bg-[#334155] transition-colors text-xs">Safe + Questionable</span>
+                                <span class="block text-center px-3 py-2 border-2 cursor-pointer surface-hover transition-colors text-xs">Safe + Questionable</span>
                             </label>
                             <label class="flex-1">
                                 <input type="radio" name="default-rating" value="explicit" class="hidden">
-                                <span class="block text-center px-3 py-2 border-2 border-[#334155] cursor-pointer hover:bg-[#334155] transition-colors text-xs">All Ratings</span>
+                                <span class="block text-center px-3 py-2 border-2 cursor-pointer surface-hover transition-colors text-xs">All Ratings</span>
                             </label>
                         </div>
                     </div>
 
                     <div class="mb-4">
                         <label class="block text-xs font-bold mb-2">Theme</label>
-                        <select id="theme-select" name="theme" class="w-full px-3 py-2 bg-[#0f172a] border border-[#334155] text-xs focus:outline-none focus:border-blue-500">
+                        <select id="theme-select" name="theme" class="w-full px-3 py-2 bg border text-xs focus:outline-none focus:border-[var(--primary-color)]">
                             <option value="">Loading themes...</option>
                         </select>
                     </div>
                     
-                    <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs">Save Settings</button>
+                    <button type="submit" class="px-4 py-2 bg-[var(--primary-color)] text-[var(--primary-text)] hover:bg-[var(--primary-hover)] text-xs">Save Settings</button>
                 </form>
             </div>
 
             <!-- Media Management Section -->
-            <div class="bg-[#1e293b] p-6 border border-[#334155] mb-4">
-                <h2 class="text-base font-bold mb-4 pb-3 border-b border-[#334155]">Media Management</h2>
+            <div class="surface p-6 border mb-4">
+                <h2 class="text-base font-bold mb-4 pb-3 border-b">Media Management</h2>
                 <div id="media-stats" class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-                    <div class="bg-[#0f172a] p-3 border border-[#334155]">
-                        <div class="text-xs text-[#94a3b8]">Total Media</div>
+                    <div class="bg p-3 border">
+                        <div class="text-xs text-secondary">Total Media</div>
                         <div class="text-lg font-bold" id="total-media">0</div>
                     </div>
-                    <div class="bg-[#0f172a] p-3 border border-[#334155]">
-                        <div class="text-xs text-[#94a3b8]">Total Images</div>
+                    <div class="bg p-3 border">
+                        <div class="text-xs text-secondary">Total Images</div>
                         <div class="text-lg font-bold" id="total-images">0</div>
                     </div>
-                    <div class="bg-[#0f172a] p-3 border border-[#334155]">
-                        <div class="text-xs text-[#94a3b8]">Total GIFs</div>
+                    <div class="bg p-3 border">
+                        <div class="text-xs text-secondary">Total GIFs</div>
                         <div class="text-lg font-bold" id="total-gifs">0</div>
                     </div>
-                    <div class="bg-[#0f172a] p-3 border border-[#334155]">
-                        <div class="text-xs text-[#94a3b8]">Total Videos</div>
+                    <div class="bg p-3 border">
+                        <div class="text-xs text-secondary">Total Videos</div>
                         <div class="text-lg font-bold" id="total-videos">0</div>
                     </div>
                 </div>
 
                 <div class="pt-4">
                     <h3 class="text-sm font-bold mb-3">Upload Media</h3>
-                    <button id="scan-media-btn" class="px-4 py-2 w-full bg-blue-600 hover:bg-blue-700 text-white text-xs mb-4">Scan for Untracked Media</button>
-                    <div id="upload-area" class="upload-area bg-[#0f172a] mb-4">
+                    <button id="scan-media-btn" class="px-4 py-2 w-full bg-[var(--primary-color)] text-[var(--primary-text)] hover:bg-[var(--primary-hover)] text-xs mb-4">Scan for Untracked Media</button>
+                    <div id="upload-area" class="upload-area bg mb-4">
                         <p class="text-xs">Drop media files here or click to browse</p>
                         <input type="file" id="file-input" multiple accept="image/*,video/*,.zip,.tar.gz,.tgz">
                     </div>
@@ -108,28 +108,28 @@
             </div>
 
             <!-- Tags Management Section -->
-            <div class="bg-[#1e293b] p-6 border border-[#334155] mb-4">
-                <h2 class="text-base font-bold mb-4 pb-3 border-b border-[#334155]">Tags Management</h2>
+            <div class="surface p-6 border mb-4">
+                <h2 class="text-base font-bold mb-4 pb-3 border-b">Tags Management</h2>
                 
                 <div id="tag-stats" class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-                    <div class="bg-[#0f172a] p-3 border border-[#334155]">
-                        <div class="text-xs text-[#94a3b8]">Total Tags</div>
+                    <div class="bg p-3 border">
+                        <div class="text-xs text-secondary">Total Tags</div>
                         <div class="text-lg font-bold" id="total-tags">0</div>
                     </div>
-                    <div class="bg-[#0f172a] p-3 border border-[#334155]">
-                        <div class="text-xs text-[#94a3b8]">Tag Aliases</div>
+                    <div class="bg p-3 border">
+                        <div class="text-xs text-secondary">Tag Aliases</div>
                         <div class="text-lg font-bold" id="total-aliases">0</div>
                     </div>
-                    <div class="bg-[#0f172a] p-3 border border-[#334155]">
-                        <div class="text-xs text-[#94a3b8]">Categories</div>
+                    <div class="bg p-3 border">
+                        <div class="text-xs text-secondary">Categories</div>
                         <div class="text-lg font-bold" id="total-categories">5</div>
                     </div>
                 </div>
                 
                 <div class="mb-4">
                     <h3 class="text-sm font-bold mb-3">Import Tags from CSV</h3>
-                    <div class="bg-[#0f172a] p-4 border border-[#334155]">
-                        <p class="text-xs text-[#94a3b8] mb-3">
+                    <div class="bg p-4 border">
+                        <p class="text-xs text-secondary mb-3">
                             Upload a CSV file with the following format:<br>
                             <code>tag_name, category_number, usage_count, "alias1,alias2,alias3"</code><br>
                             Categories: 0=General, 1=Artist, 3=Copyright, 4=Character, 5=Meta
@@ -152,16 +152,16 @@
                     <h3 class="text-sm font-bold mb-3">Search & Manage Tags</h3>
                     <div class="flex gap-2 mb-3">
                         <div class="w-full">
-                            <input type="text" id="tag-search-input" placeholder="Search tags..." class="flex-1 w-full px-3 py-2 bg-[#0f172a] border border-[#334155] text-xs focus:outline-none focus:border-blue-500">
+                            <input type="text" id="tag-search-input" placeholder="Search tags..." class="flex-1 w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-[var(--primary-color)]">
                         </div>
-                        <button id="tag-search-btn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs">Search</button>
+                        <button id="tag-search-btn" class="px-4 py-2 bg-[var(--primary-color)] text-[var(--primary-text)] hover:bg-[var(--primary-hover)] text-xs">Search</button>
                     </div>
                     <div id="tag-search-results" class="max-h-64 overflow-y-auto"></div>
                 </div>
                 
-                <div class="border-t border-[#334155] pt-4">
-                    <h3 class="text-sm font-bold mb-3 text-red-500">Danger Zone</h3>
-                    <button id="clear-tags-btn" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs">Delete All Tags</button>
+                <div class="border-t pt-4">
+                    <h3 class="text-sm font-bold mb-3 text-[var(--danger)]">Danger Zone</h3>
+                    <button id="clear-tags-btn" class="px-4 py-2 bg-[var(--danger)] hover:bg-[var(--danger-hover)] tag-text text-xs">Delete All Tags</button>
                 </div>
             </div>
         </div>

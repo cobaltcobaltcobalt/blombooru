@@ -59,9 +59,9 @@
     </script>
     {% block extra_css %}{% endblock %}
 </head>
-<body class="bg-[#0f172a] text-[#f1f5f9] text-xs flex flex-col min-h-screen">
+<body class="bg text text-xs flex flex-col min-h-screen">
     {% block header %}
-    <header class="bg-[#1e293b] border-b border-[#334155]">
+    <header class="surface border-b">
         <div class="container mx-auto px-4 py-2">
             <div class="flex items-center justify-between gap-4">
                 <a href="/" class="text-lg font-bold text-blue-500 hover:text-blue-400">
@@ -78,7 +78,7 @@
                             name="q" 
                             placeholder="Search tags... (e.g., cat_ears -dog)"
                             value="{{ request.query_params.get('q', '') }}"
-                            class="w-full px-3 py-1 bg-[#0f172a] border border-[#334155] text-[#f1f5f9] text-xs focus:outline-none focus:border-blue-500"
+                            class="w-full bg px-3 py-1 border text text-xs focus:outline-none focus:border-[var(--primary-color)]"
                         >
                     </form>
                 </div>
@@ -86,11 +86,11 @@
                 <nav>
                     <ul class="flex items-center gap-4 text-xs">
                         <li>
-                            <a href="#" id="admin-mode-toggle" class="text-[#94a3b8] hover:text-[#f1f5f9]">
+                            <a href="#" id="admin-mode-toggle" class="text-secondary hover:text">
                                 <span id="admin-mode-text">Admin Panel</span>
                             </a>
                         </li>
-                        <li><a href="#" id="logout-btn" style="display: none;" class="text-[#94a3b8] hover:text-[#f1f5f9]">Logout</a></li>
+                        <li><a href="#" id="logout-btn" style="display: none;" class="text-secondary hover:text">Logout</a></li>
                     </ul>
                 </nav>
             </div>
@@ -102,7 +102,7 @@
                         name="q" 
                         placeholder="Search tags... (e.g., cat_ears -dog)"
                         value="{{ request.query_params.get('q', '') }}"
-                        class="w-full px-3 py-1 bg-[#0f172a] border border-[#334155] text-[#f1f5f9] text-xs focus:outline-none focus:border-blue-500"
+                        class="w-full bg px-3 py-1 border text text-xs focus:outline-none focus:border-[var(--primary-color)]"
                     >
                 </form>
             </div>
@@ -115,17 +115,17 @@
     </main>
     
     {% block footer %}
-    <footer class="bg-[#1e293b] border-t border-[#334155] mt-8">
+    <footer class="surface border-t mt-8">
         <div class="container mx-auto px-4 py-6">
             <div class="flex flex-col md:flex-row justify-between items-center gap-4">
-                <div class="text-[#94a3b8] text-xs">
-                    <p>&copy;  {{ app_name }} {{ get_current_year() }}. Powered by <a href="https://github.com/mrblomblo/blombooru" class="text-blue-500 hover:text-blue-400" target="_blank">Blombooru</a>.</p>
+                <div class="text-secondary text-xs">
+                    <p>&copy;  {{ app_name }} {{ get_current_year() }}. Powered by <a href="https://github.com/mrblomblo/blombooru" class="text-[var(--primary-color)] hover:text-[var(--primary-hover)]" target="_blank">Blombooru</a>.</p>
                 </div>
                 
                 <div class="flex gap-4 text-xs">
-                    <a href="https://github.com/mrblomblo/blombooru" class="text-[#94a3b8] hover:text-[#f1f5f9]" target="_blank">GitHub</a>
-                    <span class="text-[#334155]">&#x2022;</span>
-                    <a href="#" class="text-[#94a3b8] hover:text-[#f1f5f9]" onclick="window.scrollTo({top: 0, behavior: 'smooth'}); return false;">Back to Top</a>
+                    <a href="https://github.com/mrblomblo/blombooru" class="text-secondary hover:text-[var(--primary-color)]" target="_blank">GitHub</a>
+                    <span class="text-tertiary">&#x2022;</span>
+                    <a href="#" class="text-secondary hover:text-[var(--primary-color)]" onclick="window.scrollTo({top: 0, behavior: 'smooth'}); return false;">Back to Top</a>
                 </div>
             </div>
         </div>

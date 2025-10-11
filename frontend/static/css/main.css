@@ -15,6 +15,7 @@ body {
 input[type="radio"]:checked + span {
     border-color: var(--primary-color);
     background-color: var(--primary-color);
+    color: var(--primary-text);
 }
 
 input[type="radio"]:checked + span:hover {
@@ -142,7 +143,7 @@ input[type="radio"]:checked + span:hover {
 }
 
 .gallery-item.gif {
-    outline-color: var(--warning);
+    outline-color: var(--orange);
 }
 
 .gallery-item.selected {
@@ -181,9 +182,7 @@ input[type="radio"]:checked + span:hover {
 }
 
 .popular-tag-name:hover {
-    color: var(--primary-color);
     cursor: pointer;
-    text-decoration: underline;
 }
 
 .popular-tag-count {
@@ -290,8 +289,8 @@ input[type="radio"]:checked + span:hover {
     position: absolute;
     top: 0.25rem;
     right: 0.25rem;
-    background-color: var(--warning);
-    color: var(--black);
+    background-color: var(--primary-color);
+    color: var(--primary-text);
     padding: 0.2rem 0.4rem;
     font-size: 0.65rem;
     font-weight: 600;
@@ -424,3 +423,16 @@ input[type="radio"]:checked + span:hover {
     justify-content: center;
     z-index: 9999;
 }
+
+/* Color stuff */
+.surface { background-color: var(--surface); }
+.surface-hover:hover { background-color: var(--surface-hover); }
+.surface-light { background-color: var(--surface-light); }
+.surface-light-hover:hover { background-color: var(--surface-light-hover); }
+.text { color: var(--text); }
+.text-secondary { color: var(--text-secondary); }
+.text-tertiary { color: var(--text-tertiary); }
+.tag-text { color: var(--tag-text); }
+.primary-text { color: var(--primary-text); }
+.border, .border-t, .border-r, .border-b, .border-l, .border-x, .border-y, .border-1, .border-2, .border-3, .border-4, .border-5 { border-color: var(--border); }
+.bg { background-color: var(--background); }

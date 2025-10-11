@@ -162,7 +162,7 @@ class Gallery {
             .slice(0, 20);
         
         if (sortedTags.length === 0) {
-            this.popularTagsContainer.innerHTML = '<p class="text-[#94a3b8]">No tags found</p>';
+            this.popularTagsContainer.innerHTML = '<p class="text-secondary">No tags found</p>';
             return;
         }
         
@@ -197,7 +197,7 @@ class Gallery {
             
             return `
                 <div class="popular-tag-item ${activeClass}">
-                    <a href="/?${params.toString()}" class="popular-tag-name tag ${data.category}" ${isInQuery ? 'style="pointer-events: none;"' : ''}>${tagName}</a>
+                    <a href="/?${params.toString()}" class="popular-tag-name tag ${data.category} tag-text" ${isInQuery ? 'style="pointer-events: none;"' : ''}>${tagName}</a>
                     <span class="popular-tag-count">${data.count}</span>
                 </div>
             `;
@@ -331,7 +331,7 @@ class Gallery {
         `;
         
         if (this.popularTagsContainer) {
-            this.popularTagsContainer.innerHTML = '<p class="text-[#94a3b8]">No tags found</p>';
+            this.popularTagsContainer.innerHTML = '<p class="text-secondary">No tags found</p>';
         }
     }
     

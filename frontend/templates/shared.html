@@ -7,39 +7,73 @@
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="/static/css/main.css">
+    <link id="theme-stylesheet" rel="stylesheet" href="">
     <script>
-        tailwind.config = {
+        // Load theme on page load
+        (async function loadTheme() {
+            try {
+                const response = await fetch('/api/admin/current-theme');
+                const theme = await response.json();
+
+                const themeLink = document.getElementById('theme-stylesheet');
+                if (themeLink && theme.css_path) {
+                    themeLink.href = theme.css_path;
+                }
+            } catch (error) {
+                console.error('Error loading theme:', error);
+                // Fallback to default dark theme
+                const themeLink = document.getElementById('theme-stylesheet');
+                if (themeLink) {
+                    themeLink.href = '/static/css/themes/default_dark.css';
+                }
+            }
+        })();
+
+        tailwind.exports = {
             theme: {
                 extend: {
                     colors: {
-                        primary: '#3b82f6',
-                        'primary-hover': '#2563eb',
-                        background: '#0f172a',
-                        surface: '#1e293b',
-                        'surface-hover': '#334155',
-                        border: '#334155',
+                        primary: {
+                            DEFAULT: 'var(--primary-color)',
+                            hover: 'var(--primary-hover)',
+                        },
+                        background: 'var(--background)',
+                        surface: {
+                            DEFAULT: 'var(--surface)',
+                            light: 'var(--surface-light)',
+                        },
+                        text: {
+                            DEFAULT: 'var(--text)',
+                            secondary: 'var(--text-secondary)',
+                        },
+                        border: 'var(--border)',
+                        white: 'var(--white)',
+                        black: 'var(--black)',
+                        green: 'var(--green)',
+                        orange: 'var(--orange)',
+                        red: 'var(--red)',
                     }
                 }
             }
         }
     </script>
 </head>
-<body class="bg-[#0f172a] text-[#f1f5f9] text-xs">
+<body class="bg text text-xs">
     <!-- Age Verification Overlay -->
     <div id="age-verification-overlay" class="age-verification-overlay" style="display: none;">
-        <div class="bg-[#1e293b] border-2 border-red-600 p-8 max-w-md text-center">
+        <div class="surface border-2 border-[var(--danger)] p-8 max-w-md text-center">
             <svg class="mx-auto mb-4" width="64" height="64" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="#dc2626"/>
             </svg>
-            <h2 class="text-xl font-bold mb-4 text-red-500">Explicit Content Warning</h2>
-            <p class="text-base mb-6 text-[#f1f5f9]">
+            <h2 class="text-xl font-bold mb-4 text-[var(--danger)]">Explicit Content Warning</h2>
+            <p class="text-base mb-6 text">
                 This media contains explicit content. By clicking "Yes, I am 18+", you confirm that you are over the age of 18 and consent to viewing adult content.
             </p>
             <div class="flex gap-4 justify-center">
-                <button id="age-confirm-yes" class="px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-bold text-sm">
+                <button id="age-confirm-yes" class="px-6 py-3 bg-[var(--success)] hover:bg-[var(--success)] tag-text font-bold text-sm">
                     Yes, I am 18+
                 </button>
-                <button id="age-confirm-no" class="px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-bold text-sm">
+                <button id="age-confirm-no" class="px-6 py-3 bg-[var(--danger)] hover:bg-[var(--danger-hover)] tag-text font-bold text-sm">
                     No, I am not 18
                 </button>
             </div>
@@ -47,7 +81,7 @@
     </div>
 
     <div class="container mx-auto px-4 py-4">
-        <div class="bg-amber-600 text-black p-3 mb-4 flex items-center gap-2 text-xs">
+        <div class="bg-[var(--primary-color)] text-[var(--primary-text)] p-3 mb-4 flex items-center gap-2 text-xs">
             <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/>
             </svg>
@@ -81,7 +115,7 @@
                 document.getElementById('shared-content').innerHTML = `
                     <div class="text-center py-16">
                         <h2 class="text-lg font-bold mb-2">Content Not Found</h2>
-                        <p class="text-xs text-[#94a3b8]">This shared link is invalid or has been removed.</p>
+                        <p class="text-xs text-secondary">This shared link is invalid or has been removed.</p>
                     </div>
                 `;
             }
@@ -123,7 +157,7 @@
             container.innerHTML = `
                 <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
                     <div class="lg:col-span-3">
-                        <div class="bg-[#1e293b] p-4 border border-[#334155] text-center">
+                        <div class="surface p-4 border text-center">
                             ${media.file_type === 'video' ? `
                                 <video controls style="max-width: 100%; max-height: 80vh; margin: 0 auto;">
                                     <source src="/api/shared/${shareUuid}/file" type="${media.mime_type}">
@@ -135,25 +169,25 @@
                     </div>
 
                     <div class="lg:col-span-1">
-                        <div class="bg-[#1e293b] p-3 border border-[#334155] mb-4">
-                            <h3 class="text-sm font-bold mb-3 pb-2 border-b border-[#334155]">Information</h3>
+                        <div class="surface p-3 border mb-4">
+                            <h3 class="text-sm font-bold mb-3 pb-2 border-b">Information</h3>
                             <div id="media-info-content" class="text-xs"></div>
                         </div>
 
-                        <div class="bg-[#1e293b] p-3 border border-[#334155] mb-4">
-                            <h3 class="text-sm font-bold mb-3 pb-2 border-b border-[#334155]">Tags</h3>
+                        <div class="surface p-3 border mb-4">
+                            <h3 class="text-sm font-bold mb-3 pb-2 border-b">Tags</h3>
                             <div id="tags-container"></div>
                         </div>
 
-                        <div id="ai-metadata-section" style="display: none;" class="bg-[#1e293b] p-3 border border-[#334155] mb-4">
-                            <h3 class="text-sm font-bold mb-3 pb-2 border-b border-[#334155]">AI Generation Data</h3>
+                        <div id="ai-metadata-section" style="display: none;" class="surface p-3 border mb-4">
+                            <h3 class="text-sm font-bold mb-3 pb-2 border-b">AI Generation Data</h3>
                             <div id="ai-metadata-content" class="text-xs"></div>
                         </div>
 
-                        <div class="bg-[#1e293b] p-3 border border-[#334155]">
-                            <h3 class="text-sm font-bold mb-3 pb-2 border-b border-[#334155]">Actions</h3>
+                        <div class="surface p-3 border">
+                            <h3 class="text-sm font-bold mb-3 pb-2 border-b">Actions</h3>
                             <div class="space-y-2">
-                                <a id="download-btn" href="/api/shared/${shareUuid}/file" download="${media.filename}" class="block w-full px-3 py-2 bg-[#334155] hover:bg-[#475569] text-white text-center text-xs">
+                                <a id="download-btn" href="/api/shared/${shareUuid}/file" download="${media.filename}" class="block w-full px-3 py-2 surface-light surface-light-hover text text-center text-xs">
                                     Download
                                 </a>
                             </div>
@@ -192,12 +226,12 @@
                     <div class="tag-category">
                       <h4>${cat}</h4>
                       <div class="tag-list">
-                        ${tags.map(t => `<span class="tag ${cat}">${t.name}</span>`).join('')}
+                        ${tags.map(t => `<span class="tag ${cat} tag-text">${t.name}</span>`).join('')}
                       </div>
                     </div>
                 `;
             });
-            c.innerHTML = html || '<p class="text-xs text-[#94a3b8]">No tags</p>';
+            c.innerHTML = html || '<p class="text-xs text-secondary">No tags</p>';
         }
 
         async function renderAIMetadata(m) {
@@ -248,21 +282,21 @@
                     const sectionTitle = formatKey(key);
                 
                     html += `<div class="ai-section mb-3">`;
-                    html += `<h4 class="text-xs font-bold text-blue-400 mb-2">${sectionTitle}</h4>`;
+                    html += `<h4 class="text-xs font-bold text-[var(--primary-color)] mb-2">${sectionTitle}</h4>`;
                     
                     if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
                         html += `<div class="ml-2">`;
                         Object.entries(value).forEach(([subKey, subValue]) => {
                             html += `
                                 <div class="ai-data-row">
-                                    <span class="text-[#94a3b8]">${formatKey(subKey)}:</span>
-                                    <div class="text-[#f1f5f9]" style="text-align: right; flex: 1;">${formatValue(subValue, true)}</div>
+                                    <span class="text-secondary">${formatKey(subKey)}:</span>
+                                    <div class="text" style="text-align: right; flex: 1;">${formatValue(subValue, true)}</div>
                                 </div>
                             `;
                         });
                         html += `</div>`;
                     } else {
-                        html += `<div class="text-[#f1f5f9] ml-2">${formatValue(value, true)}</div>`;
+                        html += `<div class="text ml-2">${formatValue(value, true)}</div>`;
                     }
                 
                     html += `</div>`;

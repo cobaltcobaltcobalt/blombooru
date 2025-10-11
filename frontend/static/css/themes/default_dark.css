@@ -3,9 +3,14 @@
     --primary-hover: #2563eb;
     --background: #0f172a;
     --surface: #1e293b;
+    --surface-hover: #334155;
     --surface-light: #334155;
+    --surface-light-hover: #475569;
     --text: #f1f5f9;
     --text-secondary: #94a3b8;
+    --text-tertiary: #475569;
+    --tag-text: #f1f5f9;
+    --primary-text: #f1f5f9;
     --border: #334155;
 
     --white: #ffffff;
@@ -13,6 +18,7 @@
     --green: #10b981;
     --orange: #f59e0b;
     --red: #ef4444;
+    --blue: #3b82f6;
     
     --tag-artist: #ab2c41;
     --tag-character: #107452;
@@ -21,8 +27,11 @@
     --tag-meta: #a46800;
     
     --success: var(--green);
+    --success-hover: color-mix(in srgb, var(--success) 70%, var(--background));
     --warning: var(--orange);
+    --warning-hover: color-mix(in srgb, var(--warning) 70%, var(--background));
     --danger: var(--red);
+    --danger-hover: color-mix(in srgb, var(--danger) 70%, var(--background));
 
     --rating-safe: var(--green);
     --rating-questionable: var(--orange);

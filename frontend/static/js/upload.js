@@ -55,14 +55,14 @@ class Uploader {
         // Create base controls container
         const controlsDiv = document.createElement('div');
         controlsDiv.id = 'base-controls';
-        controlsDiv.className = 'bg-[#0f172a] p-4 border border-[#334155] mb-4';
+        controlsDiv.className = 'bg p-4 border mb-4';
         controlsDiv.style.display = 'none';
         controlsDiv.innerHTML = `
             <h3 class="text-sm font-bold mb-3">Base Settings (applies to all media)</h3>
             
             <div class="mb-4">
                 <label class="block text-xs font-bold mb-2">Base Rating</label>
-                <select id="base-rating" class="w-full px-3 py-2 bg-[#0f172a] border border-[#334155] text-xs focus:outline-none focus:border-blue-500">
+                <select id="base-rating" class="w-full px-3 py-2 bg border text-xs focus:outline-none focus:border-[var(--primary-color)]">
                     <option value="safe">Safe</option>
                     <option value="questionable">Questionable</option>
                     <option value="explicit">Explicit</option>
@@ -71,7 +71,7 @@ class Uploader {
             
             <div class="mb-4">
                 <label class="block text-xs font-bold mb-2">Base Tags (prefixed to all media)</label>
-                <input type="text" id="base-tags" class="tag-input w-full px-3 py-2 bg-[#0f172a] border border-[#334155] text-xs focus:outline-none focus:border-blue-500" placeholder="tag1 tag2 tag3">
+                <input type="text" id="base-tags" class="tag-input w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-[var(--primary-color)]" placeholder="tag1 tag2 tag3">
             </div>
         `;
         
@@ -101,16 +101,16 @@ class Uploader {
         gridDiv.id = 'preview-grid';
         gridDiv.style.display = 'none';
         gridDiv.innerHTML = `
-            <div class="bg-[#0f172a] p-4 border border-[#334155] mb-4">
+            <div class="bg p-4 border mb-4">
                 <h3 class="text-sm font-bold mb-3">Uploaded Media (click to edit individual rating and tags)</h3>
                 <div id="preview-thumbnails" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2 mb-4"></div>
                 
-                <div id="individual-controls" style="display: none;" class="border-t border-[#334155] pt-4">
+                <div id="individual-controls" style="display: none;" class="border-t pt-4">
                     <h4 class="text-xs font-bold mb-3">Editing: <span id="current-filename"></span></h4>
                     
                     <div class="mb-3">
                         <label class="block text-xs font-bold mb-2">Individual Rating</label>
-                        <select id="individual-rating" class="w-full px-3 py-2 bg-[#0f172a] border border-[#334155] text-xs focus:outline-none focus:border-blue-500">
+                        <select id="individual-rating" class="w-full px-3 py-2 bg border text-xs focus:outline-none focus:border-[var(--primary-color)]">
                             <option value="safe">Safe</option>
                             <option value="questionable">Questionable</option>
                             <option value="explicit">Explicit</option>
@@ -119,14 +119,14 @@ class Uploader {
                     
                     <div class="mb-3">
                         <label class="block text-xs font-bold mb-2">Additional Tags (base tags are prefixed automatically)</label>
-                        <input type="text" id="individual-tags" class="tag-input w-full px-3 py-2 bg-[#0f172a] border border-[#334155] text-xs focus:outline-none focus:border-blue-500" placeholder="additional_tag1 additional_tag2">
+                        <input type="text" id="individual-tags" class="tag-input w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-[var(--primary-color)]" placeholder="additional_tag1 additional_tag2">
                     </div>
                     
-                    <div class="text-xs text-[#94a3b8] mb-2">
-                        Final tags: <span id="final-tags-preview" class="text-white"></span>
+                    <div class="text-xs text-secondary mb-2">
+                        Final tags: <span id="final-tags-preview" class="text"></span>
                     </div>
                     
-                    <button id="remove-media-btn" class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white text-xs">Remove This Media</button>
+                    <button id="remove-media-btn" class="px-3 py-2 bg-[var(--danger)] hover:bg-[var(--danger-hover)] tag-text text-xs">Remove This Media</button>
                 </div>
             </div>
         `;
@@ -170,8 +170,8 @@ class Uploader {
         submitDiv.style.display = 'none';
         submitDiv.className = 'flex gap-2';
         submitDiv.innerHTML = `
-            <button id="cancel-all-btn" class="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white text-xs">Cancel & Clear All</button>
-            <button id="submit-all-btn" class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold">Submit All Media</button>
+            <button id="cancel-all-btn" class="flex-1 px-4 py-2 bg-[var(--surface-light)] hover:bg-[var(--surface-light-hover)] text text-xs">Cancel & Clear All</button>
+            <button id="submit-all-btn" class="flex-1 px-4 py-2 bg-[var(--primary-color)] text-[var(--primary-text)] hover:bg-[var(--primary-hover)] text-xs font-bold">Submit All Media</button>
         `;
         
         document.getElementById('preview-grid').parentNode.insertBefore(submitDiv, document.getElementById('preview-grid').nextSibling);
@@ -236,7 +236,7 @@ class Uploader {
     async handleArchive(archiveFile) {
         // Show loading indicator
         const loadingDiv = document.createElement('div');
-        loadingDiv.className = 'bg-blue-600 text-white p-2 mb-2 text-xs';
+        loadingDiv.className = 'bg-[var(--primary-color)] text-[var(--primary-text)] p-2 mb-2 text-xs';
         loadingDiv.textContent = `Extracting ${archiveFile.name}...`;
         this.uploadArea.parentNode.insertBefore(loadingDiv, this.uploadArea.nextSibling);
         
@@ -293,7 +293,7 @@ class Uploader {
             
         } catch (error) {
             console.error('Archive extraction error:', error);
-            loadingDiv.className = 'bg-red-600 text-white p-2 mb-2 text-xs';
+            loadingDiv.className = 'bg-[var(--danger)] tag-text p-2 mb-2 text-xs';
             loadingDiv.textContent = `✗ Error extracting ${archiveFile.name}: ${error.message}`;
             setTimeout(() => loadingDiv.remove(), 5000);
         }
@@ -310,7 +310,7 @@ class Uploader {
     createPreview(fileData, index) {
         const container = document.getElementById('preview-thumbnails');
         const thumbnailDiv = document.createElement('div');
-        thumbnailDiv.className = 'relative cursor-pointer border-2 border-[#334155] hover:border-blue-500 transition-colors';
+        thumbnailDiv.className = 'relative cursor-pointer border-2 hover:border-[var(--primary-color)] transition-colors';
         thumbnailDiv.dataset.index = index;
         
         const isVideo = fileData.file.type.startsWith('video/');
@@ -330,13 +330,13 @@ class Uploader {
         
         // Add indicator overlay
         const indicator = document.createElement('div');
-        indicator.className = 'absolute top-0 right-0 bg-black bg-opacity-75 px-1 text-xs';
+        indicator.className = 'absolute top-0 right-0 bg-[var(--surface)] bg-opacity-75 px-1 text-xs';
         indicator.innerHTML = `<span class="rating-indicator">${fileData.rating[0].toUpperCase()}</span>`;
         thumbnailDiv.appendChild(indicator);
         
         // Add tags indicator
         const tagsIndicator = document.createElement('div');
-        tagsIndicator.className = 'absolute bottom-0 left-0 right-0 bg-black bg-opacity-75 px-1 text-xs truncate tags-indicator';
+        tagsIndicator.className = 'absolute bottom-0 left-0 right-0 bg-[var(--surface)] bg-opacity-75 px-1 text-xs truncate tags-indicator';
         tagsIndicator.textContent = this.getFullTags(fileData).join(' ') || 'No tags';
         thumbnailDiv.appendChild(tagsIndicator);
         
@@ -361,11 +361,11 @@ class Uploader {
         // Update UI
         document.querySelectorAll('#preview-thumbnails > div').forEach((div, i) => {
             if (i === index) {
-                div.classList.add('border-blue-500');
-                div.classList.remove('border-[#334155]');
+                div.classList.add('border-[var(--primary-color)]');
+                div.classList.remove('border');
             } else {
-                div.classList.remove('border-blue-500');
-                div.classList.add('border-[#334155]');
+                div.classList.remove('border-[var(--primary-color)]');
+                div.classList.add('border');
             }
         });
         

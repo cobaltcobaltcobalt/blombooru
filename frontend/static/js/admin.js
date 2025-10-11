@@ -238,7 +238,7 @@ class AdminPanel {
         
         statusDiv.style.display = 'block';
         progressDiv.innerHTML = `
-            <div class="bg-blue-600 p-3 mb-2 text-white">
+            <div class="bg-[var(--primary-color)] text-[var(--primary-text)] p-3 mb-2">
                 <strong>Uploading and processing...</strong><br>
                 <span class="text-xs">This <em>can</em> take a while. Do not refresh the page.</span>
             </div>
@@ -261,22 +261,22 @@ class AdminPanel {
             const result = await response.json();
             
             let html = `
-                <div class="bg-green-600 p-3 mb-2 text-white">
+                <div class="bg-[var(--success)] p-3 mb-2 tag-text">
                     <strong>${result.message}</strong>
                 </div>
-                <div class="text-[#94a3b8] space-y-1">
-                    <div>Rows processed: <strong class="text-white">${result.rows_processed}</strong></div>
-                    <div>Tags created: <strong class="text-white">${result.tags_created}</strong></div>
-                    <div>Tags updated: <strong class="text-white">${result.tags_updated}</strong></div>
-                    <div>Aliases created: <strong class="text-white">${result.aliases_created}</strong></div>
+                <div class="text-secondary space-y-1">
+                    <div>Rows processed: <strong class="text">${result.rows_processed}</strong></div>
+                    <div>Tags created: <strong class="text">${result.tags_created}</strong></div>
+                    <div>Tags updated: <strong class="text">${result.tags_updated}</strong></div>
+                    <div>Aliases created: <strong class="text">${result.aliases_created}</strong></div>
             `;
             
             if (result.skipped_long_tags > 0 || result.skipped_long_aliases > 0) {
                 html += `
-                    <div class="pt-2 border-t border-[#334155] mt-2">
-                        <div class="text-yellow-500">Skipped (too long):</div>
-                        ${result.skipped_long_tags > 0 ? `<div>Tags: <strong class="text-white">${result.skipped_long_tags}</strong></div>` : ''}
-                        ${result.skipped_long_aliases > 0 ? `<div>Aliases: <strong class="text-white">${result.skipped_long_aliases}</strong></div>` : ''}
+                    <div class="pt-2 border-t mt-2">
+                        <div class="text-[var(--warning)]">Skipped (too long):</div>
+                        ${result.skipped_long_tags > 0 ? `<div>Tags: <strong class="text">${result.skipped_long_tags}</strong></div>` : ''}
+                        ${result.skipped_long_aliases > 0 ? `<div>Aliases: <strong class="text">${result.skipped_long_aliases}</strong></div>` : ''}
                     </div>
                 `;
             }
@@ -285,7 +285,7 @@ class AdminPanel {
             
             if (result.errors && result.errors.length > 0) {
                 html += `
-                    <div class="bg-yellow-600 p-3 mt-2 text-white text-xs">
+                    <div class="bg-[var(--warning)] p-3 mt-2 tag-text text-xs">
                         <strong>Warnings (${result.total_errors} total):</strong><br>
                         ${result.errors.slice(0, 5).join('<br>')}
                     </div>
@@ -299,7 +299,7 @@ class AdminPanel {
             
         } catch (error) {
             progressDiv.innerHTML = `
-                <div class="bg-red-600 p-3 text-white">
+                <div class="bg-[var(--danger)] p-3 tag-text">
                     <strong>Error:</strong> ${error.message}
                 </div>
             `;
@@ -320,24 +320,24 @@ class AdminPanel {
             const data = await response.json();
             
             if (data.tags.length === 0) {
-                resultsDiv.innerHTML = '<p class="text-xs text-[#94a3b8] p-3">No tags found</p>';
+                resultsDiv.innerHTML = '<p class="text-xs text-secondary p-3">No tags found</p>';
                 return;
             }
             
             resultsDiv.innerHTML = data.tags.map(tag => `
-                <div class="bg-[#0f172a] p-3 border-b border-[#334155] flex justify-between items-center">
+                <div class="bg p-3 border-b flex justify-between items-center">
                     <div>
-                        <button class="text-xs text-[#94a3b8] bg-red-600 hover:bg-red-700 text-white px-2 py-1 mr-2" onclick="if(confirm('Delete tag & alias?')) { app.apiCall('/api/admin/tags/${tag.id}', { method: 'DELETE' }).then(() => { alert('Tag deleted'); location.reload(); }).catch(e => alert('Error deleting tag: ' + e.message)); }">&#x2715;</button>
+                        <button class="text-xs text-secondary bg-[var(--danger)] hover:bg-[var(--danger-hover)] tag-text px-2 py-1 mr-2" onclick="if(confirm('Delete tag & alias?')) { app.apiCall('/api/admin/tags/${tag.id}', { method: 'DELETE' }).then(() => { alert('Tag deleted'); location.reload(); }).catch(e => alert('Error deleting tag: ' + e.message)); }">&#x2715;</button>
                         <a href="/?q=${encodeURIComponent(tag.name)}" class="tag ${tag.category}">${tag.name}</a>
-                        <span class="text-xs text-[#94a3b8] ml-2">(${tag.post_count} posts)</span>
+                        <span class="text-xs text-secondary ml-2">(${tag.post_count} posts)</span>
                     </div>
-                    <span class="text-xs text-[#94a3b8] uppercase">${tag.category}</span>
+                    <span class="text-xs text-secondary uppercase">${tag.category}</span>
                 </div>
             `).join('');
             
         } catch (error) {
             console.error('Error searching tags:', error);
-            resultsDiv.innerHTML = '<p class="text-xs text-red-500 p-3">Error searching tags</p>';
+            resultsDiv.innerHTML = '<p class="text-xs text-[var(--danger)] p-3">Error searching tags</p>';
         }
     }
     
