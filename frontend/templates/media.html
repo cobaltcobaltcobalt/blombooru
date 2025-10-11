@@ -35,7 +35,9 @@
                 <div id="edit-tags-section" style="display: none;" class="mt-3 pt-3 border-t">
                     <form id="edit-tags-form">
                         <label class="block text-xs font-bold mb-2">Edit Tags</label>
-                        <input type="text" id="tags-input" placeholder="tag1 tag2 tag3" class="w-full bg px-2 py-1 border text-xs mb-2 focus:outline-none focus:border-[var(--primary-color)]">
+                        <div style="position: relative;">
+                            <div id="tags-input" contenteditable="true" data-placeholder="tag1 tag2 tag3" class="w-full bg px-2 py-1 border text-xs mb-2 focus:outline-none focus:border-[var(--primary-color)]" style="min-height: 2rem; white-space: pre-wrap; overflow-wrap: break-word;"></div>
+                        </div>
                         <button type="submit" class="w-full px-3 py-1 bg-[var(--primary-color)] text-[var(--primary-text)] hover:bg-[var(--primary-hover)] text-xs">Save Tags</button>
                     </form>
                 </div>
@@ -100,6 +102,156 @@
 
         const el = id => document.getElementById(id);
 
+        // Tag validation system
+        const tagValidationCache = new Map(); // tag -> boolean
+        let validationTimeout = null;
+
+        async function checkTagExists(tagName) {
+            if (!tagName || !tagName.trim()) return true;
+            const normalized = tagName.toLowerCase().trim();
+            
+            try {
+                const res = await fetch(`/api/tags/${encodeURIComponent(normalized)}`);
+                return res.ok;
+            } catch (e) {
+                console.error('Error checking tag:', e);
+                return false;
+            }
+        }
+
+        function getPlainTextFromDiv(div) {
+            return div.textContent || '';
+        }
+
+        function getCursorPosition(element) {
+            const selection = window.getSelection();
+            if (selection.rangeCount === 0) return 0;
+            
+            const range = selection.getRangeAt(0);
+            const preCaretRange = range.cloneRange();
+            preCaretRange.selectNodeContents(element);
+            preCaretRange.setEnd(range.endContainer, range.endOffset);
+            
+            return preCaretRange.toString().length;
+        }
+
+        function setCursorPosition(element, offset) {
+            const selection = window.getSelection();
+            const range = document.createRange();
+            
+            let currentOffset = 0;
+            let found = false;
+            
+            function traverseNodes(node) {
+                if (found) return;
+                
+                if (node.nodeType === Node.TEXT_NODE) {
+                    const nodeLength = node.textContent.length;
+                    if (currentOffset + nodeLength >= offset) {
+                        range.setStart(node, offset - currentOffset);
+                        range.collapse(true);
+                        found = true;
+                        return;
+                    }
+                    currentOffset += nodeLength;
+                } else {
+                    for (let child of node.childNodes) {
+                        traverseNodes(child);
+                        if (found) return;
+                    }
+                }
+            }
+            
+            try {
+                traverseNodes(element);
+                if (!found && element.lastChild) {
+                    range.setStartAfter(element.lastChild);
+                    range.collapse(true);
+                }
+                selection.removeAllRanges();
+                selection.addRange(range);
+            } catch (e) {
+                console.error('Error setting cursor:', e);
+            }
+        }
+
+        async function validateAndStyleTags() {
+            const tagsInput = el('tags-input');
+            if (!tagsInput) return;
+            
+            const text = getPlainTextFromDiv(tagsInput);
+            const cursorPos = getCursorPosition(tagsInput);
+            
+            // Split by whitespace
+            const parts = text.split(/(\s+)/);
+            const tags = [];
+            
+            // Check each non-whitespace part
+            for (let part of parts) {
+                if (part.trim()) {
+                    const normalized = part.trim().toLowerCase();
+                    if (!tagValidationCache.has(normalized)) {
+                        const exists = await checkTagExists(normalized);
+                        tagValidationCache.set(normalized, exists);
+                    }
+                    tags.push({ text: part, isValid: tagValidationCache.get(normalized) });
+                } else {
+                    tags.push({ text: part, isWhitespace: true });
+                }
+            }
+            
+            // Build styled HTML
+            let html = '';
+            for (let tag of tags) {
+                if (tag.isWhitespace) {
+                    html += tag.text;
+                } else if (tag.isValid === false) {
+                    html += `<span class="invalid-tag">${tag.text}</span>`;
+                } else {
+                    html += tag.text;
+                }
+            }
+            
+            // Update content if changed
+            if (tagsInput.innerHTML !== html) {
+                tagsInput.innerHTML = html || '';
+                setCursorPosition(tagsInput, cursorPos);
+            }
+        }
+
+        function setupTagInput() {
+            const tagsInput = el('tags-input');
+            if (!tagsInput) return;
+            
+            // Handle input events
+            tagsInput.addEventListener('input', () => {
+                clearTimeout(validationTimeout);
+                validationTimeout = setTimeout(validateAndStyleTags, 300);
+            });
+            
+            // Immediate validation on space
+            tagsInput.addEventListener('keyup', (e) => {
+                if (e.key === ' ') {
+                    clearTimeout(validationTimeout);
+                    validateAndStyleTags();
+                }
+            });
+            
+            // Prevent default Enter behavior (creating new lines)
+            tagsInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                }
+            });
+            
+            // Paste as plain text
+            tagsInput.addEventListener('paste', (e) => {
+                e.preventDefault();
+                const text = e.clipboardData.getData('text/plain');
+                document.execCommand('insertText', false, text);
+            });
+        }
+
         async function loadMedia() {
             try {
                 const res = await fetch(`/api/media/${mediaId}`);
@@ -112,6 +264,19 @@
                     el('edit-tags-section').style.display = 'block';
                     el('admin-actions').style.display = 'block';
                     el('unshare-btn').style.display = 'block';
+                    setupTagInput();
+                    
+                    // Initialize tag autocomplete with contenteditable support
+                    const tagsInput = document.getElementById('tags-input');
+                    if (tagsInput) {
+                        new TagAutocomplete(tagsInput, {
+                            multipleValues: true,
+                            onSelect: () => {
+                                // Trigger validation after autocomplete selection
+                                setTimeout(validateAndStyleTags, 100);
+                            }
+                        });
+                    }
                 }
                 if (currentMedia.is_shared) {
                     showShareLink(currentMedia.share_uuid, currentMedia.share_ai_metadata);
@@ -163,8 +328,14 @@
                 `;
             });
             c.innerHTML = html || '<p class="text-xs text-secondary">No tags</p>';
+            
+            // Set initial tags in contenteditable div
             const input = el('tags-input');
-            if (input) input.value = (m.tags || []).map(t => t.name).join(' ');
+            if (input) {
+                input.textContent = (m.tags || []).map(t => t.name).join(' ');
+                // Pre-validate existing tags
+                setTimeout(validateAndStyleTags, 100);
+            }
         }
 
         async function renderAIMetadata(m) {
@@ -368,11 +539,29 @@
 
         el('edit-tags-form')?.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const tags = el('tags-input').value.split(/\s+/).filter(t => t.length > 0);
+            const tagsInput = el('tags-input');
+            const text = getPlainTextFromDiv(tagsInput);
+            const allTags = text.split(/\s+/).filter(t => t.length > 0);
+            
+            // Filter out invalid tags
+            const validTags = [];
+            for (const tag of allTags) {
+                const normalized = tag.toLowerCase().trim();
+                const isValid = tagValidationCache.get(normalized);
+                if (isValid !== false) { // Include if valid or unknown
+                    validTags.push(tag);
+                }
+            }
+            
             try {
-                await app.apiCall(`/api/media/${mediaId}`, { method: 'PATCH', body: JSON.stringify({ tags }) });
+                await app.apiCall(`/api/media/${mediaId}`, { 
+                    method: 'PATCH', 
+                    body: JSON.stringify({ tags: validTags }) 
+                });
                 location.reload();
-            } catch (e) { alert('Error updating tags: ' + e.message); }
+            } catch (e) { 
+                alert('Error updating tags: ' + e.message); 
+            }
         });
 
         el('rating-select')?.addEventListener('change', async (e) => {
@@ -430,14 +619,6 @@
             if (aiMetadataToggle) {
                 aiMetadataToggle.checked = shareAIMetadata || false;
             }
-        }
-
-        // Initialize tag autocomplete
-        const tagsInput = document.getElementById('tags-input');
-        if (tagsInput) {
-            new TagAutocomplete(tagsInput, {
-                multipleValues: true
-            });
         }
 
         loadMedia();

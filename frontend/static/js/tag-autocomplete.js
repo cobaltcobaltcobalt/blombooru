@@ -1,6 +1,7 @@
 class TagAutocomplete {
     constructor(input, options = {}) {
         this.input = input;
+        this.isContentEditable = input.getAttribute('contenteditable') === 'true';
         this.options = {
             onSelect: null,
             multipleValues: false,
@@ -47,13 +48,87 @@ class TagAutocomplete {
         }
     }
     
+    getInputValue() {
+        if (this.isContentEditable) {
+            return this.input.textContent || '';
+        }
+        return this.input.value;
+    }
+    
+    setInputValue(value) {
+        if (this.isContentEditable) {
+            this.input.textContent = value;
+        } else {
+            this.input.value = value;
+        }
+    }
+    
+    getCursorPosition() {
+        if (this.isContentEditable) {
+            const selection = window.getSelection();
+            if (selection.rangeCount === 0) return 0;
+            
+            const range = selection.getRangeAt(0);
+            const preCaretRange = range.cloneRange();
+            preCaretRange.selectNodeContents(this.input);
+            preCaretRange.setEnd(range.endContainer, range.endOffset);
+            
+            return preCaretRange.toString().length;
+        }
+        return this.input.selectionStart;
+    }
+    
+    setCursorPosition(position) {
+        if (this.isContentEditable) {
+            const selection = window.getSelection();
+            const range = document.createRange();
+            
+            let currentOffset = 0;
+            let found = false;
+            
+            const traverseNodes = (node) => {
+                if (found) return;
+                
+                if (node.nodeType === Node.TEXT_NODE) {
+                    const nodeLength = node.textContent.length;
+                    if (currentOffset + nodeLength >= position) {
+                        range.setStart(node, position - currentOffset);
+                        range.collapse(true);
+                        found = true;
+                        return;
+                    }
+                    currentOffset += nodeLength;
+                } else {
+                    for (let child of node.childNodes) {
+                        traverseNodes(child);
+                        if (found) return;
+                    }
+                }
+            };
+            
+            try {
+                traverseNodes(this.input);
+                if (!found && this.input.lastChild) {
+                    range.setStartAfter(this.input.lastChild);
+                    range.collapse(true);
+                }
+                selection.removeAllRanges();
+                selection.addRange(range);
+            } catch (e) {
+                console.error('Error setting cursor:', e);
+            }
+        } else {
+            this.input.setSelectionRange(position, position);
+        }
+    }
+    
     getCurrentQuery() {
         if (!this.options.multipleValues) {
-            return this.input.value.trim();
+            return this.getInputValue().trim();
         }
         
-        const cursorPos = this.input.selectionStart;
-        const value = this.input.value;
+        const cursorPos = this.getCursorPosition();
+        const value = this.getInputValue();
         const beforeCursor = value.substring(0, cursorPos);
         const lastSpace = beforeCursor.lastIndexOf(' ');
         return beforeCursor.substring(lastSpace + 1).trim();
@@ -117,10 +192,10 @@ class TagAutocomplete {
     
     selectSuggestion(tagName) {
         if (!this.options.multipleValues) {
-            this.input.value = tagName;
+            this.setInputValue(tagName);
         } else {
-            const cursorPos = this.input.selectionStart;
-            const value = this.input.value;
+            const cursorPos = this.getCursorPosition();
+            const value = this.getInputValue();
             const beforeCursor = value.substring(0, cursorPos);
             const afterCursor = value.substring(cursorPos);
             const lastSpace = beforeCursor.lastIndexOf(' ');
@@ -129,13 +204,17 @@ class TagAutocomplete {
                 ? tagName + (afterCursor.startsWith(' ') ? '' : ' ') + afterCursor
                 : beforeCursor.substring(0, lastSpace + 1) + tagName + (afterCursor.startsWith(' ') ? '' : ' ') + afterCursor;
             
-            this.input.value = newValue;
+            this.setInputValue(newValue);
             
             // Set cursor position after the inserted tag
             const newCursorPos = lastSpace === -1 
                 ? tagName.length + 1 
                 : lastSpace + 1 + tagName.length + 1;
-            this.input.setSelectionRange(newCursorPos, newCursorPos);
+            this.setCursorPosition(newCursorPos);
+            
+            // Trigger input event for validation
+            const event = new Event('input', { bubbles: true });
+            this.input.dispatchEvent(event);
         }
         
         this.hideSuggestions();

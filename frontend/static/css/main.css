@@ -22,6 +22,21 @@ input[type="radio"]:checked + span:hover {
     background-color: var(--primary-hover);
 }
 
+/* Tag input styling */
+#tags-input:empty:before {
+    content: attr(data-placeholder);
+    color: var(--surface-light);
+}
+
+#tags-input:focus:before {
+    content: '';
+}
+
+#tags-input .invalid-tag {
+    text-decoration: line-through;
+    color: var(--danger);
+}
+
 /* Tag suggestion styling */
 .tag-suggestions {
     position: absolute;
