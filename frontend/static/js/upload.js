@@ -242,7 +242,7 @@ class Uploader {
             <div class="mb-4">
                 <label class="block text-xs font-bold mb-2">Base Tags (prefixed to all media)</label>
                 <div style="position: relative;">
-                    <div id="base-tags" contenteditable="true" data-placeholder="tag1 tag2 tag3" class="tag-input w-full bg px-2 py-1 border text-xs focus:outline-none focus:border-[var(--primary-color)]" style="min-height: 2rem; white-space: pre-wrap; overflow-wrap: break-word;"></div>
+                    <div id="base-tags" contenteditable="true" data-placeholder="tag1 tag2 tag3" class="tag-input w-full bg px-2 py-1 border text-xs focus:outline-none focus:border-[var(--primary-color)]" style="min-height: 1.5rem; white-space: pre-wrap; overflow-wrap: break-word;"></div>
                 </div>
             </div>
         `;
@@ -303,7 +303,7 @@ class Uploader {
                     <div class="mb-3">
                         <label class="block text-xs font-bold mb-2">Additional Tags (base tags are prefixed automatically)</label>
                         <div style="position: relative;">
-                            <div id="individual-tags" contenteditable="true" data-placeholder="additional_tag1 additional_tag2" class="tag-input w-full bg px-2 py-1 border text-xs focus:outline-none focus:border-[var(--primary-color)]" style="min-height: 2rem; white-space: pre-wrap; overflow-wrap: break-word;"></div>
+                            <div id="individual-tags" contenteditable="true" data-placeholder="additional_tag1 additional_tag2" class="tag-input w-full bg px-2 py-1 border text-xs focus:outline-none focus:border-[var(--primary-color)]" style="min-height: 1.5rem; white-space: pre-wrap; overflow-wrap: break-word;"></div>
                         </div>
                     </div>
                     
