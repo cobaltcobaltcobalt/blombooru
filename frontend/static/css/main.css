@@ -139,7 +139,7 @@ input[type="radio"]:checked + span:hover {
 }
 
 .gallery-item.video {
-    outline-color: var(--danger);
+    outline-color: var(--red);
 }
 
 .gallery-item.gif {
@@ -147,7 +147,7 @@ input[type="radio"]:checked + span:hover {
 }
 
 .gallery-item.selected {
-    outline: 3px solid var(--success);
+    outline: 3px solid var(--green);
     outline-offset: -3px;
 }
 
