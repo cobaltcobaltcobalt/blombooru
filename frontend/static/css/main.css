@@ -23,16 +23,19 @@ input[type="radio"]:checked + span:hover {
 }
 
 /* Tag input styling */
-#tags-input:empty:before {
+#tags-input:empty:before,
+[contenteditable="true"]:empty:before {
     content: attr(data-placeholder);
     color: var(--surface-light);
 }
 
-#tags-input:focus:before {
+#tags-input:focus:before,
+[contenteditable="true"]:focus:before {
     content: '';
 }
 
-#tags-input .invalid-tag {
+#tags-input .invalid-tag,
+[contenteditable="true"] .invalid-tag {
     text-decoration: line-through;
     color: var(--danger);
 }
