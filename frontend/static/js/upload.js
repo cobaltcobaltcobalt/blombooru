@@ -225,7 +225,7 @@ class Uploader {
         // Create base controls container
         const controlsDiv = document.createElement('div');
         controlsDiv.id = 'base-controls';
-        controlsDiv.className = 'bg p-4 border mb-4';
+        controlsDiv.className = 'bg p-4 border my-4';
         controlsDiv.style.display = 'none';
         controlsDiv.innerHTML = `
             <h3 class="text-sm font-bold mb-3">Base Settings (applies to all media)</h3>
