@@ -1,5 +1,8 @@
 class AdminPanel {
     constructor() {
+        this.tagValidationCache = new Map();
+        this.aliasCache = new Set();
+        this.validationTimeout = null;
         this.init();
     }
     
@@ -35,6 +38,295 @@ class AdminPanel {
                 e.preventDefault();
                 this.login();
             });
+        }
+        
+        // Add tags form
+        const addTagsForm = document.getElementById('add-tags-form');
+        if (addTagsForm) {
+            addTagsForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.addNewTags();
+            });
+        }
+    }
+    
+    // Helper methods for tag validation
+    getPlainTextFromDiv(div) {
+        return div.textContent || '';
+    }
+    
+    getCursorPosition(element) {
+        const selection = window.getSelection();
+        if (selection.rangeCount === 0) return 0;
+        
+        const range = selection.getRangeAt(0);
+        const preCaretRange = range.cloneRange();
+        preCaretRange.selectNodeContents(element);
+        preCaretRange.setEnd(range.endContainer, range.endOffset);
+        
+        return preCaretRange.toString().length;
+    }
+    
+    setCursorPosition(element, offset) {
+        const selection = window.getSelection();
+        const range = document.createRange();
+        
+        let currentOffset = 0;
+        let found = false;
+        
+        const traverseNodes = (node) => {
+            if (found) return;
+            
+            if (node.nodeType === Node.TEXT_NODE) {
+                const nodeLength = node.textContent.length;
+                if (currentOffset + nodeLength >= offset) {
+                    range.setStart(node, offset - currentOffset);
+                    range.collapse(true);
+                    found = true;
+                    return;
+                }
+                currentOffset += nodeLength;
+            } else {
+                for (let child of node.childNodes) {
+                    traverseNodes(child);
+                    if (found) return;
+                }
+            }
+        };
+        
+        try {
+            traverseNodes(element);
+            if (!found && element.lastChild) {
+                range.setStartAfter(element.lastChild);
+                range.collapse(true);
+            }
+            selection.removeAllRanges();
+            selection.addRange(range);
+        } catch (e) {
+            console.error('Error setting cursor:', e);
+        }
+    }
+    
+    async checkTagOrAliasExists(tagName) {
+        if (!tagName || !tagName.trim()) return false;
+        const normalized = tagName.toLowerCase().trim();
+        
+        try {
+            // Check if it's a tag
+            const tagRes = await fetch(`/api/tags/${encodeURIComponent(normalized)}`);
+            if (tagRes.ok) {
+                return true; // Tag exists
+            }
+            
+            // Check if it's an alias
+            const aliasRes = await fetch(`/api/admin/check-alias?name=${encodeURIComponent(normalized)}`);
+            if (aliasRes.ok) {
+                const data = await aliasRes.json();
+                return data.exists; // Alias exists
+            }
+            
+            return false;
+        } catch (e) {
+            console.error('Error checking tag/alias:', e);
+            return false;
+        }
+    }
+    
+    parseTagWithCategory(tagString) {
+        const prefixes = ['artist:', 'copyright:', 'character:', 'meta:'];
+        const normalized = tagString.trim().toLowerCase();
+        
+        for (const prefix of prefixes) {
+            if (normalized.startsWith(prefix)) {
+                const category = prefix.slice(0, -1); // Remove the colon
+                const tagName = normalized.slice(prefix.length).trim();
+                return { tagName, category };
+            }
+        }
+        
+        // No prefix, default to general
+        return { tagName: normalized, category: 'general' };
+    }
+    
+    async validateAndStyleNewTags() {
+        const tagsInput = document.getElementById('new-tags-input');
+        if (!tagsInput) return;
+        
+        const text = this.getPlainTextFromDiv(tagsInput);
+        const cursorPos = this.getCursorPosition(tagsInput);
+        
+        // Split by whitespace
+        const parts = text.split(/(\s+)/);
+        const tags = [];
+        
+        // Check each non-whitespace part
+        for (let part of parts) {
+            if (part.trim()) {
+                const { tagName } = this.parseTagWithCategory(part);
+                
+                if (!this.tagValidationCache.has(tagName)) {
+                    const exists = await this.checkTagOrAliasExists(tagName);
+                    this.tagValidationCache.set(tagName, exists);
+                }
+                
+                // Reverse logic: strike through if exists
+                tags.push({ text: part, shouldIgnore: this.tagValidationCache.get(tagName) });
+            } else {
+                tags.push({ text: part, isWhitespace: true });
+            }
+        }
+        
+        // Build styled HTML
+        let html = '';
+        for (let tag of tags) {
+            if (tag.isWhitespace) {
+                html += tag.text;
+            } else if (tag.shouldIgnore) {
+                html += `<span class="invalid-tag">${tag.text}</span>`;
+            } else {
+                html += tag.text;
+            }
+        }
+        
+        // Update content if changed
+        if (tagsInput.innerHTML !== html) {
+            tagsInput.innerHTML = html || '';
+            this.setCursorPosition(tagsInput, cursorPos);
+        }
+    }
+    
+    setupNewTagsInput() {
+        const tagsInput = document.getElementById('new-tags-input');
+        if (!tagsInput) return;
+        
+        // Handle input events
+        tagsInput.addEventListener('input', () => {
+            if (this.validationTimeout) {
+                clearTimeout(this.validationTimeout);
+            }
+            this.validationTimeout = setTimeout(() => {
+                this.validateAndStyleNewTags();
+            }, 300);
+        });
+        
+        // Immediate validation on space
+        tagsInput.addEventListener('keyup', (e) => {
+            if (e.key === ' ') {
+                if (this.validationTimeout) {
+                    clearTimeout(this.validationTimeout);
+                }
+                this.validateAndStyleNewTags();
+            }
+        });
+        
+        // Prevent default Enter behavior
+        tagsInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+            }
+        });
+        
+        // Paste as plain text
+        tagsInput.addEventListener('paste', (e) => {
+            e.preventDefault();
+            const text = e.clipboardData.getData('text/plain');
+            document.execCommand('insertText', false, text);
+        });
+    }
+    
+    async addNewTags() {
+        const tagsInput = document.getElementById('new-tags-input');
+        const statusDiv = document.getElementById('add-tags-status');
+        const resultDiv = document.getElementById('add-tags-result');
+        
+        const text = this.getPlainTextFromDiv(tagsInput);
+        const tagStrings = text.split(/\s+/).filter(t => t.length > 0);
+        
+        if (tagStrings.length === 0) {
+            alert('Please enter at least one tag');
+            return;
+        }
+        
+        // Parse and filter tags
+        const tagsToCreate = [];
+        const ignoredTags = [];
+        
+        for (const tagString of tagStrings) {
+            const { tagName, category } = this.parseTagWithCategory(tagString);
+            
+            // Check if should be ignored
+            const shouldIgnore = this.tagValidationCache.get(tagName);
+            
+            if (shouldIgnore) {
+                ignoredTags.push(tagString);
+            } else {
+                tagsToCreate.push({ name: tagName, category });
+            }
+        }
+        
+        if (tagsToCreate.length === 0) {
+            alert('All tags already exist or are aliases. Nothing to add.');
+            return;
+        }
+        
+        // Show loading
+        statusDiv.style.display = 'block';
+        resultDiv.innerHTML = `
+            <div class="bg-[var(--primary-color)] text-[var(--primary-text)] p-3 mb-2">
+                <strong>Adding tags...</strong>
+            </div>
+        `;
+        
+        try {
+            const response = await app.apiCall('/api/admin/bulk-create-tags', {
+                method: 'POST',
+                body: JSON.stringify({ tags: tagsToCreate })
+            });
+            
+            let html = `
+                <div class="bg-[var(--success)] p-3 mb-2 tag-text">
+                    <strong>Tags added successfully!</strong>
+                </div>
+                <div class="text-secondary space-y-1">
+                    <div>Tags created: <strong class="text">${response.created}</strong></div>
+                    <div>Tags skipped (already exist): <strong class="text">${response.skipped}</strong></div>
+                    <div>Errors: <strong class="text">${response.errors.length}</strong></div>
+                </div>
+            `;
+            
+            if (ignoredTags.length > 0) {
+                html += `
+                    <div class="mt-2 p-2 bg-[var(--surface-light)] border text-xs">
+                        <strong>Ignored (already exist or are aliases):</strong><br>
+                        ${ignoredTags.join(', ')}
+                    </div>
+                `;
+            }
+            
+            if (response.errors.length > 0) {
+                html += `
+                    <div class="mt-2 p-2 bg-[var(--warning)] tag-text text-xs">
+                        <strong>Errors:</strong><br>
+                        ${response.errors.slice(0, 5).join('<br>')}
+                    </div>
+                `;
+            }
+            
+            resultDiv.innerHTML = html;
+            
+            // Clear input and cache
+            tagsInput.textContent = '';
+            this.tagValidationCache.clear();
+            
+            // Reload stats
+            await this.loadTagStats();
+            
+        } catch (error) {
+            resultDiv.innerHTML = `
+                <div class="bg-[var(--danger)] p-3 tag-text">
+                    <strong>Error:</strong> ${error.message}
+                </div>
+            `;
         }
     }
     
@@ -211,6 +503,9 @@ class AdminPanel {
     }
 
     setupTagManagement() {
+        // Setup new tags input validation
+        this.setupNewTagsInput();
+        
         // CSV upload
         const uploadArea = document.getElementById('csv-upload-area');
         const fileInput = document.getElementById('csv-file-input');
@@ -388,7 +683,7 @@ class AdminPanel {
                 <div class="bg p-3 border-b flex justify-between items-center">
                     <div>
                         <button class="text-xs text-secondary bg-[var(--danger)] hover:bg-[var(--danger-hover)] tag-text px-2 py-1 mr-2" onclick="if(confirm('Delete tag & alias?')) { app.apiCall('/api/admin/tags/${tag.id}', { method: 'DELETE' }).then(() => { alert('Tag deleted'); location.reload(); }).catch(e => alert('Error deleting tag: ' + e.message)); }">&#x2715;</button>
-                        <a href="/?q=${encodeURIComponent(tag.name)}" class="tag ${tag.category}">${tag.name}</a>
+                        <a href="/?q=${encodeURIComponent(tag.name)}" class="tag ${tag.category} tag-text">${tag.name}</a>
                         <span class="text-xs text-secondary ml-2">(${tag.post_count} posts)</span>
                     </div>
                     <span class="text-xs text-secondary uppercase">${tag.category}</span>

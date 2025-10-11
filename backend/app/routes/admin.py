@@ -694,3 +694,67 @@ async def get_current_theme():
         return theme.to_dict()
     # Fallback to default dark
     return theme_registry.get_theme("default_dark").to_dict()
+
+@router.get("/check-alias")
+async def check_alias(
+    name: str,
+    current_user: User = Depends(require_admin_mode),
+    db: Session = Depends(get_db)
+):
+    """Check if a name exists as an alias"""
+    alias = db.query(TagAlias).filter(TagAlias.alias_name == name.lower()).first()
+    return {"exists": alias is not None}
+
+@router.post("/bulk-create-tags")
+async def bulk_create_tags(
+    data: dict,
+    current_user: User = Depends(require_admin_mode),
+    db: Session = Depends(get_db)
+):
+    """Bulk create tags"""
+    tags_to_create = data.get('tags', [])
+    
+    created = 0
+    skipped = 0
+    errors = []
+    
+    for tag_data in tags_to_create:
+        try:
+            tag_name = tag_data['name'].lower().strip()
+            category = tag_data.get('category', 'general')
+            
+            # Check if tag already exists
+            existing = db.query(Tag).filter(Tag.name == tag_name).first()
+            if existing:
+                skipped += 1
+                continue
+            
+            # Check if it's an alias
+            alias = db.query(TagAlias).filter(TagAlias.alias_name == tag_name).first()
+            if alias:
+                skipped += 1
+                continue
+            
+            # Create tag
+            tag = Tag(
+                name=tag_name,
+                category=category,
+                post_count=0
+            )
+            db.add(tag)
+            created += 1
+            
+        except Exception as e:
+            errors.append(f"Error creating tag '{tag_data.get('name', 'unknown')}': {str(e)}")
+    
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        errors.append(f"Database commit error: {str(e)}")
+    
+    return {
+        "created": created,
+        "skipped": skipped,
+        "errors": errors
+    }
