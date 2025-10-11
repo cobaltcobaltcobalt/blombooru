@@ -342,7 +342,6 @@ class Gallery {
             background-color: var(--danger);
             color: white;
             padding: 1rem;
-            border-radius: 0.5rem;
             margin: 1rem 0;
         `;
         errorDiv.innerHTML = `

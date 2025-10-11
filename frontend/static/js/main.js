@@ -142,7 +142,6 @@ class Blombooru {
             padding: 1rem 1.5rem;
             background-color: ${type === 'success' ? 'var(--success)' : type === 'error' ? 'var(--danger)' : 'var(--primary-color)'};
             color: white;
-            border-radius: 0.5rem;
             box-shadow: 0 4px 6px rgba(0,0,0,0.3);
             z-index: 1000;
             animation: slideIn 0.3s ease-out;

@@ -70,7 +70,6 @@ input[type="radio"]:checked + span:hover {
 .tag-category {
     display: inline-block;
     padding: 0.1rem 0.3rem;
-    border-radius: 2px;
     margin-right: 0.5rem;
     font-size: 0.7em;
     text-transform: uppercase;
@@ -107,7 +106,6 @@ input[type="radio"]:checked + span:hover {
     font-size: 0.7rem;
     text-decoration: none;
     color: var(--white);
-    border-radius: 2px;
     transition: opacity 0.2s;
     font-weight: 500;
     cursor: pointer;
@@ -258,7 +256,6 @@ input[type="radio"]:checked + span:hover {
     transition: background-color 0.2s;
     padding: 0.25rem;
     margin: -0.25rem;
-    border-radius: 0.25rem;
 }
 
 .expandable-text:hover {
