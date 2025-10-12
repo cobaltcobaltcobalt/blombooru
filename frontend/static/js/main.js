@@ -204,36 +204,5 @@ class Blombooru {
     }
 }
 
-// Add CSS animations
-const style = document.createElement('style');
-style.textContent = `
-    @keyframes slideIn {
-        from {
-            transform: translateX(400px);
-            opacity: 0;
-        }
-        to {
-            transform: translateX(0);
-            opacity: 1;
-        }
-    }
-    
-    @keyframes slideOut {
-        from {
-            transform: translateX(0);
-            opacity: 1;
-        }
-        to {
-            transform: translateX(400px);
-            opacity: 0;
-        }
-    }
-    
-    .admin-mode-btn {
-        font-weight: 500 !important;
-    }
-`;
-document.head.appendChild(style);
-
 // Initialize app
 const app = new Blombooru();
