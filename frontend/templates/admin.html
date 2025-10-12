@@ -65,7 +65,13 @@
                             <option value="">Loading themes...</option>
                         </select>
                     </div>
-                    
+
+                    <div class="mb-4">
+                        <label class="block text-xs font-bold mb-2">Items Per Page</label>
+                        <input type="number" id="items-per-page" name="items_per_page" min="20" max="200" class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
+                        <p class="text-xs text-secondary opacity-70 mt-1 ml-1">Number of items to display per page (20-200)</p>
+                    </div>
+
                     <button type="submit" class="px-4 py-2 bg-primary primary-text hover:bg-primary text-xs">Save Settings</button>
                 </form>
             </div>

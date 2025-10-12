@@ -333,27 +333,32 @@ class AdminPanel {
     async loadSettings() {
         try {
             const response = await fetch('/api/admin/settings');
-            
+
             if (!response.ok) {
                 console.log('Not authenticated or settings not available');
                 return;
             }
-            
+
             const settings = await response.json();
-            
+
             // Populate form fields
             if (settings.app_name) {
                 const appNameInput = document.getElementById('app-name');
                 if (appNameInput) appNameInput.value = settings.app_name;
             }
-            
+
             if (settings.default_rating_filter) {
                 const ratingInput = document.querySelector(
                     `input[name="default-rating"][value="${settings.default_rating_filter}"]`
                 );
                 if (ratingInput) ratingInput.checked = true;
             }
-            
+
+            if (settings.items_per_page) {
+                const itemsPerPageInput = document.getElementById('items-per-page');
+                if (itemsPerPageInput) itemsPerPageInput.value = settings.items_per_page;
+            }
+
         } catch (error) {
             console.error('Error loading settings:', error);
         }
@@ -363,16 +368,24 @@ class AdminPanel {
         const appName = document.getElementById('app-name').value;
         const defaultRating = document.querySelector('input[name="default-rating"]:checked')?.value;
         const theme = document.getElementById('theme-select')?.value;
+        const itemsPerPage = document.getElementById('items-per-page')?.value;
 
-        if (!appName || !defaultRating || !theme) {
+        if (!appName || !defaultRating || !theme || !itemsPerPage) {
             app.showNotification('Please fill in all settings fields!', 'error');
+            return;
+        }
+
+        const itemsPerPageNum = parseInt(itemsPerPage);
+        if (isNaN(itemsPerPageNum) || itemsPerPageNum < 20 || itemsPerPageNum > 200) {
+            app.showNotification('Items per page must be between 20 and 200!', 'error');
             return;
         }
 
         const settings = {
             app_name: appName,
             default_rating_filter: defaultRating,
-            theme: theme
+            theme: theme,
+            items_per_page: itemsPerPageNum
         };
         
         try {
