@@ -86,7 +86,6 @@ class Gallery {
         try {
             const params = new URLSearchParams(window.location.search);
             params.set('page', this.currentPage);
-            params.set('limit', 30);
             
             // Add rating filter
             const ratingFilter = document.querySelector('input[name="rating"]:checked');

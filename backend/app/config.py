@@ -35,9 +35,13 @@ class Settings:
                 "password": ""
             },
             "default_rating_filter": "explicit",
-            "items_per_page": 60,
+            "items_per_page": 64,
             "secret_key": os.urandom(32).hex()
         }
+    
+    def get_items_per_page(self) -> int:
+        """Get items per page setting"""
+        return self.settings.get("items_per_page", 64)
     
     def save_settings(self, settings: dict):
         self.settings.update(settings)

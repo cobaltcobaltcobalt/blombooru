@@ -6,6 +6,7 @@ import re
 from ..database import get_db
 from ..models import Media, Tag, blombooru_media_tags
 from ..schemas import RatingEnum, MediaResponse
+from ..config import settings
 
 router = APIRouter(prefix="/api/search", tags=["search"])
 
@@ -53,10 +54,12 @@ async def search_media(
     q: str = Query("", description="Search query"),
     rating: Optional[str] = None,
     page: int = 1,
-    limit: int = 30,
+    limit: int = Query(None),
     db: Session = Depends(get_db)
 ):
     """Search media with tag-based query"""
+    if limit is None:
+        limit = settings.get_items_per_page()
     query = db.query(Media)
     
     # Apply rating filter

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc, text, or_, and_
@@ -38,11 +38,14 @@ def get_or_create_tags(db: Session, tag_names: List[str]) -> List[Tag]:
 @router.get("/")
 async def get_media_list(
     page: int = 1,
-    limit: int = 30,
+    limit: int = Query(None),
     rating: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     """Get paginated media list"""
+    if limit is None:
+        limit = settings.get_items_per_page()
+    
     try:
         # Don't filter by is_shared - show all media in your private gallery
         query = db.query(Media)
