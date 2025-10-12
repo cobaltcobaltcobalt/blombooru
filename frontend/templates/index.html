@@ -7,15 +7,15 @@
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <label class="flex-1">
                 <input type="radio" name="rating" value="safe" class="hidden rating-filter-input">
-                <span class="block text-center px-3 py-2 border-2 cursor-pointer surface-hover transition-colors rating-filter-label">Safe Only</span>
+                <span class="block text-center px-3 py-2 border-2 cursor-pointer surface hover:surface transition-colors rating-filter-label">Safe Only</span>
             </label>
             <label class="flex-1">
                 <input type="radio" name="rating" value="questionable" class="hidden rating-filter-input">
-                <span class="block text-center px-3 py-2 border-2 cursor-pointer surface-hover transition-colors rating-filter-label">Safe + Questionable</span>
+                <span class="block text-center px-3 py-2 border-2 cursor-pointer surface hover:surface transition-colors rating-filter-label">Safe + Questionable</span>
             </label>
             <label class="flex-1">
                 <input type="radio" name="rating" value="explicit" class="hidden rating-filter-input">
-                <span class="block text-center px-3 py-2 border-2 cursor-pointer surface-hover transition-colors rating-filter-label">All Ratings</span>
+                <span class="block text-center px-3 py-2 border-2 cursor-pointer surface hover:surface transition-colors rating-filter-label">All Ratings</span>
             </label>
         </div>
     </div>
@@ -24,7 +24,7 @@
     <div id="bulk-actions" style="display: none;" class="surface p-3 mb-4 border">
         <p class="mb-2"><span id="selected-count">0</span> items selected</p>
         <div class="flex gap-2">
-            <button id="bulk-delete-btn" class="px-3 py-1 bg-[var(--danger)] hover:bg-[var(--danger-hover)] tag-text text-xs">Delete Selected</button>
+            <button id="bulk-delete-btn" class="px-3 py-1 bg-danger hover:bg-danger tag-text text-xs">Delete Selected</button>
         </div>
     </div>
     

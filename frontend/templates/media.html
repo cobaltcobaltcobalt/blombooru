@@ -36,9 +36,9 @@
                     <form id="edit-tags-form">
                         <label class="block text-xs font-bold mb-2">Edit Tags</label>
                         <div class="mb-2" style="position: relative;">
-                            <div id="tags-input" contenteditable="true" data-placeholder="original highres cat_ears" class="w-full bg px-2 py-1 border text-xs focus:outline-none focus:border-[var(--primary-color)]" style="min-height: 1.5rem; white-space: pre-wrap; overflow-wrap: break-word;"></div>
+                            <div id="tags-input" contenteditable="true" data-placeholder="original highres cat_ears" class="w-full bg px-2 py-1 border text-xs focus:outline-none focus:border-primary" style="min-height: 1.5rem; white-space: pre-wrap; overflow-wrap: break-word;"></div>
                         </div>
-                        <button type="submit" class="w-full px-3 py-1 bg-[var(--primary-color)] text-[var(--primary-text)] hover:bg-[var(--primary-hover)] text-xs">Save Tags</button>
+                        <button type="submit" class="w-full px-3 py-1 bg-primary primary-text hover:bg-primary text-xs">Save Tags</button>
                     </form>
                 </div>
             </div>
@@ -54,39 +54,39 @@
                 <h3 class="text-sm font-bold mb-3 pb-2 border-b">Actions</h3>
                 
                 <div class="space-y-3">
-                    <a id="download-btn" href="#" download class="block w-full px-3 py-1 surface-light surface-light-hover text text-center text-xs">Download</a>
+                    <a id="download-btn" href="#" download class="block w-full px-3 py-1 surface-light hover:surface-light text text-center text-xs">Download</a>
                     
                     <!-- Admin Actions -->
                     <div id="admin-actions" style="display: none;" class="space-y-2 pt-2 border-t">
                         <label class="block text-xs font-bold mb-1">Rating</label>
-                        <select id="rating-select" class="w-full bg px-2 py-1 border text-xs mb-2 focus:outline-none focus:border-[var(--primary-color)]">
+                        <select id="rating-select" class="w-full bg px-2 py-1 border text-xs mb-2 focus:outline-none focus:border-primary">
                             <option value="safe">Safe</option>
                             <option value="questionable">Questionable</option>
                             <option value="explicit">Explicit</option>
                         </select>
                         
-                        <button id="share-btn" class="w-full px-3 py-1 bg-[var(--primary-color)] text-[var(--primary-text)] hover:bg-[var(--primary-hover)] text-xs">Share</button>
-                        <button id="delete-btn" class="w-full px-3 py-1 bg-[var(--danger)] hover:bg-[var(--danger-hover)] tag-text text-xs">Delete</button>
+                        <button id="share-btn" class="w-full px-3 py-1 bg-primary primary-text hover:bg-primary text-xs">Share</button>
+                        <button id="delete-btn" class="w-full px-3 py-1 bg-danger hover:bg-danger tag-text text-xs">Delete</button>
                     </div>
                 </div>
             </div>
             
             <!-- Share Link Display -->
-            <div id="share-link-section" style="display: none;" class="bg-[var(--primary-color)] p-3 border border-[var(--primary-color)] mb-4">
+            <div id="share-link-section" style="display: none;" class="bg-primary primary-text p-3 border border-primary mb-4">
                 <h4 class="text-sm font-bold mb-2 primary-text">Share Actions</h4>
-                <div class="mb-2 p-2 bg-[var(--surface)] border">
+                <div class="mb-2 p-2 surface border">
                     <label class="flex items-center justify-between cursor-pointer">
                         <span class="text-xs text font-medium">Include AI metadata</span>
                         <div class="relative">
                             <input type="checkbox" id="share-ai-metadata-toggle" class="sr-only peer">
-                            <div class="w-9 h-5 bg-[var(--surface-light)] peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-[var(--primary-color)] rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-[var(--primary-text)] after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-[var(--text)] after:border-[var(--surface-light)] after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[var(--primary-color)] peer-checked:after:bg-[var(--primary-text)]"></div>
+                            <div class="w-9 h-5 surface-light peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-[var(--primary-color)] rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-[var(--primary-text)] after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-[var(--text)] after:border-[var(--surface-light)] after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[var(--primary-color)] peer-checked:after:bg-[var(--primary-text)]"></div>
                         </div>
                     </label>
                 </div>
-                <input type="text" id="share-link-input" readonly class="w-full bg-[var(--surface)] px-2 py-1 border focus:outline-none focus:border-[var(--primary-color)] text-xs mb-2">
+                <input type="text" id="share-link-input" readonly class="w-full surface px-2 py-1 border focus:outline-none focus:border-primary text-xs mb-2">
                 <div class="space-y-1">
-                    <button id="copy-share-link-btn" class="w-full px-3 py-1 bg-[var(--surface)] hover:bg-[var(--surface-hover)] text text-xs">Copy Link</button>
-                    <button id="unshare-btn" class="w-full px-3 py-1 bg-[var(--surface-light)] hover:bg-[var(--surface-light-hover)] text text-xs" style="display: none;">Remove Share</button>
+                    <button id="copy-share-link-btn" class="w-full px-3 py-1 surface hover:surface text text-xs">Copy Link</button>
+                    <button id="unshare-btn" class="w-full px-3 py-1 surface-light hover:surface-light text text-xs" style="display: none;">Remove Share</button>
                 </div>
             </div>
         </div>
@@ -383,7 +383,7 @@
                     const sectionTitle = formatKey(key);
 
                     html += `<div class="ai-section mb-3">`;
-                    html += `<h4 class="text-xs font-bold text-[var(--primary-color)] mb-2">${sectionTitle}</h4>`;
+                    html += `<h4 class="text-xs font-bold primary-text mb-2">${sectionTitle}</h4>`;
                     
                     if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
                         html += `<div class="ml-2">`;

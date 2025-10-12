@@ -33,19 +33,19 @@
 <body class="bg text text-xs">
     <!-- Age Verification Overlay -->
     <div id="age-verification-overlay" class="age-verification-overlay" style="display: none;">
-        <div class="surface border-2 border-[var(--danger)] p-8 max-w-md text-center">
+        <div class="surface border-2 border-danger p-8 max-w-md text-center">
             <svg class="mx-auto mb-4" width="64" height="64" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="#dc2626"/>
             </svg>
-            <h2 class="text-xl font-bold mb-4 text-[var(--danger)]">Explicit Content Warning</h2>
+            <h2 class="text-xl font-bold mb-4 text-danger">Explicit Content Warning</h2>
             <p class="text-base mb-6 text">
                 This media contains explicit content. By clicking "Yes, I am 18+", you confirm that you are over the age of 18 and consent to viewing adult content.
             </p>
             <div class="flex gap-4 justify-center">
-                <button id="age-confirm-yes" class="px-6 py-3 bg-[var(--success)] hover:bg-[var(--success)] tag-text font-bold text-sm">
+                <button id="age-confirm-yes" class="px-6 py-3 bg-success hover:bg-success tag-text font-bold text-sm">
                     Yes, I am 18+
                 </button>
-                <button id="age-confirm-no" class="px-6 py-3 bg-[var(--danger)] hover:bg-[var(--danger-hover)] tag-text font-bold text-sm">
+                <button id="age-confirm-no" class="px-6 py-3 bg-danger hover:bg-danger tag-text font-bold text-sm">
                     No, I am not 18
                 </button>
             </div>
@@ -53,7 +53,7 @@
     </div>
 
     <div class="container mx-auto px-4 py-4">
-        <div class="bg-[var(--primary-color)] text-[var(--primary-text)] p-3 mb-4 flex items-center gap-2 text-xs">
+        <div class="bg-primary primary-text p-3 mb-4 flex items-center gap-2 text-xs">
             <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/>
             </svg>
@@ -159,7 +159,7 @@
                         <div class="surface p-3 border">
                             <h3 class="text-sm font-bold mb-3 pb-2 border-b">Actions</h3>
                             <div class="space-y-2">
-                                <a id="download-btn" href="/api/shared/${shareUuid}/file" download="${media.filename}" class="block w-full px-3 py-2 surface-light surface-light-hover text text-center text-xs">
+                                <a id="download-btn" href="/api/shared/${shareUuid}/file" download="${media.filename}" class="block w-full px-3 py-2 surface-light hover:surface-light text text-center text-xs">
                                     Download
                                 </a>
                             </div>
@@ -254,7 +254,7 @@
                     const sectionTitle = formatKey(key);
                 
                     html += `<div class="ai-section mb-3">`;
-                    html += `<h4 class="text-xs font-bold text-[var(--primary-color)] mb-2">${sectionTitle}</h4>`;
+                    html += `<h4 class="text-xs font-bold primary-text mb-2">${sectionTitle}</h4>`;
                     
                     if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
                         html += `<div class="ml-2">`;

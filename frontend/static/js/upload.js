@@ -232,7 +232,7 @@ class Uploader {
             
             <div class="mb-4">
                 <label class="block text-xs font-bold mb-2">Base Rating</label>
-                <select id="base-rating" class="w-full px-3 py-2 surface border text-xs focus:outline-none focus:border-[var(--primary-color)]">
+                <select id="base-rating" class="w-full px-3 py-2 surface border text-xs focus:outline-none focus:border-primary">
                     <option value="safe">Safe</option>
                     <option value="questionable">Questionable</option>
                     <option value="explicit">Explicit</option>
@@ -242,7 +242,7 @@ class Uploader {
             <div class="mb-4">
                 <label class="block text-xs font-bold mb-2">Base Tags (prefixed to all media)</label>
                 <div style="position: relative;">
-                    <div id="base-tags" contenteditable="true" data-placeholder="original highres cat_ears" class="tag-input w-full surface px-2 py-1 border text-xs focus:outline-none focus:border-[var(--primary-color)]" style="min-height: 1.5rem; white-space: pre-wrap; overflow-wrap: break-word;"></div>
+                    <div id="base-tags" contenteditable="true" data-placeholder="original highres cat_ears" class="tag-input w-full surface px-2 py-1 border text-xs focus:outline-none focus:border-primary" style="min-height: 1.5rem; white-space: pre-wrap; overflow-wrap: break-word;"></div>
                 </div>
             </div>
         `;
@@ -293,7 +293,7 @@ class Uploader {
                     
                     <div class="mb-3">
                         <label class="block text-xs font-bold mb-2">Individual Rating</label>
-                        <select id="individual-rating" class="w-full px-3 py-2 bg border text-xs focus:outline-none focus:border-[var(--primary-color)]">
+                        <select id="individual-rating" class="w-full px-3 py-2 bg border text-xs focus:outline-none focus:border-primary">
                             <option value="safe">Safe</option>
                             <option value="questionable">Questionable</option>
                             <option value="explicit">Explicit</option>
@@ -303,7 +303,7 @@ class Uploader {
                     <div class="mb-3">
                         <label class="block text-xs font-bold mb-2">Additional Tags (base tags are prefixed automatically)</label>
                         <div style="position: relative;">
-                            <div id="individual-tags" contenteditable="true" data-placeholder="solo long_hair" class="tag-input w-full surface px-2 py-1 border text-xs focus:outline-none focus:border-[var(--primary-color)]" style="min-height: 1.5rem; white-space: pre-wrap; overflow-wrap: break-word;"></div>
+                            <div id="individual-tags" contenteditable="true" data-placeholder="solo long_hair" class="tag-input w-full surface px-2 py-1 border text-xs focus:outline-none focus:border-primary" style="min-height: 1.5rem; white-space: pre-wrap; overflow-wrap: break-word;"></div>
                         </div>
                     </div>
                     
@@ -311,7 +311,7 @@ class Uploader {
                         Final tags: <span id="final-tags-preview" class="text"></span>
                     </div>
                     
-                    <button id="remove-media-btn" class="px-3 py-2 bg-[var(--danger)] hover:bg-[var(--danger-hover)] tag-text text-xs">Remove This Media</button>
+                    <button id="remove-media-btn" class="px-3 py-2 bg-danger hover:bg-danger tag-text text-xs">Remove This Media</button>
                 </div>
             </div>
         `;
@@ -370,8 +370,8 @@ class Uploader {
         submitDiv.style.display = 'none';
         submitDiv.className = 'flex gap-2';
         submitDiv.innerHTML = `
-            <button id="cancel-all-btn" class="flex-1 px-4 py-2 bg-[var(--surface-light)] hover:bg-[var(--surface-light-hover)] text text-xs">Cancel & Clear All</button>
-            <button id="submit-all-btn" class="flex-1 px-4 py-2 bg-[var(--primary-color)] text-[var(--primary-text)] hover:bg-[var(--primary-hover)] text-xs font-bold">Submit All Media</button>
+            <button id="cancel-all-btn" class="flex-1 px-4 py-2 surface-light hover:surface-light text text-xs">Cancel & Clear All</button>
+            <button id="submit-all-btn" class="flex-1 px-4 py-2 bg-primary primary-text hover:bg-primary text-xs font-bold">Submit All Media</button>
         `;
         
         document.getElementById('preview-grid').parentNode.insertBefore(submitDiv, document.getElementById('preview-grid').nextSibling);
@@ -436,7 +436,7 @@ class Uploader {
     async handleArchive(archiveFile) {
         // Show loading indicator
         const loadingDiv = document.createElement('div');
-        loadingDiv.className = 'bg-[var(--primary-color)] text-[var(--primary-text)] p-2 mb-2 text-xs';
+        loadingDiv.className = 'bg-primary primary-text p-2 mb-2 text-xs';
         loadingDiv.textContent = `Extracting ${archiveFile.name}...`;
         this.uploadArea.parentNode.insertBefore(loadingDiv, this.uploadArea.nextSibling);
         
@@ -493,7 +493,7 @@ class Uploader {
             
         } catch (error) {
             console.error('Archive extraction error:', error);
-            loadingDiv.className = 'bg-[var(--danger)] tag-text p-2 mb-2 text-xs';
+            loadingDiv.className = 'bg-danger tag-text p-2 mb-2 text-xs';
             loadingDiv.textContent = `✗ Error extracting ${archiveFile.name}: ${error.message}`;
             setTimeout(() => loadingDiv.remove(), 5000);
         }
@@ -510,7 +510,7 @@ class Uploader {
     createPreview(fileData, index) {
         const container = document.getElementById('preview-thumbnails');
         const thumbnailDiv = document.createElement('div');
-        thumbnailDiv.className = 'relative cursor-pointer border-2 hover:border-[var(--primary-color)] transition-colors';
+        thumbnailDiv.className = 'relative cursor-pointer border-2 hover:border-primary transition-colors';
         thumbnailDiv.dataset.index = index;
         
         const isVideo = fileData.file.type.startsWith('video/');
@@ -530,13 +530,13 @@ class Uploader {
         
         // Add indicator overlay
         const indicator = document.createElement('div');
-        indicator.className = 'absolute top-0 right-0 bg-[var(--surface)] bg-opacity-75 px-1 text-xs';
+        indicator.className = 'absolute top-0 right-0 surface bg-opacity-75 px-1 text-xs';
         indicator.innerHTML = `<span class="rating-indicator">${fileData.rating[0].toUpperCase()}</span>`;
         thumbnailDiv.appendChild(indicator);
         
         // Add tags indicator
         const tagsIndicator = document.createElement('div');
-        tagsIndicator.className = 'absolute bottom-0 left-0 right-0 bg-[var(--surface)] bg-opacity-75 px-1 text-xs truncate tags-indicator';
+        tagsIndicator.className = 'absolute bottom-0 left-0 right-0 surface bg-opacity-75 px-1 text-xs truncate tags-indicator';
         tagsIndicator.textContent = this.getFullTags(fileData).join(' ') || 'No tags';
         thumbnailDiv.appendChild(tagsIndicator);
         
@@ -561,10 +561,10 @@ class Uploader {
         // Update UI
         document.querySelectorAll('#preview-thumbnails > div').forEach((div, i) => {
             if (i === index) {
-                div.classList.add('border-[var(--primary-color)]');
+                div.classList.add('border-primary');
                 div.classList.remove('border');
             } else {
-                div.classList.remove('border-[var(--primary-color)]');
+                div.classList.remove('border-primary');
                 div.classList.add('border');
             }
         });

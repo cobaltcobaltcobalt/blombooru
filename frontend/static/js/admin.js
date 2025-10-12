@@ -272,7 +272,7 @@ class AdminPanel {
         // Show loading
         statusDiv.style.display = 'block';
         resultDiv.innerHTML = `
-            <div class="bg-[var(--primary-color)] text-[var(--primary-text)] p-3 mb-2">
+            <div class="bg-primary primary-text p-3 mb-2">
                 <strong>Adding tags...</strong>
             </div>
         `;
@@ -284,7 +284,7 @@ class AdminPanel {
             });
             
             let html = `
-                <div class="bg-[var(--success)] p-3 mb-2 tag-text">
+                <div class="bg-success p-3 mb-2 tag-text">
                     <strong>Tags added successfully!</strong>
                 </div>
                 <div class="text-secondary space-y-1">
@@ -296,7 +296,7 @@ class AdminPanel {
             
             if (ignoredTags.length > 0) {
                 html += `
-                    <div class="mt-2 p-2 bg-[var(--surface-light)] border text-xs">
+                    <div class="mt-2 p-2 surface-light border text-xs">
                         <strong>Ignored (already exist or are aliases):</strong><br>
                         ${ignoredTags.join(', ')}
                     </div>
@@ -305,7 +305,7 @@ class AdminPanel {
             
             if (response.errors.length > 0) {
                 html += `
-                    <div class="mt-2 p-2 bg-[var(--warning)] tag-text text-xs">
+                    <div class="mt-2 p-2 bg-warning tag-text text-xs">
                         <strong>Errors:</strong><br>
                         ${response.errors.slice(0, 5).join('<br>')}
                     </div>
@@ -323,7 +323,7 @@ class AdminPanel {
             
         } catch (error) {
             resultDiv.innerHTML = `
-                <div class="bg-[var(--danger)] p-3 tag-text">
+                <div class="bg-danger p-3 tag-text">
                     <strong>Error:</strong> ${error.message}
                 </div>
             `;
@@ -593,7 +593,7 @@ class AdminPanel {
         
         statusDiv.style.display = 'block';
         progressDiv.innerHTML = `
-            <div class="bg-[var(--primary-color)] text-[var(--primary-text)] p-3 mb-2">
+            <div class="bg-primary primary-text p-3 mb-2">
                 <strong>Uploading and processing...</strong><br>
                 <span class="text-xs">This <em>can</em> take a while. Do not refresh the page.</span>
             </div>
@@ -616,7 +616,7 @@ class AdminPanel {
             const result = await response.json();
             
             let html = `
-                <div class="bg-[var(--success)] p-3 mb-2 tag-text">
+                <div class="bg-success p-3 mb-2 tag-text">
                     <strong>${result.message}</strong>
                 </div>
                 <div class="text-secondary space-y-1">
@@ -629,7 +629,7 @@ class AdminPanel {
             if (result.skipped_long_tags > 0 || result.skipped_long_aliases > 0) {
                 html += `
                     <div class="pt-2 border-t mt-2">
-                        <div class="text-[var(--warning)]">Skipped (too long):</div>
+                        <div class="text-warning">Skipped (too long):</div>
                         ${result.skipped_long_tags > 0 ? `<div>Tags: <strong class="text">${result.skipped_long_tags}</strong></div>` : ''}
                         ${result.skipped_long_aliases > 0 ? `<div>Aliases: <strong class="text">${result.skipped_long_aliases}</strong></div>` : ''}
                     </div>
@@ -640,7 +640,7 @@ class AdminPanel {
             
             if (result.errors && result.errors.length > 0) {
                 html += `
-                    <div class="bg-[var(--warning)] p-3 mt-2 tag-text text-xs">
+                    <div class="bg-warning p-3 mt-2 tag-text text-xs">
                         <strong>Warnings (${result.total_errors} total):</strong><br>
                         ${result.errors.slice(0, 5).join('<br>')}
                     </div>
@@ -654,7 +654,7 @@ class AdminPanel {
             
         } catch (error) {
             progressDiv.innerHTML = `
-                <div class="bg-[var(--danger)] p-3 tag-text">
+                <div class="bg-danger p-3 tag-text">
                     <strong>Error:</strong> ${error.message}
                 </div>
             `;
@@ -682,7 +682,7 @@ class AdminPanel {
             resultsDiv.innerHTML = data.tags.map(tag => `
                 <div class="bg p-3 border-b flex justify-between items-center">
                     <div>
-                        <button class="text-xs text-secondary bg-[var(--danger)] hover:bg-[var(--danger-hover)] tag-text px-2 py-1 mr-2" onclick="if(confirm('Delete tag & alias?')) { app.apiCall('/api/admin/tags/${tag.id}', { method: 'DELETE' }).then(() => { alert('Tag deleted'); location.reload(); }).catch(e => alert('Error deleting tag: ' + e.message)); }">&#x2715;</button>
+                        <button class="text-xs text-secondary bg-danger hover:bg-danger tag-text px-2 py-1 mr-2" onclick="if(confirm('Delete tag & alias?')) { app.apiCall('/api/admin/tags/${tag.id}', { method: 'DELETE' }).then(() => { alert('Tag deleted'); location.reload(); }).catch(e => alert('Error deleting tag: ' + e.message)); }">&#x2715;</button>
                         <a href="/?q=${encodeURIComponent(tag.name)}" class="tag ${tag.category} tag-text">${tag.name}</a>
                         <span class="text-xs text-secondary ml-2">(${tag.post_count} posts)</span>
                     </div>
@@ -692,7 +692,7 @@ class AdminPanel {
             
         } catch (error) {
             console.error('Error searching tags:', error);
-            resultsDiv.innerHTML = '<p class="text-xs text-[var(--danger)] p-3">Error searching tags</p>';
+            resultsDiv.innerHTML = '<p class="text-xs text-danger p-3">Error searching tags</p>';
         }
     }
     
