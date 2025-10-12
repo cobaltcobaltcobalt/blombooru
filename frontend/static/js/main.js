@@ -131,30 +131,53 @@ class Blombooru {
             logoutBtn.style.display = this.isAuthenticated ? 'block' : 'none';
         }
     }
-    
-    showNotification(message, type = 'info') {
-        // Create notification element
+
+    showNotification(message, type = 'info', title = null) {
+        // Set default title based on type if none provided
+        const defaultTitles = {
+            info: 'Info',
+            success: 'Success',
+            error: 'Error'
+        };
+        const notificationTitle = title || defaultTitles[type] || 'Info';
         const notification = document.createElement('div');
-        notification.style.cssText = `
-            position: fixed;
-            top: 80px;
-            right: 20px;
-            padding: 1rem 1.5rem;
-            background-color: ${type === 'success' ? 'var(--success)' : type === 'error' ? 'var(--danger)' : 'var(--primary-color)'};
-            color: white;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-            z-index: 1000;
-            animation: slideIn 0.3s ease-out;
-        `;
-        notification.textContent = message;
         
+        const baseClasses = 'fixed top-20 left-1/2 -translate-x-1/2 px-6 py-4 shadow-lg border-2 z-[1000] min-w-[320px] max-w-md';
+        
+        if (type === 'success') {
+            notification.className = `${baseClasses} bg-success tag-text`;
+            notification.style.borderColor = 'var(--success-hover)';
+        } else if (type === 'error') {
+            notification.className = `${baseClasses} bg-danger tag-text`;
+            notification.style.borderColor = 'var(--danger-hover)';
+        } else {
+            notification.className = `${baseClasses} surface text`;
+            notification.style.borderColor = 'var(--primary-hover)';
+        }
+    
+        // Create title element
+        const titleEl = document.createElement('div');
+        titleEl.className = 'font-semibold text-base mb-1';
+        titleEl.textContent = notificationTitle;
+    
+        // Create message element
+        const messageEl = document.createElement('div');
+        messageEl.className = 'text-sm opacity-90';
+        messageEl.textContent = message;
+    
+        notification.appendChild(titleEl);
+        notification.appendChild(messageEl);
+    
+        // Animation
+        notification.style.animation = 'slideIn 0.3s ease-out';
+    
         document.body.appendChild(notification);
-        
-        // Remove after 3 seconds
+    
+        // Remove after 5 seconds
         setTimeout(() => {
             notification.style.animation = 'slideOut 0.3s ease-out';
             setTimeout(() => notification.remove(), 300);
-        }, 3000);
+        }, 5000);
     }
     
     setRatingFilter(rating) {
