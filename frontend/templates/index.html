@@ -30,8 +30,14 @@
     
     <!-- Main Content Grid with Sidebar -->
     <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
+
         <!-- Gallery Grid -->
         <div class="lg:col-span-3">
+            <!-- Top Page Navigation -->
+            <div id="page-nav-top" class="surface p-3 mb-4 border" style="display: none;">
+                <div class="flex items-center justify-center gap-2 text-xs flex-wrap"></div>
+            </div>
+
             <div id="gallery-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 2xl:grid-cols-8 gap-2"></div>
             
             <!-- Loading Indicator -->
@@ -49,6 +55,18 @@
                     <p class="text-secondary">Loading...</p>
                 </div>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Page Jump Modal -->
+<div id="page-jump-modal" class="modal" style="display: none;">
+    <div class="modal-content surface border p-4" style="max-width: 300px;">
+        <h3 class="text-sm font-bold mb-3">Jump to Page</h3>
+        <input type="number" id="page-jump-input" min="1" class="w-full bg px-3 py-2 border text-xs mb-3 focus:outline-none focus:border-primary">
+        <div class="flex gap-2">
+            <button id="page-jump-go" class="flex-1 px-3 py-2 bg-primary primary-text hover:bg-primary text-xs">Go</button>
+            <button id="page-jump-cancel" class="flex-1 px-3 py-2 border hover:surface text-xs">Cancel</button>
         </div>
     </div>
 </div>

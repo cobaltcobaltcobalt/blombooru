@@ -1,14 +1,15 @@
 class Gallery {
     constructor() {
         this.currentPage = 1;
+        this.totalPages = 1;
         this.isLoading = false;
-        this.hasMore = true;
         this.selectedItems = new Set();
         this.tagCounts = new Map(); // Track tag counts
         
         this.galleryContainer = document.getElementById('gallery-grid');
         this.loadingIndicator = document.getElementById('loading-indicator');
         this.popularTagsContainer = document.getElementById('popular-tags');
+        this.pageNavTop = document.getElementById('page-nav-top');
         
         if (this.galleryContainer) {
             this.init();
@@ -16,30 +17,16 @@ class Gallery {
     }
     
     init() {
-        this.setupInfiniteScroll();
         this.setupBulkActions();
         this.setupRatingFilter();
+        this.setupPageJumpModal();
         
-        // Load initial page if empty
-        if (this.galleryContainer.children.length === 0) {
-            this.loadPage();
-        }
-    }
-    
-    setupInfiniteScroll() {
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting && !this.isLoading && this.hasMore) {
-                    this.loadPage();
-                }
-            });
-        }, {
-            rootMargin: '200px'
-        });
+        // Get page from URL or default to 1
+        const params = new URLSearchParams(window.location.search);
+        this.currentPage = parseInt(params.get('page')) || 1;
         
-        if (this.loadingIndicator) {
-            observer.observe(this.loadingIndicator);
-        }
+        // Load initial page
+        this.loadPage();
     }
     
     setupRatingFilter() {
@@ -66,10 +53,6 @@ class Gallery {
         this.galleryContainer.innerHTML = '';
         this.tagCounts.clear();
         
-        this.currentPage = 1;
-        this.hasMore = true;
-        
-        // Update URL with rating parameter
         const url = new URL(window.location);
         url.searchParams.set('rating', rating);
         window.history.replaceState({}, '', url);
@@ -78,10 +61,14 @@ class Gallery {
     }
     
     async loadPage() {
-        if (this.isLoading || !this.hasMore) return;
+        if (this.isLoading) return;
         
         this.isLoading = true;
         this.showLoading();
+        
+        // Clear gallery for new page
+        this.galleryContainer.innerHTML = '';
+        this.tagCounts.clear();
         
         try {
             const params = new URLSearchParams(window.location.search);
@@ -116,14 +103,14 @@ class Gallery {
             const data = await response.json();
             console.log('Gallery data loaded:', data);
             
+            this.totalPages = data.pages || 1;
+            
             if (data.items && data.items.length > 0) {
                 this.processTagCounts(data.items);
                 this.renderItems(data.items);
                 this.updatePopularTags();
-                this.currentPage++;
-                this.hasMore = this.currentPage <= data.pages;
+                this.renderPagination();
             } else {
-                this.hasMore = false;
                 if (this.currentPage === 1) {
                     this.showEmptyState();
                 }
@@ -136,6 +123,146 @@ class Gallery {
             this.isLoading = false;
             this.hideLoading();
         }
+    }
+    
+    renderPagination() {
+        if (this.totalPages <= 1) {
+            this.pageNavTop.style.display = 'none';
+            return;
+        }
+        
+        const paginationHTML = this.generatePaginationHTML();
+        
+        this.pageNavTop.querySelector('div').innerHTML = paginationHTML;
+        this.pageNavTop.style.display = 'block';
+                
+        // Add click handlers
+        this.setupPaginationHandlers(this.pageNavTop);
+    }
+    
+    generatePaginationHTML() {
+        const pages = [];
+        const current = this.currentPage;
+        const total = this.totalPages;
+        
+        // Always show first page
+        pages.push(this.createPageButton(1, current === 1));
+        
+        if (total <= 7) {
+            // Show all pages if 7 or fewer
+            for (let i = 2; i <= total; i++) {
+                pages.push(this.createPageButton(i, current === i));
+            }
+        } else {
+            // Show with ellipsis
+            if (current <= 4) {
+                // Near the start: 1 2 3 4 5 ... 27
+                for (let i = 2; i <= 5; i++) {
+                    pages.push(this.createPageButton(i, current === i));
+                }
+                pages.push(this.createEllipsis());
+                pages.push(this.createPageButton(total, false));
+            } else if (current >= total - 3) {
+                // Near the end: 1 ... 23 24 25 26 27
+                pages.push(this.createEllipsis());
+                for (let i = total - 4; i <= total; i++) {
+                    pages.push(this.createPageButton(i, current === i));
+                }
+            } else {
+                // In the middle: 1 ... 12 13 14 ... 27
+                pages.push(this.createEllipsis());
+                for (let i = current - 1; i <= current + 1; i++) {
+                    pages.push(this.createPageButton(i, current === i));
+                }
+                pages.push(this.createEllipsis());
+                pages.push(this.createPageButton(total, false));
+            }
+        }
+        
+        return pages.join(' <span class="text-secondary">|</span> ');
+    }
+    
+    createPageButton(pageNum, isActive) {
+        if (isActive) {
+            return `<span class="px-2 py-1 font-bold text-primary">${pageNum}</span>`;
+        }
+        return `<a href="#" class="px-2 py-1 hover:text-primary page-link" data-page="${pageNum}">${pageNum}</a>`;
+    }
+    
+    createEllipsis() {
+        return `<a href="#" class="px-2 py-1 hover:text-primary page-ellipsis">...</a>`;
+    }
+    
+    setupPaginationHandlers(container) {
+        container.querySelectorAll('.page-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const page = parseInt(e.target.dataset.page);
+                this.goToPage(page);
+            });
+        });
+        
+        container.querySelectorAll('.page-ellipsis').forEach(ellipsis => {
+            ellipsis.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.showPageJumpModal();
+            });
+        });
+    }
+    
+    setupPageJumpModal() {
+        const modal = document.getElementById('page-jump-modal');
+        const input = document.getElementById('page-jump-input');
+        const goBtn = document.getElementById('page-jump-go');
+        const cancelBtn = document.getElementById('page-jump-cancel');
+        
+        goBtn.addEventListener('click', () => {
+            const page = parseInt(input.value);
+            if (page >= 1 && page <= this.totalPages) {
+                modal.style.display = 'none';
+                this.goToPage(page);
+            }
+        });
+        
+        cancelBtn.addEventListener('click', () => {
+            modal.style.display = 'none';
+        });
+        
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                goBtn.click();
+            }
+        });
+        
+        // Close on outside click
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.style.display = 'none';
+            }
+        });
+    }
+    
+    showPageJumpModal() {
+        const modal = document.getElementById('page-jump-modal');
+        const input = document.getElementById('page-jump-input');
+        
+        input.max = this.totalPages;
+        input.value = this.currentPage;
+        modal.style.display = 'flex';
+        input.focus();
+        input.select();
+    }
+    
+    goToPage(page) {
+        if (page < 1 || page > this.totalPages || page === this.currentPage) return;
+        
+        this.currentPage = page;
+        
+        const url = new URL(window.location);
+        url.searchParams.set('page', page);
+        window.history.pushState({}, '', url);
+        
+        this.loadPage();
     }
     
     processTagCounts(items) {
