@@ -502,10 +502,11 @@
                 // Show related media section and populate it
                 const relatedMediaEl = el('related-media');
                 const relatedMediaSection = relatedMediaEl.parentElement;
-
+                const params = new URLSearchParams(window.location.search);
+                const queryString = params.toString();
                 relatedMediaSection.style.display = 'block';
                 relatedMediaEl.innerHTML = items.map(i =>`
-                <a href="/media/${i.id}" class="gallery-item ${i.file_type}">
+                <a href="/media/${i.id}${queryString ? '?' + queryString : ''}" class="gallery-item ${i.file_type}">
                     <img src="/api/media/${i.id}/thumbnail" alt="${i.filename}" loading="lazy">
                 </a>
                 `).join('');

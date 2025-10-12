@@ -216,7 +216,7 @@ class Gallery {
         item.className = `gallery-item ${media.file_type}`;
         item.dataset.id = media.id;
         item.dataset.rating = media.rating;
-        
+
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.className = 'checkbox';
@@ -241,7 +241,9 @@ class Gallery {
         };
         
         const link = document.createElement('a');
-        link.href = `/media/${media.id}`;
+        const params = new URLSearchParams(window.location.search);
+        const queryString = params.toString();
+        link.href = `/media/${media.id}${queryString ? '?' + queryString : ''}`;
         link.appendChild(img);
         
         item.appendChild(checkbox);
