@@ -122,11 +122,45 @@ def find_untracked_media(db: Session) -> dict:
     original_dir = settings.ORIGINAL_DIR
     untracked_files = []
     
-    # Get all tracked file hashes
-    tracked_hashes = {m.hash for m in db.query(Media.hash).all()}
+    # Get all tracked files by multiple methods:
+    # 1. File hashes (primary method)
+    tracked_hashes = set()
+    # 2. Absolute file paths (backup method)
+    tracked_paths = set()
+    # 3. Filenames
+    tracked_filenames = set()
+    
+    all_media = db.query(Media).all()
+    
+    for media in all_media:
+        # Add hash if it exists
+        if media.hash:
+            tracked_hashes.add(media.hash)
+        
+        # Add filename
+        if media.filename:
+            tracked_filenames.add(media.filename)
+        
+        # Add absolute path
+        if media.path:
+            try:
+                abs_path = (settings.BASE_DIR / media.path).resolve()
+                tracked_paths.add(str(abs_path))
+            except:
+                pass
+        
+        # Also check original_path if it exists
+        if hasattr(media, 'original_path') and media.original_path:
+            try:
+                abs_path = Path(media.original_path).resolve()
+                tracked_paths.add(str(abs_path))
+            except:
+                pass
     
     print(f"Scanning directory: {original_dir}")
     print(f"Tracked hashes: {len(tracked_hashes)}")
+    print(f"Tracked paths: {len(tracked_paths)}")
+    print(f"Tracked filenames: {len(tracked_filenames)}")
     
     # Scan directory
     for file_path in original_dir.rglob('*'):
@@ -134,12 +168,23 @@ def find_untracked_media(db: Session) -> dict:
             continue
         
         try:
-            # Check if already tracked
+            # Get absolute path for comparison
+            abs_path = str(file_path.resolve())
+            
+            # Check if tracked by path
+            if abs_path in tracked_paths:
+                continue
+            
+            # Check if tracked by filename
+            if file_path.name in tracked_filenames:
+                continue
+            
+            # Check if tracked by hash
             file_hash = calculate_file_hash(file_path)
             if file_hash in tracked_hashes:
                 continue
             
-            # Add to untracked list with full path
+            # File is untracked - add to list
             untracked_files.append({
                 'path': str(file_path),
                 'filename': file_path.name,
@@ -149,6 +194,8 @@ def find_untracked_media(db: Session) -> dict:
         except Exception as e:
             print(f"Error checking file {file_path.name}: {str(e)}")
             continue
+    
+    print(f"Found {len(untracked_files)} untracked files")
     
     return {
         'new_files': len(untracked_files),
