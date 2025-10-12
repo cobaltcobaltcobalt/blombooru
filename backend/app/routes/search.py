@@ -1,9 +1,8 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, and_, or_
+from sqlalchemy import desc, and_, or_, exists
 from typing import List, Optional
 import re
-
 from ..database import get_db
 from ..models import Media, Tag, blombooru_media_tags
 from ..schemas import RatingEnum, MediaResponse
@@ -44,7 +43,8 @@ def parse_search_query(query_string: str) -> dict:
 
 def wildcard_to_sql(pattern: str) -> str:
     """Convert wildcard pattern to SQL LIKE pattern"""
-    # Replace * with % and ? with _
+    # Escape SQL special characters, then replace * with % and ? with _
+    pattern = pattern.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
     pattern = pattern.replace('*', '%').replace('?', '_')
     return pattern
 
@@ -57,7 +57,6 @@ async def search_media(
     db: Session = Depends(get_db)
 ):
     """Search media with tag-based query"""
-    # Don't filter by is_shared - show all media in your private gallery
     query = db.query(Media)
     
     # Apply rating filter
@@ -72,32 +71,42 @@ async def search_media(
     if q:
         parsed = parse_search_query(q)
         
-        # Include tags
+        # Include tags (exact match)
         for tag_name in parsed['include']:
             tag = db.query(Tag).filter(Tag.name == tag_name.lower()).first()
             if tag:
                 query = query.filter(Media.tags.contains(tag))
         
-        # Exclude tags
+        # Exclude tags (exact match)
         for tag_name in parsed['exclude']:
             tag = db.query(Tag).filter(Tag.name == tag_name.lower()).first()
             if tag:
                 query = query.filter(~Media.tags.contains(tag))
         
-        # Wildcards
+        # Wildcards - use subquery approach for efficiency
         for wildcard_type, pattern in parsed['wildcards']:
             sql_pattern = wildcard_to_sql(pattern)
-            matching_tags = db.query(Tag).filter(Tag.name.like(sql_pattern)).all()
             
             if wildcard_type == 'include':
-                # Media must have at least one matching tag
-                if matching_tags:
-                    tag_filters = [Media.tags.contains(tag) for tag in matching_tags]
-                    query = query.filter(or_(*tag_filters))
+                # Media must have at least one tag matching the pattern
+                subquery = exists().where(
+                    and_(
+                        blombooru_media_tags.c.media_id == Media.id,
+                        blombooru_media_tags.c.tag_id == Tag.id,
+                        Tag.name.like(sql_pattern)
+                    )
+                )
+                query = query.filter(subquery)
             else:
-                # Media must not have any matching tags
-                for tag in matching_tags:
-                    query = query.filter(~Media.tags.contains(tag))
+                # Media must not have any tags matching the pattern
+                subquery = exists().where(
+                    and_(
+                        blombooru_media_tags.c.media_id == Media.id,
+                        blombooru_media_tags.c.tag_id == Tag.id,
+                        Tag.name.like(sql_pattern)
+                    )
+                )
+                query = query.filter(~subquery)
     
     # Order by upload date
     query = query.order_by(desc(Media.uploaded_at))
