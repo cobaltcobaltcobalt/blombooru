@@ -23,7 +23,9 @@ It is designed for individuals who want a powerful, local, simple to use, and mo
 
 - **User-Friendly Onboarding:** A simple first-time setup process to configure your admin account, database connection, and branding.
 
-(todo: add screenshot of gallery view)
+<img width="4388" height="2242" alt="image" src="https://github.com/user-attachments/assets/ed026b61-311e-4ee2-90c4-f762905ad09a" />
+
+*I am logged in as the admin in the above image, hence the checkbox in the top left corner of all media thumbnails*
 
 ## Getting Started
 
