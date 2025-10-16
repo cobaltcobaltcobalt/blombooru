@@ -18,6 +18,18 @@ from ..utils.thumbnail_generator import generate_thumbnail
 
 router = APIRouter(prefix="/api/media", tags=["media"])
 
+def update_tag_counts(db: Session, tag_ids: List[int]):
+    """Update post counts for given tags"""
+    for tag_id in tag_ids:
+        count = db.query(blombooru_media_tags).filter(
+            blombooru_media_tags.c.tag_id == tag_id
+        ).count()
+        
+        db.query(Tag).filter(Tag.id == tag_id).update(
+            {"post_count": count},
+            synchronize_session=False
+        )
+        
 def get_or_create_tags(db: Session, tag_names: List[str]) -> List[Tag]:
     """Get or create tags by name"""
     tags = []
@@ -28,7 +40,7 @@ def get_or_create_tags(db: Session, tag_names: List[str]) -> List[Tag]:
         
         tag = db.query(Tag).filter(Tag.name == name).first()
         if not tag:
-            tag = Tag(name=name)
+            tag = Tag(name=name, post_count=0)
             db.add(tag)
             db.flush()
         tags.append(tag)
@@ -251,21 +263,21 @@ async def upload_media(
         )
         
         # Add tags
+        tag_ids = []
         if tags:
             tag_list = [t.strip() for t in tags.split() if t.strip()]
             media.tags = get_or_create_tags(db, tag_list)
+            tag_ids = [tag.id for tag in media.tags]
             print(f"Tags added: {tag_list}")
         
         db.add(media)
         db.commit()
         db.refresh(media)
         
-        # Update tag counts
-        for tag in media.tags:
-            tag.post_count = db.query(Media).join(blombooru_media_tags).filter(
-                blombooru_media_tags.c.tag_id == tag.id
-            ).count()
-        db.commit()
+        if tag_ids:
+            update_tag_counts(db, tag_ids)
+            db.commit()
+            db.refresh(media)
         
         print(f"Media uploaded successfully: ID={media.id}")
         
@@ -302,21 +314,30 @@ async def update_media(
     if updates.rating:
         media.rating = updates.rating
     
+    affected_tag_ids = []
     if updates.tags is not None:
-        # Remove old tag associations
-        old_tags = media.tags.copy()
+        # Get old tag IDs
+        old_tag_ids = [tag.id for tag in media.tags]
+        
+        # Update tags
         media.tags = get_or_create_tags(db, updates.tags)
         
-        # Update tag counts
-        all_affected_tags = set(old_tags + media.tags)
-        for tag in all_affected_tags:
-            tag.post_count = db.query(Media).join(blombooru_media_tags).filter(
-                blombooru_media_tags.c.tag_id == tag.id
-            ).count()
+        # Get new tag IDs
+        new_tag_ids = [tag.id for tag in media.tags]
+        
+        # All tags that need count updates
+        affected_tag_ids = list(set(old_tag_ids + new_tag_ids))
     
     db.commit()
+    
+    # Update tag counts AFTER commit
+    if affected_tag_ids:
+        update_tag_counts(db, affected_tag_ids)
+        db.commit()
+    
     db.refresh(media)
     return MediaResponse.model_validate(media)
+
 
 @router.delete("/{media_id}")
 async def delete_media(
@@ -329,6 +350,9 @@ async def delete_media(
     if not media:
         raise HTTPException(status_code=404, detail="Media not found")
     
+    # Get tag IDs before deletion
+    tag_ids = [tag.id for tag in media.tags]
+    
     # Delete files
     file_path = settings.BASE_DIR / media.path
     file_path.unlink(missing_ok=True)
@@ -337,12 +361,13 @@ async def delete_media(
         thumb_path = settings.BASE_DIR / media.thumbnail_path
         thumb_path.unlink(missing_ok=True)
     
-    # Update tag counts before deletion
-    for tag in media.tags:
-        tag.post_count = max(0, tag.post_count - 1)
-    
     db.delete(media)
     db.commit()
+    
+    # Update tag counts after deletion
+    if tag_ids:
+        update_tag_counts(db, tag_ids)
+        db.commit()
     
     return {"message": "Media deleted successfully"}
 
