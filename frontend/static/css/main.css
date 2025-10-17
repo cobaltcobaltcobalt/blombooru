@@ -247,6 +247,67 @@ input[type="radio"]:checked + span:hover, span.checked:hover {
     word-break: break-word;
 }
 
+#fullscreen-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: color-mix(in srgb, var(--black) 95%, transparent);
+    z-index: 9999;
+    display: none;
+    justify-content: center;
+    align-items: center;
+}
+
+#fullscreen-overlay.active {
+    display: flex;
+}
+
+#fullscreen-image-wrapper {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    max-width: 100%;
+    max-height: 100%;
+}
+
+#fullscreen-image {
+    display: block;
+    object-fit: contain;
+    cursor: zoom-in;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+}
+
+#fullscreen-image.dragging {
+    cursor: grabbing !important;
+}
+
+#fullscreen-image.zoomed {
+    cursor: grab;
+}
+
+.fullscreen-close-hint {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    width: max-content;
+    transform: translateX(-50%);
+    color: color-mix(in srgb, var(--text) 70%, transparent);
+    background-color: color-mix(in srgb, var(--background) 70%, transparent);
+    padding: 0 4px;
+    font-size: 14px;
+    pointer-events: none;
+    z-index: 10001;
+}
+
+#media-container img {
+    cursor: pointer;
+}
+
 /* Expandable text */
 .expandable-text {
     cursor: pointer;
