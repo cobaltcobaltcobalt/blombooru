@@ -24,6 +24,13 @@
             <div class="surface p-3 border mb-4">
                 <h3 class="text-sm font-bold mb-3 pb-2 border-b">Information</h3>
                 <div id="media-info-content" class="text-xs"></div>
+                
+                <!-- Edit Source (Admin Mode Only) -->
+                <div id="edit-source-section" style="display: none;" class="pt-3 border-t">
+                    <label class="block text-xs font-bold mb-2">Source URL</label>
+                    <input type="url" id="source-input" placeholder="https://example.com/source" class="w-full bg px-2 py-1 border text-xs focus:outline-none focus:border-primary mb-2">
+                    <button id="save-source-btn" class="w-full px-3 py-1 bg-primary primary-text hover:bg-primary text-xs">Save Source</button>
+                </div>
             </div>
             
             <!-- Tags -->
@@ -287,9 +294,16 @@
                 await renderAIMetadata(currentMedia);
                 if (app.isAdminMode) {
                     el('edit-tags-section').style.display = 'block';
+                    el('edit-source-section').style.display = 'block';
                     el('admin-actions').style.display = 'block';
                     el('unshare-btn').style.display = 'block';
                     setupTagInput();
+                    
+                    // Set source input value
+                    const sourceInput = el('source-input');
+                    if (sourceInput) {
+                        sourceInput.value = currentMedia.source || '';
+                    }
                     
                     // Initialize tag autocomplete with contenteditable support
                     const tagsInput = document.getElementById('tags-input');
@@ -322,7 +336,7 @@
         }
 
         function renderInfo(m) {
-            el('media-info-content').innerHTML = `
+            let infoHTML = `
                 <div class="info-row"><span>Filename</span><strong>${m.filename}</strong></div>
                 <div class="info-row"><span>Type</span><strong>${m.file_type}</strong></div>
                 <div class="info-row"><span>Size</span><strong>${formatFileSize(m.file_size)}</strong></div>
@@ -331,6 +345,14 @@
                 <div class="info-row"><span>Uploaded</span><strong>${new Date(m.uploaded_at).toLocaleDateString()}</strong></div>
                 ${m.duration ? `<div class="info-row"><span>Duration</span><strong>${formatDuration(m.duration)}</strong></div>` : ''}
             `;
+
+            // Add source if it exists
+            if (m.source) {
+                infoHTML += `<div class="info-row"><span>Source</span><strong><a href="${m.source}" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline" style="word-break: break-all;">${m.source}</a></strong></div>`;
+            }
+
+            el('media-info-content').innerHTML = infoHTML;
+
             const sel = el('rating-select');
             if (sel) sel.value = m.rating;
         }
@@ -772,6 +794,23 @@
                 location.reload();
             } catch (e) { 
                 app.showNotification(e.message, 'error', 'Error updating tags'); 
+            }
+        });
+
+        el('save-source-btn')?.addEventListener('click', async () => {
+            const sourceInput = el('source-input');
+            const sourceValue = sourceInput.value.trim();
+
+            try {
+                await app.apiCall(`/api/media/${mediaId}`, { 
+                    method: 'PATCH', 
+                    body: JSON.stringify({ source: sourceValue || null }) 
+                });
+                app.showNotification('Source updated successfully', 'success');
+                // Reload to show updated source
+                location.reload();
+            } catch (e) { 
+                app.showNotification(e.message, 'error', 'Error updating source'); 
             }
         });
 

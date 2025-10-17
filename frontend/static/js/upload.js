@@ -6,6 +6,7 @@ class Uploader {
         this.selectedFileIndex = null;
         this.baseRating = 'safe';
         this.baseTags = [];
+        this.baseSource = '';
         this.fileHashes = new Set();
         this.tagValidationCache = new Map();
         this.validationTimeouts = new Map();
@@ -240,6 +241,11 @@ class Uploader {
             </div>
             
             <div class="mb-4">
+                <label class="block text-xs font-bold mb-2">Base Source URL (optional)</label>
+                <input type="url" id="base-source" placeholder="https://example.com/source" class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
+            </div>
+            
+            <div class="mb-4">
                 <label class="block text-xs font-bold mb-2">Base Tags (prefixed to all media)</label>
                 <div style="position: relative;">
                     <div id="base-tags" contenteditable="true" data-placeholder="original highres cat_ears" class="tag-input w-full surface px-2 py-1 border text-xs focus:outline-none focus:border-primary" style="min-height: 1.5rem; white-space: pre-wrap; overflow-wrap: break-word;"></div>
@@ -253,6 +259,11 @@ class Uploader {
         document.getElementById('base-rating').addEventListener('change', (e) => {
             this.baseRating = e.target.value;
             this.updateAllMediaRatings();
+        });
+        
+        document.getElementById('base-source').addEventListener('input', (e) => {
+            this.baseSource = e.target.value.trim();
+            this.updateAllMediaSources();
         });
         
         const baseTagsInput = document.getElementById('base-tags');
@@ -285,7 +296,7 @@ class Uploader {
         gridDiv.style.display = 'none';
         gridDiv.innerHTML = `
             <div class="bg p-4 border mb-4">
-                <h3 class="text-sm font-bold mb-3">Uploaded Media (click to edit individual rating and tags)</h3>
+                <h3 class="text-sm font-bold mb-3">Uploaded Media (click to edit individual rating, source, and tags)</h3>
                 <div id="preview-thumbnails" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2 mb-4"></div>
                 
                 <div id="individual-controls" style="display: none;" class="border-t pt-4">
@@ -298,6 +309,11 @@ class Uploader {
                             <option value="questionable">Questionable</option>
                             <option value="explicit">Explicit</option>
                         </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="block text-xs font-bold mb-2">Individual Source URL (optional)</label>
+                        <input type="url" id="individual-source" placeholder="https://example.com/source" class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
                     </div>
                     
                     <div class="mb-3">
@@ -323,6 +339,12 @@ class Uploader {
             if (this.selectedFileIndex !== null) {
                 this.uploadedFiles[this.selectedFileIndex].rating = e.target.value;
                 this.updateThumbnailIndicator(this.selectedFileIndex);
+            }
+        });
+        
+        document.getElementById('individual-source').addEventListener('input', (e) => {
+            if (this.selectedFileIndex !== null) {
+                this.uploadedFiles[this.selectedFileIndex].source = e.target.value.trim();
             }
         });
         
@@ -417,6 +439,7 @@ class Uploader {
                     file: file,
                     hash: hash,
                     rating: this.baseRating,
+                    source: this.baseSource,
                     additionalTags: [],
                     preview: null
                 };
@@ -479,6 +502,7 @@ class Uploader {
                         file: file,
                         hash: hash,
                         rating: this.baseRating,
+                        source: this.baseSource,
                         additionalTags: [],
                         preview: null
                     };
@@ -573,6 +597,7 @@ class Uploader {
         document.getElementById('individual-controls').style.display = 'block';
         document.getElementById('current-filename').textContent = fileData.file.name;
         document.getElementById('individual-rating').value = fileData.rating;
+        document.getElementById('individual-source').value = fileData.source || '';
         const individualTagsInput = document.getElementById('individual-tags');
         individualTagsInput.textContent = fileData.additionalTags.join(' ');
         
@@ -602,6 +627,16 @@ class Uploader {
         
         if (this.selectedFileIndex !== null) {
             document.getElementById('individual-rating').value = this.baseRating;
+        }
+    }
+    
+    updateAllMediaSources() {
+        this.uploadedFiles.forEach((fileData) => {
+            fileData.source = this.baseSource;
+        });
+        
+        if (this.selectedFileIndex !== null) {
+            document.getElementById('individual-source').value = this.baseSource;
         }
     }
     
@@ -731,6 +766,10 @@ class Uploader {
             formData.append('tags', fullTags.join(' '));
         }
 
+        if (fileData.source) {
+            formData.append('source', fileData.source);
+        }
+
         const response = await fetch('/api/media/', {
             method: 'POST',
             body: formData
@@ -750,6 +789,7 @@ class Uploader {
         this.selectedFileIndex = null;
         this.baseTags = [];
         this.baseRating = 'safe';
+        this.baseSource = '';
         this.fileHashes.clear();
         
         // Clear UI
@@ -759,6 +799,7 @@ class Uploader {
         if (baseTagsInput) baseTagsInput.textContent = '';
         if (individualTagsInput) individualTagsInput.textContent = '';
         document.getElementById('base-rating').value = 'safe';
+        document.getElementById('base-source').value = '';
         document.getElementById('individual-controls').style.display = 'none';
         
         // Hide sections
@@ -786,6 +827,7 @@ class Uploader {
                 file: file,
                 hash: hash,
                 rating: this.baseRating,
+                source: this.baseSource,
                 additionalTags: [],
                 preview: null
             };

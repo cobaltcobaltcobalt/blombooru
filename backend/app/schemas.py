@@ -41,10 +41,12 @@ class MediaBase(BaseModel):
 
 class MediaCreate(MediaBase):
     tags: List[str] = []
+    source: Optional[str] = None
 
 class MediaUpdate(BaseModel):
     rating: Optional[RatingEnum] = None
     tags: Optional[List[str]] = None
+    source: Optional[str] = None
 
 class MediaResponse(MediaBase):
     id: int
@@ -61,6 +63,7 @@ class MediaResponse(MediaBase):
     uploaded_at: datetime
     is_shared: bool
     share_uuid: Optional[str]
+    source: Optional[str] = None
     tags: List[TagResponse] = []
     
     model_config = ConfigDict(from_attributes=True)

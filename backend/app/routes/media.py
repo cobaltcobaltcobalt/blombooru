@@ -190,6 +190,7 @@ async def upload_media(
     file: UploadFile = File(...),
     rating: RatingEnum = Form(RatingEnum.safe),
     tags: str = Form(""),
+    source: Optional[str] = Form(None),
     current_user: User = Depends(require_admin_mode),
     db: Session = Depends(get_db)
 ):
@@ -300,7 +301,8 @@ async def upload_media(
             width=metadata['width'],
             height=metadata['height'],
             duration=metadata['duration'],
-            rating=rating
+            rating=rating,
+            source=source if source else None
         )
         
         # Add tags
@@ -354,6 +356,9 @@ async def update_media(
     # Update fields
     if updates.rating:
         media.rating = updates.rating
+    
+    if 'source' in updates.model_fields_set:
+        media.source = updates.source if updates.source else None
     
     affected_tag_ids = []
     if updates.tags is not None:

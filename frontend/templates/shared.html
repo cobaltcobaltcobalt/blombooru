@@ -175,7 +175,7 @@
         }
         
         function renderInfo(m) {
-            el('media-info-content').innerHTML = `
+            let infoHTML = `
                 <div class="info-row"><span>Filename</span><strong>${m.filename}</strong></div>
                 <div class="info-row"><span>Type</span><strong>${m.file_type}</strong></div>
                 <div class="info-row"><span>Size</span><strong>${formatFileSize(m.file_size)}</strong></div>
@@ -184,6 +184,16 @@
                 <div class="info-row"><span>Uploaded</span><strong>${new Date(m.uploaded_at).toLocaleDateString()}</strong></div>
                 ${m.duration ? `<div class="info-row"><span>Duration</span><strong>${formatDuration(m.duration)}</strong></div>` : ''}
             `;
+
+            // Add source if it exists
+            if (m.source) {
+                infoHTML += `<div class="info-row"><span>Source</span><strong><a href="${m.source}" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline" style="word-break: break-all;">${m.source}</a></strong></div>`;
+            }
+
+            el('media-info-content').innerHTML = infoHTML;
+
+            const sel = el('rating-select');
+            if (sel) sel.value = m.rating;
         }
         
         function renderTags(m) {
