@@ -22,10 +22,11 @@ RUN useradd -m appuser && \
     chown -R appuser:appuser /app
 
 USER appuser
-EXPOSE 8000
+
+EXPOSE ${UVICORN_PORT:-8000}
 
 ENV APP_MODULE=backend.app.main:app \
     UVICORN_HOST=0.0.0.0 \
-    UVICORN_PORT=8000
+    UVICORN_PORT=${UVICORN_PORT:-8000}
 
 CMD ["sh", "-c", "uvicorn ${APP_MODULE} --host ${UVICORN_HOST} --port ${UVICORN_PORT} --workers ${UVICORN_WORKERS:-1}"]
