@@ -6,6 +6,7 @@ from .media_processor import process_media_file, calculate_file_hash
 from .thumbnail_generator import generate_thumbnail
 import uuid
 import shutil
+import re
 
 SUPPORTED_EXTENSIONS = {
     'image': ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff'],
@@ -20,6 +21,47 @@ def is_supported_file(filename: str) -> bool:
         if ext in extensions:
             return True
     return False
+
+def sanitize_filename(filename: str) -> str:
+    """Sanitize filename to be safe for filesystem and web"""
+    # Get the stem and extension separately
+    path = Path(filename)
+    stem = path.stem
+    ext = path.suffix
+    
+    # Replace problematic characters with underscores
+    # Keep alphanumeric, spaces, hyphens, underscores, and dots
+    stem = re.sub(r'[^\w\s\-\.]', '_', stem)
+    # Replace multiple spaces/underscores with single underscore
+    stem = re.sub(r'[\s_]+', '_', stem)
+    # Remove leading/trailing underscores
+    stem = stem.strip('_')
+    
+    # If stem is empty after sanitization, use a UUID
+    if not stem:
+        stem = str(uuid.uuid4())
+    
+    return f"{stem}{ext}"
+
+def get_unique_filename(directory: Path, filename: str) -> str:
+    """Get a unique filename in the directory by appending a number if needed"""
+    sanitized = sanitize_filename(filename)
+    path = directory / sanitized
+    
+    if not path.exists():
+        return sanitized
+    
+    # File exists, add a number suffix
+    stem = path.stem
+    ext = path.suffix
+    counter = 1
+    
+    while True:
+        new_filename = f"{stem}_{counter}{ext}"
+        new_path = directory / new_filename
+        if not new_path.exists():
+            return new_filename
+        counter += 1
 
 def scan_for_new_media(db: Session) -> dict:
     """Scan original directory for untracked media files"""
@@ -49,42 +91,45 @@ def scan_for_new_media(db: Session) -> dict:
             # Process new file
             metadata = process_media_file(file_path)
             
-            # Generate a UUID for this media
+            # Generate a UUID for the thumbnail
             media_uuid = str(uuid.uuid4())
             
-            # Get the original file extension
-            original_extension = file_path.suffix
+            # Get a safe, unique filename
+            unique_filename = get_unique_filename(file_path.parent, file_path.name)
             
-            # Create new filename with UUID
-            new_filename = f"{media_uuid}{original_extension}"
-            new_file_path = file_path.parent / new_filename
+            # Only rename if the filename needs to be changed
+            if unique_filename != file_path.name:
+                new_file_path = file_path.parent / unique_filename
+                try:
+                    shutil.move(str(file_path), str(new_file_path))
+                    print(f"Renamed {file_path.name} to {unique_filename}")
+                    file_path = new_file_path
+                except Exception as e:
+                    error_msg = f"{file_path.name}: Failed to rename - {str(e)}"
+                    errors.append(error_msg)
+                    print(f"Error renaming file: {error_msg}")
+                    # Continue with original filename if rename fails
+                    unique_filename = file_path.name
+            else:
+                # File doesn't need renaming
+                print(f"Keeping original filename: {file_path.name}")
             
-            # Rename the original file
-            try:
-                shutil.move(str(file_path), str(new_file_path))
-                print(f"Renamed {file_path.name} to {new_filename}")
-            except Exception as e:
-                error_msg = f"{file_path.name}: Failed to rename - {str(e)}"
-                errors.append(error_msg)
-                print(f"Error renaming file: {error_msg}")
-                continue
-            
-            # Generate thumbnail
+            # Generate thumbnail with UUID name
             thumbnail_filename = f"{media_uuid}.jpg"
             thumbnail_path = settings.THUMBNAIL_DIR / thumbnail_filename
             
             thumbnail_generated = generate_thumbnail(
-                new_file_path,
+                file_path,
                 thumbnail_path,
                 metadata['file_type']
             )
             
             # Create media record
-            relative_path = new_file_path.relative_to(settings.BASE_DIR)
+            relative_path = file_path.relative_to(settings.BASE_DIR)
             relative_thumb = thumbnail_path.relative_to(settings.BASE_DIR) if thumbnail_generated else None
             
             media = Media(
-                filename=new_filename,
+                filename=unique_filename,
                 path=str(relative_path),
                 thumbnail_path=str(relative_thumb) if relative_thumb else None,
                 hash=metadata['hash'],
@@ -97,10 +142,10 @@ def scan_for_new_media(db: Session) -> dict:
             )
             
             db.add(media)
-            new_files.append(new_filename)
+            new_files.append(unique_filename)
             tracked_hashes.add(file_hash)
             
-            print(f"Added to database: {new_filename}")
+            print(f"Added to database: {unique_filename}")
             
         except Exception as e:
             error_msg = f"{file_path.name}: {str(e)}"
