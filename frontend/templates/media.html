@@ -433,6 +433,8 @@
                 content.innerHTML = html;
                 section.style.display = 'block';
 
+                // Add event listeners to expandable text elements
+                setupExpandableListeners();
             } catch (e) {
                 console.error('Error rendering AI metadata:', e);
                 section.style.display = 'none';
@@ -469,9 +471,9 @@
                 if (isExpandable && escaped.length > 100) {
                     const id = 'expand-' + Math.random().toString(36).substr(2, 9);
                     return `
-                        <div class="expandable-text" onclick="toggleExpand('${id}')" id="${id}-container">
-                            <span class="text-truncated" id="${id}-truncated">${escaped.substring(0, 100)}... <span class="expand-indicator">[click to expand]</span></span>
-                            <span class="text-full" id="${id}-full" style="display: none;">${escaped}</span>
+                        <div class="expandable-text" id="${id}-container" style="cursor: pointer; user-select: text;">
+                            <span class="text-truncated" id="${id}-truncated">${escaped.substring(0, 100)}...<br><span class="expand-indicator" style="user-select: none;">[click to expand]</span></span>
+                            <span class="text-full" id="${id}-full" style="display: none;">${escaped}<br><span class="expand-indicator" style="user-select: none;">[click to collapse]</span></span>
                         </div>
                     `;
                 }
@@ -481,6 +483,35 @@
                 return value.join(', ');
             }
             return String(value);
+        }
+
+        function setupExpandableListeners() {
+            // Find all expandable text containers
+            document.querySelectorAll('.expandable-text').forEach(container => {
+                // Remove any existing listeners to avoid duplicates
+                const newContainer = container.cloneNode(true);
+                container.parentNode.replaceChild(newContainer, container);
+
+                // Add the click listener
+                newContainer.addEventListener('click', function(e) {
+                    // Check if text is being selected
+                    const selection = window.getSelection();
+                    if (selection && selection.toString().length > 0) {
+                        // Text is selected, don't toggle
+                        return;
+                    }
+
+                    // Only proceed if we're not clicking on selected text
+                    const id = this.id.replace('-container', '');
+                    toggleExpand(id);
+                });
+
+                // Prevent double-click from selecting text and triggering expand
+                newContainer.addEventListener('dblclick', function(e) {
+                    // Allow double-click to select text normally
+                    e.stopPropagation();
+                });
+            });
         }
 
         window.toggleExpand = function(id) {

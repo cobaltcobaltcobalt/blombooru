@@ -209,26 +209,21 @@
         async function renderAIMetadata(m) {
             const section = el('ai-metadata-section');
             const content = el('ai-metadata-content');
-        
-            // Check if AI metadata sharing is enabled
-            if (!m.share_ai_metadata) {
-                section.style.display = 'none';
-                return;
-            }
-        
+
             try {
-                // Fetch metadata from the shared endpoint
-                const res = await fetch(`/api/shared/${shareUuid}/metadata`);
+                // Fetch metadata from the file
+                const res = await fetch(`/api/media/${m.id}/metadata`);
                 if (!res.ok) {
                     section.style.display = 'none';
                     return;
                 }
-            
+
                 const metadata = await res.json();
-            
+
                 // Look for AI parameters in common fields
                 let aiData = null;
-            
+
+                // Check for 'parameters' or 'Parameters' field
                 if (metadata.parameters) {
                     aiData = typeof metadata.parameters === 'string' 
                         ? JSON.parse(metadata.parameters) 
@@ -242,17 +237,19 @@
                         ? JSON.parse(metadata.prompt) 
                         : metadata.prompt;
                 }
-            
+
+                // If no AI data found, hide section
                 if (!aiData || Object.keys(aiData).length === 0) {
                     section.style.display = 'none';
                     return;
                 }
-            
+
+                // Generate HTML
                 let html = '';
-            
+
                 Object.entries(aiData).forEach(([key, value]) => {
                     const sectionTitle = formatKey(key);
-                
+
                     html += `<div class="ai-section mb-3">`;
                     html += `<h4 class="text-xs font-bold text-[var(--primary-color)] mb-2">${sectionTitle}</h4>`;
                     
@@ -270,13 +267,15 @@
                     } else {
                         html += `<div class="text ml-2">${formatValue(value, true)}</div>`;
                     }
-                
+
                     html += `</div>`;
                 });
-            
+
                 content.innerHTML = html;
                 section.style.display = 'block';
-            
+
+                // Add event listeners to expandable text elements
+                setupExpandableListeners();
             } catch (e) {
                 console.error('Error rendering AI metadata:', e);
                 section.style.display = 'none';
@@ -284,6 +283,7 @@
         }
 
         function formatKey(key) {
+            // Convert snake_case or camelCase to Title Case
             return key
                 .replace(/_/g, ' ')
                 .replace(/([A-Z])/g, ' $1')
@@ -293,26 +293,28 @@
                 .replace(/Cfg Scale/g, 'CFG Scale')
                 .replace(/Vae/g, 'VAE')
                 .replace(/Aspectratio/g, 'Aspect Ratio')
+                .replace(/Aspect Ratio/g, 'Aspect Ratio')
                 .replace(/Automaticvae/g, 'Automatic VAE')
-                .replace(/Negativeprompt/g, 'Negative Prompt');
+                .replace(/Automatic Vae/g, 'Automatic VAE')
+                .replace(/Negativeprompt/g, 'Negative Prompt')
+                .replace(/Negative Prompt/g, 'Negative Prompt');
         }
 
         function formatValue(value, isExpandable = true) {
             if (typeof value === 'boolean') {
                 return value ? 'Yes' : 'No';
             }
-            if (typeof value === 'number') {
-                return value.toLocaleString();
-            }
             if (typeof value === 'string') {
+                // Escape HTML and handle long strings
                 const escaped = value.replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+                // If it's a long text, make it expandable
                 if (isExpandable && escaped.length > 100) {
                     const id = 'expand-' + Math.random().toString(36).substr(2, 9);
                     return `
-                        <div class="expandable-text" onclick="toggleExpand('${id}')" id="${id}-container">
-                            <span class="text-truncated" id="${id}-truncated">${escaped.substring(0, 100)}... <span class="expand-indicator">[click to expand]</span></span>
-                            <span class="text-full" id="${id}-full" style="display: none;">${escaped}</span>
+                        <div class="expandable-text" id="${id}-container" style="cursor: pointer; user-select: text;">
+                            <span class="text-truncated" id="${id}-truncated">${escaped.substring(0, 100)}...<br><span class="expand-indicator" style="user-select: none;">[click to expand]</span></span>
+                            <span class="text-full" id="${id}-full" style="display: none;">${escaped}<br><span class="expand-indicator" style="user-select: none;">[click to collapse]</span></span>
                         </div>
                     `;
                 }
@@ -324,10 +326,39 @@
             return String(value);
         }
 
+        function setupExpandableListeners() {
+            // Find all expandable text containers
+            document.querySelectorAll('.expandable-text').forEach(container => {
+                // Remove any existing listeners to avoid duplicates
+                const newContainer = container.cloneNode(true);
+                container.parentNode.replaceChild(newContainer, container);
+
+                // Add the click listener
+                newContainer.addEventListener('click', function(e) {
+                    // Check if text is being selected
+                    const selection = window.getSelection();
+                    if (selection && selection.toString().length > 0) {
+                        // Text is selected, don't toggle
+                        return;
+                    }
+
+                    // Only proceed if we're not clicking on selected text
+                    const id = this.id.replace('-container', '');
+                    toggleExpand(id);
+                });
+
+                // Prevent double-click from selecting text and triggering expand
+                newContainer.addEventListener('dblclick', function(e) {
+                    // Allow double-click to select text normally
+                    e.stopPropagation();
+                });
+            });
+        }
+
         window.toggleExpand = function(id) {
             const truncated = document.getElementById(id + '-truncated');
             const full = document.getElementById(id + '-full');
-        
+
             if (full.style.display === 'none') {
                 truncated.style.display = 'none';
                 full.style.display = 'inline';
