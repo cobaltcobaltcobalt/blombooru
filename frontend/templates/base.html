@@ -32,6 +32,7 @@
     {% block extra_css %}{% endblock %}
 </head>
 <body class="bg text text-xs flex flex-col min-h-screen">
+    {% if show_header is not defined or show_header %}
     {% block header %}
     <header class="surface border-b">
         <div class="container mx-auto px-4 py-2">
@@ -81,11 +82,13 @@
         </div>
     </header>
     {% endblock %}
+    {% endif %}
     
     <main class="flex-1">
         {% block content %}{% endblock %}
     </main>
     
+    {% if show_footer is not defined or show_footer %}
     {% block footer %}
     <footer class="surface border-t mt-8">
         <div class="container mx-auto px-4 py-6">
@@ -103,10 +106,12 @@
         </div>
     </footer>
     {% endblock %}
+    {% endif %}
     
     <script src="/static/js/main.js"></script>
     <script src="/static/js/tag-autocomplete.js"></script>
 
+    {% if show_header is not defined or show_header %}
     <script>
         // Initialize tag autocomplete
         const searchInput = document.getElementById('search-input');
@@ -123,6 +128,7 @@
             });
         }
     </script>
+    {% endif %}
     {% block extra_js %}{% endblock %}
 </body>
 </html>
