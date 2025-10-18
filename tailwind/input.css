@@ -38,6 +38,8 @@
     .hover\:primary-text:hover { color: var(--primary-text); }
     .text-success { color: var(--success); }
     .hover\:text-success:hover { color: var(--success-hover); }
+    .text-info { color: var(--info); }
+    .hover\:text-info:hover { color: var(--info-hover); }
     .text-warning { color: var(--warning); }
     .hover\:text-warning:hover { color: var(--warning-hover); }
     .text-danger { color: var(--danger); }
@@ -49,6 +51,8 @@
     .focus\:border-primary:focus { border-color: var(--primary-color); }
     .border-success { border-color: var(--success); }
     .hover\:border-success:hover { border-color: var(--success-hover); }
+    .border-info { border-color: var(--info); }
+    .hover\:border-info:hover { border-color: var(--info-hover); }
     .border-warning { border-color: var(--warning); }
     .hover\:border-warning:hover { border-color: var(--warning-hover); }
     .border-danger { border-color: var(--danger); }
@@ -59,6 +63,8 @@
     .hover\:bg-primary:hover { background-color: var(--primary-hover); }
     .bg-success { background-color: var(--success); }
     .hover\:bg-success:hover { background-color: var(--success-hover); }
+    .bg-info { background-color: var(--info); }
+    .hover\:bg-info:hover { background-color: var(--info-hover); }
     .bg-warning { background-color: var(--warning); }
     .hover\:bg-warning:hover { background-color: var(--warning-hover); }
     .bg-danger { background-color: var(--danger); }

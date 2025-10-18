@@ -34,6 +34,8 @@
     
     --success: var(--green);
     --success-hover: color-mix(in srgb, var(--success) 70%, var(--background));
+    --info: var(--blue);
+    --info-hover: color-mix(in srgb, var(--info) 70%, var(--background));
     --warning: var(--orange);
     --warning-hover: color-mix(in srgb, var(--warning) 70%, var(--background));
     --danger: var(--red);
