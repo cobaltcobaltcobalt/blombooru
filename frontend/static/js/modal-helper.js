@@ -42,17 +42,17 @@ class ModalHelper {
         const icons = {
             info: `
                 <svg class="mx-auto mb-4" width="64" height="64" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" fill="var(--blue)"/>
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" fill="var(--info)"/>
                 </svg>
             `,
             warning: `
                 <svg class="mx-auto mb-4" width="64" height="64" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z" fill="var(--yellow)"/>
+                    <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z" fill="var(--warning)"/>
                 </svg>
             `,
             danger: `
                 <svg class="mx-auto mb-4" width="64" height="64" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="var(--red)"/>
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="var(--danger)"/>
                 </svg>
             `
         };
@@ -61,8 +61,8 @@ class ModalHelper {
 
     getTitleClass(type) {
         const classes = {
-            info: 'text-[var(--blue)]',
-            warning: 'text-[var(--yellow)]',
+            info: 'text-info',
+            warning: 'text-warning',
             danger: 'text-danger'
         };
         return classes[type] || classes.info;
@@ -70,8 +70,8 @@ class ModalHelper {
 
     getBorderClass(type) {
         const classes = {
-            info: 'border-[var(--blue)]',
-            warning: 'border-[var(--yellow)]',
+            info: 'border-info',
+            warning: 'border-warning',
             danger: 'border-danger'
         };
         return classes[type] || classes.info;
@@ -79,18 +79,18 @@ class ModalHelper {
 
     getConfirmButtonClass(type) {
         const classes = {
-            info: 'bg-[var(--blue)] hover:bg-[var(--blue)]',
-            warning: 'bg-[var(--yellow)] hover:bg-[var(--yellow)]',
-            danger: 'bg-success hover:bg-success'
+            info: 'bg-info hover:bg-info',
+            warning: 'bg-warning hover:bg-warning',
+            danger: 'bg-danger hover:bg-danger'
         };
         return classes[type] || classes.info;
     }
 
     getCancelButtonClass(type) {
         const classes = {
-            info: 'bg-danger hover:bg-danger',
-            warning: 'bg-danger hover:bg-danger',
-            danger: 'bg-danger hover:bg-danger'
+            info: 'surface-light hover:surface-light',
+            warning: 'surface-light hover:surface-light',
+            danger: 'surface-light hover:surface-light'
         };
         return classes[type] || classes.info;
     }
@@ -118,7 +118,7 @@ class ModalHelper {
                     <button id="${this.options.confirmId}" class="px-6 py-3 ${this.getConfirmButtonClass(this.options.type)} tag-text font-bold text-sm">
                         ${this.options.confirmText}
                     </button>
-                    <button id="${this.options.cancelId}" class="px-6 py-3 ${this.getCancelButtonClass(this.options.type)} tag-text font-bold text-sm">
+                    <button id="${this.options.cancelId}" class="px-6 py-3 ${this.getCancelButtonClass(this.options.type)} text font-bold text-sm">
                         ${this.options.cancelText}
                     </button>
                 </div>
