@@ -1,162 +1,138 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Setup - {{ app_name }}</title>
-    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
-    <link rel="stylesheet" href="/static/css/tailwind.css">
-    <link rel="stylesheet" href="/static/css/main.css">
-    <link id="theme-stylesheet" rel="stylesheet" href="">
-    <script>
-        // Load theme on page load
-        (async function loadTheme() {
-            try {
-                const response = await fetch('/api/admin/current-theme');
-                const theme = await response.json();
+{% extends "base.html" %}
 
-                const themeLink = document.getElementById('theme-stylesheet');
-                if (themeLink && theme.css_path) {
-                    themeLink.href = theme.css_path;
-                }
-            } catch (error) {
-                console.error('Error loading theme:', error);
-                // Fallback to default dark theme
-                const themeLink = document.getElementById('theme-stylesheet');
-                if (themeLink) {
-                    themeLink.href = '/static/css/themes/default_dark.css';
-                }
-            }
-        })();
-    </script>
-</head>
-<body class="bg text text-xs">
-    <div class="container mx-auto px-4 py-16 max-w-2xl">
-        <div class="surface p-8 border">
-            <h1 class="text-xl font-bold mb-4">Welcome to {{ app_name }}</h1>
-            <p class="text-xs text-secondary mb-6">Let's get your personal booru set up!</p>
+{% set show_header = false %}
+{% set show_footer = false %}
+
+{% block title %}Setup - {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 my-4 max-w-2xl">
+    <div class="surface p-8 border">
+        <h1 class="text-xl font-bold mb-4">Welcome to {{ app_name }}</h1>
+        <p class="text-xs text-secondary mb-6">Let's get your personal booru set up!</p>
+        
+        <div id="error-message" style="display: none;" class="bg-danger tag-text p-3 mb-4 text-xs"></div>
+        <div id="success-message" style="display: none;" class="bg-success tag-text p-3 mb-4 text-xs"></div>
+        
+        <form id="onboarding-form">
+            <div class="mb-6">
+                <label class="block text-xs font-bold mb-2">Application Name</label>
+                <input type="text" id="app-name" name="app_name" value="Blombooru" required class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
+            </div>
             
-            <div id="error-message" style="display: none;" class="bg-danger tag-text p-3 mb-4 text-xs"></div>
-            <div id="success-message" style="display: none;" class="bg-success tag-text p-3 mb-4 text-xs"></div>
+            <h3 class="text-sm font-bold mb-3 pb-2 border-b">Database Configuration</h3>
             
-            <form id="onboarding-form">
-                <div class="mb-6">
-                    <label class="block text-xs font-bold mb-2">Application Name</label>
-                    <input type="text" id="app-name" name="app_name" value="Blombooru" required class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
-                </div>
-                
-                <h3 class="text-sm font-bold mb-3 pb-2 border-b">Database Configuration</h3>
-                
-                <div class="mb-4">
-                    <label class="block text-xs font-bold mb-2">Host</label>
-                    <input type="text" id="db-host" name="db_host" value="db" required class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
-                </div>
-                
-                <div class="mb-4">
-                    <label class="block text-xs font-bold mb-2">Port</label>
-                    <input type="number" id="db-port" name="db_port" value="5432" required class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
-                </div>
-                
-                <div class="mb-4">
-                    <label class="block text-xs font-bold mb-2">Database Name</label>
-                    <input type="text" id="db-name" name="db_name" value="blombooru" required class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
-                </div>
-                
-                <div class="mb-4">
-                    <label class="block text-xs font-bold mb-2">Username</label>
-                    <input type="text" id="db-user" name="db_user" value="postgres" required class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
-                </div>
-                
-                <div class="mb-6">
-                    <label class="block text-xs font-bold mb-2">Password</label>
-                    <input type="password" id="db-password" name="db_password" class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
-                </div>
-                
-                <h3 class="text-sm font-bold mb-3 pb-2 border-b">Admin Account</h3>
-                
-                <div class="mb-4">
-                    <label class="block text-xs font-bold mb-2">Username</label>
-                    <input type="text" id="admin-username" name="admin_username" required class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
-                </div>
-                
-                <div class="mb-6">
-                    <label class="block text-xs font-bold mb-2">Password</label>
-                    <input type="password" id="admin-password" name="admin_password" required minlength="6" maxlength="50" class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
-                    <small class="text-secondary text-xs">6-50 characters</small>
-                </div>
-                
-                <button type="submit" class="w-full px-4 py-3 bg-primary primary-text hover:bg-primary text-xs font-bold">Complete Setup</button>
-            </form>
-        </div>
+            <div class="mb-4">
+                <label class="block text-xs font-bold mb-2">Host</label>
+                <input type="text" id="db-host" name="db_host" value="db" required class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
+            </div>
+            
+            <div class="mb-4">
+                <label class="block text-xs font-bold mb-2">Port</label>
+                <input type="number" id="db-port" name="db_port" value="5432" required class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
+            </div>
+            
+            <div class="mb-4">
+                <label class="block text-xs font-bold mb-2">Database Name</label>
+                <input type="text" id="db-name" name="db_name" value="blombooru" required class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
+            </div>
+            
+            <div class="mb-4">
+                <label class="block text-xs font-bold mb-2">Username</label>
+                <input type="text" id="db-user" name="db_user" value="postgres" required class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
+            </div>
+            
+            <div class="mb-6">
+                <label class="block text-xs font-bold mb-2">Password</label>
+                <input type="password" id="db-password" name="db_password" class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
+            </div>
+            
+            <h3 class="text-sm font-bold mb-3 pb-2 border-b">Admin Account</h3>
+            
+            <div class="mb-4">
+                <label class="block text-xs font-bold mb-2">Username</label>
+                <input type="text" id="admin-username" name="admin_username" required class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
+            </div>
+            
+            <div class="mb-6">
+                <label class="block text-xs font-bold mb-2">Password</label>
+                <input type="password" id="admin-password" name="admin_password" required minlength="6" maxlength="50" class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
+                <small class="text-secondary text-xs">6-50 characters</small>
+            </div>
+            
+            <button type="submit" class="w-full px-4 py-3 bg-primary primary-text hover:bg-primary text-xs font-bold">Complete Setup</button>
+        </form>
     </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function showError(message) {
+        const errorDiv = document.getElementById('error-message');
+        errorDiv.textContent = message;
+        errorDiv.style.display = 'block';
+        setTimeout(() => {
+            errorDiv.style.display = 'none';
+        }, 10000);
+    }
     
-    <script>
-        function showError(message) {
-            const errorDiv = document.getElementById('error-message');
-            errorDiv.textContent = message;
-            errorDiv.style.display = 'block';
-            setTimeout(() => {
-                errorDiv.style.display = 'none';
-            }, 10000);
-        }
+    function showSuccess(message) {
+        const successDiv = document.getElementById('success-message');
+        successDiv.textContent = message;
+        successDiv.style.display = 'block';
+    }
+    
+    document.getElementById('onboarding-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
         
-        function showSuccess(message) {
-            const successDiv = document.getElementById('success-message');
-            successDiv.textContent = message;
-            successDiv.style.display = 'block';
-        }
+        const submitBtn = e.target.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Setting up...';
         
-        document.getElementById('onboarding-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const submitBtn = e.target.querySelector('button[type="submit"]');
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Setting up...';
-            
-            const formData = {
-                app_name: document.getElementById('app-name').value,
-                database: {
-                    host: document.getElementById('db-host').value,
-                    port: parseInt(document.getElementById('db-port').value),
-                    name: document.getElementById('db-name').value,
-                    user: document.getElementById('db-user').value,
-                    password: document.getElementById('db-password').value
+        const formData = {
+            app_name: document.getElementById('app-name').value,
+            database: {
+                host: document.getElementById('db-host').value,
+                port: parseInt(document.getElementById('db-port').value),
+                name: document.getElementById('db-name').value,
+                user: document.getElementById('db-user').value,
+                password: document.getElementById('db-password').value
+            },
+            admin_username: document.getElementById('admin-username').value,
+            admin_password: document.getElementById('admin-password').value
+        };
+        
+        console.log('Sending onboarding data...');
+        
+        try {
+            const response = await fetch('/api/admin/onboarding', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
                 },
-                admin_username: document.getElementById('admin-username').value,
-                admin_password: document.getElementById('admin-password').value
-            };
+                body: JSON.stringify(formData)
+            });
             
-            console.log('Sending onboarding data...');
+            const data = await response.json();
             
-            try {
-                const response = await fetch('/api/admin/onboarding', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(formData)
-                });
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                    showSuccess('Setup complete! Redirecting...');
-                    setTimeout(() => {
-                        window.location.href = '/';
-                    }, 1500);
-                } else {
-                    console.error('Error response:', data);
-                    showError('Error: ' + (data.detail || JSON.stringify(data)));
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = 'Complete Setup';
-                }
-            } catch (error) {
-                console.error('Request error:', error);
-                showError('Network error: ' + error.message);
+            if (response.ok) {
+                showSuccess('Setup complete! Redirecting...');
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 1500);
+            } else {
+                console.error('Error response:', data);
+                showError('Error: ' + (data.detail || JSON.stringify(data)));
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Complete Setup';
             }
-        });
-    </script>
-</body>
-</html>
+        } catch (error) {
+            console.error('Request error:', error);
+            showError('Network error: ' + error.message);
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Complete Setup';
+        }
+    });
+</script>
+{% endblock %}
