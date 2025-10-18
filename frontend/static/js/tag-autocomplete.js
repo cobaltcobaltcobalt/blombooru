@@ -152,8 +152,8 @@ class TagAutocomplete {
             this.suggestionsEl.innerHTML = `
                 <div class="tag-suggestion tag-alias-info" data-index="0" data-name="${tag.name}">
                     <span style="display: flex; align-items: center; gap: 0.5rem;">
-                        <span style="color: #94a3b8; font-style: italic;">${tag.alias_name}</span>
-                        <span style="color: #94a3b8;">→</span>
+                        <span class="text-secondary italic">${tag.alias_name}</span>
+                        <span class="text-secondary">&#8594;</span>
                         <span class="tag-name">${tag.name}</span>
                     </span>
                     <span class="tag-count">${tag.count}</span>
