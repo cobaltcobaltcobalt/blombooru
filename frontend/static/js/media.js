@@ -1,10 +1,9 @@
-class MediaViewer {
+class MediaViewer extends MediaViewerBase {
     constructor(mediaId) {
+        super();
         this.mediaId = mediaId;
-        this.currentMedia = null;
         this.tagValidationCache = new Map();
         this.validationTimeout = null;
-        this.fullscreenViewer = null;
         
         this.init();
     }
@@ -15,21 +14,13 @@ class MediaViewer {
         this.setupEventListeners();
     }
 
-    el(id) {
-        return document.getElementById(id);
-    }
-
-    initFullscreenViewer() {
-        this.fullscreenViewer = new FullscreenMediaViewer();
-    }
-
     async loadMedia() {
         try {
             const res = await fetch(`/api/media/${this.mediaId}`);
             this.currentMedia = await res.json();
             this.renderMedia(this.currentMedia);
             this.renderInfo(this.currentMedia);
-            this.renderTags(this.currentMedia);
+            this.renderTags(this.currentMedia, { clickable: true });
 
             // Hide AI metadata toggle by default
             const aiMetadataShareToggle = this.el('ai-metadata-share-toggle');
@@ -37,7 +28,9 @@ class MediaViewer {
                 aiMetadataShareToggle.style.display = 'none';
             }
 
-            await this.renderAIMetadata(this.currentMedia);
+            await this.renderAIMetadata(this.currentMedia, { 
+                showControls: app.isAdminMode 
+            });
             
             if (app.isAdminMode) {
                 this.setupAdminMode();
@@ -75,6 +68,10 @@ class MediaViewer {
                     setTimeout(() => this.validateAndStyleTags(), 100);
                 }
             });
+            
+            // Set initial tags
+            tagsInput.textContent = (this.currentMedia.tags || []).map(t => t.name).join(' ');
+            setTimeout(() => this.validateAndStyleTags(), 100);
         }
     }
 
@@ -97,140 +94,6 @@ class MediaViewer {
 
         this.el('download-btn').href = `/api/media/${media.id}/file`;
         this.el('download-btn').download = media.filename;
-    }
-
-    renderInfo(m) {
-        let infoHTML = `
-            <div class="info-row"><span>Filename</span><strong>${m.filename}</strong></div>
-            <div class="info-row"><span>Type</span><strong>${m.file_type}</strong></div>
-            <div class="info-row"><span>Size</span><strong>${this.formatFileSize(m.file_size)}</strong></div>
-            <div class="info-row"><span>Dimensions</span><strong>${m.width}x${m.height}</strong></div>
-            <div class="info-row"><span>Rating</span><strong>${m.rating}</strong></div>
-            <div class="info-row"><span>Uploaded</span><strong>${new Date(m.uploaded_at).toLocaleDateString()}</strong></div>
-            ${m.duration ? `<div class="info-row"><span>Duration</span><strong>${this.formatDuration(m.duration)}</strong></div>` : ''}
-        `;
-
-        if (m.source) {
-            infoHTML += `<div class="info-row"><span>Source</span><strong><a href="${m.source}" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline" style="word-break: break-all;">${m.source}</a></strong></div>`;
-        }
-
-        this.el('media-info-content').innerHTML = infoHTML;
-
-        const sel = this.el('rating-select');
-        if (sel) sel.value = m.rating;
-    }
-
-    renderTags(m) {
-        const container = this.el('tags-container');
-        const groups = { artist: [], character: [], copyright: [], general: [], meta: [] };
-        (m.tags || []).forEach(t => groups[t.category]?.push(t));
-        
-        let html = '';
-        Object.entries(groups).forEach(([cat, tags]) => {
-            if (!tags.length) return;
-            tags.sort((a, b) => a.name.localeCompare(b.name));
-            html += `
-                <div class="tag-category">
-                  <h4>${cat}</h4>
-                  <div class="tag-list">
-                    ${tags.map(t => `<a href="/?q=${encodeURIComponent(t.name)}" class="tag ${cat} tag-text">${t.name}</a>`).join('')}
-                  </div>
-                </div>
-            `;
-        });
-        container.innerHTML = html || '<p class="text-xs text-secondary mb-3">No tags</p>';
-        
-        const input = this.el('tags-input');
-        if (input) {
-            input.textContent = (m.tags || []).map(t => t.name).join(' ');
-            setTimeout(() => this.validateAndStyleTags(), 100);
-        }
-    }
-
-    async renderAIMetadata(m) {
-        const section = this.el('ai-metadata-section');
-        const content = this.el('ai-metadata-content');
-        const appendBtn = this.el('append-ai-tags-btn');
-        const aiMetadataShareToggle = this.el('ai-metadata-share-toggle');
-
-        try {
-            const res = await fetch(`/api/media/${m.id}/metadata`);
-            if (!res.ok) {
-                section.style.display = 'none';
-                if (appendBtn) appendBtn.style.display = 'none';
-                if (aiMetadataShareToggle) aiMetadataShareToggle.style.display = 'none';
-                return;
-            }
-
-            const metadata = await res.json();
-            let aiData = this.extractAIData(metadata);
-
-            if (!aiData || Object.keys(aiData).length === 0) {
-                section.style.display = 'none';
-                if (appendBtn) appendBtn.style.display = 'none';
-                if (aiMetadataShareToggle) aiMetadataShareToggle.style.display = 'none';
-                return;
-            }
-
-            if (app.isAdminMode && aiMetadataShareToggle) {
-                aiMetadataShareToggle.style.display = 'block';
-            }
-
-            if (app.isAdminMode && appendBtn && aiData) {
-                appendBtn.style.display = 'block';
-            }
-
-            content.innerHTML = this.generateAIMetadataHTML(aiData);
-            section.style.display = 'block';
-            this.setupExpandableListeners();
-        } catch (e) {
-            console.error('Error rendering AI metadata:', e);
-            section.style.display = 'none';
-            if (aiMetadataShareToggle) aiMetadataShareToggle.style.display = 'none';
-        }
-    }
-
-    extractAIData(metadata) {
-        if (metadata.parameters) {
-            return typeof metadata.parameters === 'string' 
-                ? JSON.parse(metadata.parameters) 
-                : metadata.parameters;
-        } else if (metadata.Parameters) {
-            return typeof metadata.Parameters === 'string' 
-                ? JSON.parse(metadata.Parameters) 
-                : metadata.Parameters;
-        } else if (metadata.prompt) {
-            return typeof metadata.prompt === 'string' 
-                ? JSON.parse(metadata.prompt) 
-                : metadata.prompt;
-        }
-        return null;
-    }
-
-    generateAIMetadataHTML(aiData) {
-        let html = '';
-        Object.entries(aiData).forEach(([key, value]) => {
-            const sectionTitle = this.formatKey(key);
-            html += `<div class="ai-section mb-3">`;
-            html += `<h4 class="text-xs font-bold text-[var(--primary-color)] mb-2">${sectionTitle}</h4>`;
-            
-            if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-                html += `<div class="ml-2">`;
-                Object.entries(value).forEach(([subKey, subValue]) => {
-                    html += `
-                        <div class="ai-data-row">
-                            <span class="text-secondary">${this.formatKey(subKey)}:</span>
-                            <div class="text">${this.formatValue(subValue, true)}</div>
-                        </div>
-                    `;
-                });
-                html += `</div>`;
-            } else {
-                html += `<div class="text ml-2">${this.formatValue(value, true)}</div>`;
-            }
-            html += `</div>`;
-        });
-        return html;
     }
 
     setupTagInput() {
@@ -344,6 +207,7 @@ class MediaViewer {
             return;
         }
 
+        // Shuffle tags
         for (let i = generalTags.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [generalTags[i], generalTags[j]] = [generalTags[j], generalTags[i]];
@@ -418,94 +282,6 @@ class MediaViewer {
         return item;
     }
 
-    addTooltipEvents(item, media, tooltipElement) {
-        let hoverTimeout;
-        item.addEventListener('mouseenter', () => {
-            hoverTimeout = setTimeout(() => {
-                if (media.tags && media.tags.length > 0) {
-                    this.showTooltip(item, media.tags, tooltipElement);
-                }
-            }, 300);
-        });
-
-        item.addEventListener('mouseleave', () => {
-            clearTimeout(hoverTimeout);
-            this.hideTooltip(tooltipElement);
-        });
-
-        window.addEventListener('scroll', () => {
-            if (tooltipElement.style.display === 'block') {
-                this.positionTooltip(item, tooltipElement);
-            }
-        }, { passive: true });
-    }
-
-    createTooltip() {
-        if (!document.getElementById('media-tooltip')) {
-            const tooltip = document.createElement('div');
-            tooltip.id = 'media-tooltip';
-            tooltip.style.cssText = `
-                position: absolute;
-                background: rgba(0, 0, 0, 0.95);
-                color: white;
-                padding: 8px 12px;
-                font-size: 13px;
-                pointer-events: none;
-                z-index: 10000;
-                max-width: 300px;
-                word-wrap: break-word;
-                display: none;
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-            `;
-            document.body.appendChild(tooltip);
-        }
-        return document.getElementById('media-tooltip');
-    }
-
-    showTooltip(element, tags, tooltipElement) {
-        if (!tags || tags.length === 0) return;
-
-        const sortedTags = tags
-            .map(tag => tag.name || tag)
-            .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
-
-        const tagList = sortedTags.join(', ');
-        tooltipElement.textContent = tagList;
-        tooltipElement.style.display = 'block';
-        this.positionTooltip(element, tooltipElement);
-    }
-
-    positionTooltip(element, tooltipElement) {
-        const rect = element.getBoundingClientRect();
-        const tooltipRect = tooltipElement.getBoundingClientRect();
-
-        let top = rect.top - tooltipRect.height - 10;
-        let left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
-
-        if (top < 10) {
-            top = rect.bottom + 10;
-        }
-
-        if (left < 10) {
-            left = 10;
-        } else if (left + tooltipRect.width > window.innerWidth - 10) {
-            left = window.innerWidth - tooltipRect.width - 10;
-        }
-
-        top += window.scrollY;
-        left += window.scrollX;
-
-        tooltipElement.style.top = `${top}px`;
-        tooltipElement.style.left = `${left}px`;
-    }
-
-    hideTooltip(tooltipElement) {
-        if (tooltipElement) {
-            tooltipElement.style.display = 'none';
-        }
-    }
-
     hideRelatedMedia() {
         const relatedMediaEl = this.el('related-media');
         if (relatedMediaEl) {
@@ -555,6 +331,7 @@ class MediaViewer {
         });
     }
 
+    // Admin action methods
     async saveTags() {
         const tagsInput = this.el('tags-input');
         const text = this.getPlainTextFromDiv(tagsInput);
@@ -757,137 +534,6 @@ class MediaViewer {
         const aiMetadataToggle = this.el('share-ai-metadata-toggle');
         if (aiMetadataToggle) {
             aiMetadataToggle.checked = shareAIMetadata || false;
-        }
-    }
-
-    setupExpandableListeners() {
-        document.querySelectorAll('.expandable-text').forEach(container => {
-            const newContainer = container.cloneNode(true);
-            container.parentNode.replaceChild(newContainer, container);
-
-            newContainer.addEventListener('click', function(e) {
-                const selection = window.getSelection();
-                if (selection && selection.toString().length > 0) {
-                    return;
-                }
-
-                const id = this.id.replace('-container', '');
-                window.toggleExpand(id);
-            });
-
-            newContainer.addEventListener('dblclick', function(e) {
-                e.stopPropagation();
-            });
-        });
-    }
-
-    // Utility methods
-    formatFileSize(bytes) {
-        if (!bytes) return '0 Bytes';
-        const k = 1024, sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i];
-    }
-
-    formatDuration(s) {
-        const m = Math.floor(s / 60), sec = Math.floor(s % 60);
-        return `${m}:${String(sec).padStart(2, '0')}`;
-    }
-
-    formatKey(key) {
-        return key
-            .replace(/_/g, ' ')
-            .replace(/([A-Z])/g, ' $1')
-            .trim()
-            .replace(/\b\w/g, c => c.toUpperCase())
-            .replace(/Cfgscale/g, 'CFG Scale')
-            .replace(/Cfg Scale/g, 'CFG Scale')
-            .replace(/Vae/g, 'VAE')
-            .replace(/Aspectratio/g, 'Aspect Ratio')
-            .replace(/Aspect Ratio/g, 'Aspect Ratio')
-            .replace(/Automaticvae/g, 'Automatic VAE')
-            .replace(/Automatic Vae/g, 'Automatic VAE')
-            .replace(/Negativeprompt/g, 'Negative Prompt')
-            .replace(/Negative Prompt/g, 'Negative Prompt');
-    }
-
-    formatValue(value, isExpandable = true) {
-        if (typeof value === 'boolean') {
-            return value ? 'Yes' : 'No';
-        }
-        if (typeof value === 'string') {
-            const escaped = value.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-            if (isExpandable && escaped.length > 100) {
-                const id = 'expand-' + Math.random().toString(36).substr(2, 9);
-                return `
-                    <div class="expandable-text" id="${id}-container" style="cursor: pointer; user-select: text;">
-                        <span class="text-truncated" id="${id}-truncated">${escaped.substring(0, 100)}...<br><span class="expand-indicator" style="user-select: none;">[click to expand]</span></span>
-                        <span class="text-full" id="${id}-full" style="display: none;">${escaped}<br><span class="expand-indicator" style="user-select: none;">[click to collapse]</span></span>
-                    </div>
-                `;
-            }
-            return escaped;
-        }
-        if (Array.isArray(value)) {
-            return value.join(', ');
-        }
-        return String(value);
-    }
-
-    getPlainTextFromDiv(div) {
-        return div.textContent || '';
-    }
-
-    getCursorPosition(element) {
-        const selection = window.getSelection();
-        if (selection.rangeCount === 0) return 0;
-        
-        const range = selection.getRangeAt(0);
-        const preCaretRange = range.cloneRange();
-        preCaretRange.selectNodeContents(element);
-        preCaretRange.setEnd(range.endContainer, range.endOffset);
-        
-        return preCaretRange.toString().length;
-    }
-
-    setCursorPosition(element, offset) {
-        const selection = window.getSelection();
-        const range = document.createRange();
-        
-        let currentOffset = 0;
-        let found = false;
-        
-        function traverseNodes(node) {
-            if (found) return;
-            
-            if (node.nodeType === Node.TEXT_NODE) {
-                const nodeLength = node.textContent.length;
-                if (currentOffset + nodeLength >= offset) {
-                    range.setStart(node, offset - currentOffset);
-                    range.collapse(true);
-                    found = true;
-                    return;
-                }
-                currentOffset += nodeLength;
-            } else {
-                for (let child of node.childNodes) {
-                    traverseNodes(child);
-                    if (found) return;
-                }
-            }
-        }
-        
-        try {
-            traverseNodes(element);
-            if (!found && element.lastChild) {
-                range.setStartAfter(element.lastChild);
-                range.collapse(true);
-            }
-            selection.removeAllRanges();
-            selection.addRange(range);
-        } catch (e) {
-            console.error('Error setting cursor:', e);
         }
     }
 }
