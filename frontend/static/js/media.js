@@ -411,28 +411,49 @@ class MediaViewer extends MediaViewerBase {
     }
 
     async unshareMedia() {
-        if (!confirm('Are you sure you want to unshare this media? The share link will stop working.')) {
-            return;
-        }
-        
-        try {
-            await app.apiCall(`/api/media/${this.mediaId}/share`, { method: 'DELETE' });
-            this.el('share-link-section').style.display = 'none';
-            this.el('share-btn').style.display = 'block';
-            app.showNotification('Media successfully unshared', 'success');
-        } catch (e) { 
-            app.showNotification(e.message, 'error', 'Error removing share'); 
-        }
+        const modal = new ModalHelper({
+            id: 'unshare-modal',
+            type: 'warning',
+            title: 'Unshare Media',
+            message: 'Are you sure you want to unshare this media? The share link will stop working.',
+            confirmText: 'Yes, Unshare',
+            cancelText: 'Cancel',
+            confirmId: 'unshare-confirm-yes',
+            cancelId: 'unshare-confirm-no', 
+            onConfirm: async () => {
+                try {
+                    await app.apiCall(`/api/media/${this.mediaId}/share`, { method: 'DELETE' });
+                    this.el('share-link-section').style.display = 'none';
+                    this.el('share-btn').style.display = 'block';
+                    app.showNotification('Media successfully unshared', 'success');
+                } catch (e) { 
+                    app.showNotification(e.message, 'error', 'Error removing share'); 
+                }
+            }
+        });
+        modal.show();
     }
 
     async deleteMedia() {
-        if (!confirm('Delete this media?')) return;
-        try {
-            await app.apiCall(`/api/media/${this.mediaId}`, { method: 'DELETE' });
-            window.location.href = '/';
-        } catch (e) { 
-            app.showNotification(e.message, 'error', 'Error deleting media'); 
-        }
+        const modal = new ModalHelper({
+            id: 'delete-modal',
+            type: 'danger',
+            title: 'Delete Media',
+            message: 'Are you sure you want to delete this media? This action cannot be undone.',
+            confirmText: 'Yes, Delete',
+            cancelText: 'Cancel',
+            confirmId: 'delete-confirm-yes',
+            cancelId: 'delete-confirm-no',
+            onConfirm: async () => {
+                try {
+                    await app.apiCall(`/api/media/${this.mediaId}`, { method: 'DELETE' });
+                    window.location.href = '/';
+                } catch (e) { 
+                    app.showNotification(e.message, 'error', 'Error deleting media'); 
+                }
+            }
+        });
+        modal.show();
     }
 
     async updateShareSettings(shareAIMetadata) {

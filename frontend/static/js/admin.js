@@ -703,7 +703,7 @@ class AdminPanel {
             resultsDiv.innerHTML = data.tags.map(tag => `
                 <div class="bg p-3 border-b flex justify-between items-center">
                     <div>
-                        <button class="text-xs text-secondary bg-danger hover:bg-danger tag-text px-2 py-1 mr-2" onclick="if(confirm('Delete tag & alias?')) { app.apiCall('/api/admin/tags/${tag.id}', { method: 'DELETE' }).then(() => { app.showNotification('Tag deleted', 'success'); location.reload(); }).catch(e => app.showNotification(e.message, 'error', 'Error deleting tag')); }">&#x2715;</button>
+                        <button class="delete-tag-btn text-xs text-secondary bg-danger hover:bg-danger tag-text px-2 py-1 mr-2" data-tag-id="${tag.id}">&#x2715;</button>
                         <a href="/?q=${encodeURIComponent(tag.name)}" class="tag ${tag.category} tag-text">${tag.name}</a>
                         <span class="text-xs text-secondary ml-2">(${tag.post_count} posts)</span>
                     </div>
@@ -711,29 +711,81 @@ class AdminPanel {
                 </div>
             `).join('');
             
+            // Add event listeners to delete buttons
+            resultsDiv.querySelectorAll('.delete-tag-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const tagId = btn.dataset.tagId;
+                    this.deleteTag(tagId);
+                });
+            });
+            
         } catch (error) {
             console.error('Error searching tags:', error);
             resultsDiv.innerHTML = '<p class="text-xs text-danger p-3">Error searching tags</p>';
         }
     }
     
+    async deleteTag(tagId) {
+        const modal = new ModalHelper({
+            id: 'delete-tag-modal',
+            type: 'danger',
+            title: 'Delete Tag',
+            message: 'Are you sure you want to delete this tag and its aliases? This action cannot be undone.',
+            confirmText: 'Yes, Delete',
+            cancelText: 'Cancel',
+            confirmId: 'delete-tag-confirm-yes',
+            cancelId: 'delete-tag-confirm-no',
+            onConfirm: async () => {
+                try {
+                    await app.apiCall(`/api/admin/tags/${tagId}`, { method: 'DELETE' });
+                    app.showNotification('Tag deleted', 'success');
+                    location.reload();
+                } catch (e) {
+                    app.showNotification(e.message, 'error', 'Error deleting tag');
+                }
+            }
+        });
+        
+        modal.show();
+    }
+
     async clearAllTags() {
-        if (!confirm('Are you sure you want to delete ALL tags? This cannot be undone!')) {
-            return;
-        }
+        const firstModal = new ModalHelper({
+            id: 'clear-tags-first-modal',
+            type: 'danger',
+            title: 'Clear All Tags',
+            message: 'Are you sure you want to delete ALL tags? This cannot be undone!',
+            confirmText: 'Continue',
+            cancelText: 'Cancel',
+            confirmId: 'clear-tags-first-confirm-yes',
+            cancelId: 'clear-tags-first-confirm-no',
+            onConfirm: () => {
+                // Show second confirmation
+                const secondModal = new ModalHelper({
+                    id: 'clear-tags-second-modal',
+                    type: 'danger',
+                    title: 'Final Confirmation',
+                    message: 'This will delete all tags and aliases. Are you REALLY sure?',
+                    confirmText: 'Yes, Delete All',
+                    cancelText: 'Cancel',
+                    confirmId: 'clear-tags-second-confirm-yes',
+                    cancelId: 'clear-tags-second-confirm-no',
+                    onConfirm: async () => {
+                        try {
+                            await app.apiCall('/api/admin/clear-tags', { method: 'DELETE' });
+                            app.showNotification('All tags cleared successfully', 'success');
+                            await this.loadTagStats();
+                            document.getElementById('tag-search-results').innerHTML = '';
+                        } catch (error) {
+                            app.showNotification(error.message, 'error', 'Error clearing tags');
+                        }
+                    }
+                });
+                secondModal.show();
+            }
+        });
         
-        if (!confirm('This will delete all tags and aliases. Are you REALLY sure?')) {
-            return;
-        }
-        
-        try {
-            await app.apiCall('/api/admin/clear-tags', { method: 'DELETE' });
-            app.showNotification('All tags cleared successfully', 'success');
-            await this.loadTagStats();
-            document.getElementById('tag-search-results').innerHTML = '';
-        } catch (error) {
-            app.showNotification(error.message, 'error', 'Error clearing tags');
-        }
+        firstModal.show();
     }
 
     async loadThemes() {

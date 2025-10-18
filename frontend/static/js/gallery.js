@@ -452,25 +452,39 @@ class Gallery {
     }
     
     async bulkDelete() {
-        if (!confirm(`Delete ${this.selectedItems.size} items?`)) return;
+        const itemCount = this.selectedItems.size;
         
-        for (const id of this.selectedItems) {
-            try {
-                await app.apiCall(`/api/media/${id}`, {
-                    method: 'DELETE'
-                });
-                
-                const element = document.querySelector(`[data-id="${id}"]`);
-                if (element) {
-                    element.remove();
+        const modal = new ModalHelper({
+            id: 'bulk-delete-modal',
+            type: 'danger',
+            title: 'Delete Multiple Items',
+            message: `Are you sure you want to delete ${itemCount} item${itemCount > 1 ? 's' : ''}? This action cannot be undone.`,
+            confirmText: 'Yes, Delete',
+            cancelText: 'Cancel',
+            confirmId: 'bulk-delete-confirm-yes',
+            cancelId: 'bulk-delete-confirm-no',
+            onConfirm: async () => {
+                for (const id of this.selectedItems) {
+                    try {
+                        await app.apiCall(`/api/media/${id}`, {
+                            method: 'DELETE'
+                        });
+                        
+                        const element = document.querySelector(`[data-id="${id}"]`);
+                        if (element) {
+                            element.remove();
+                        }
+                    } catch (error) {
+                        console.error(`Error deleting media ${id}:`, error);
+                    }
                 }
-            } catch (error) {
-                console.error(`Error deleting media ${id}:`, error);
+                
+                this.clearSelection();
+                this.loadPage();
             }
-        }
+        });
         
-        this.clearSelection();
-        this.loadPage();
+        modal.show();
     }
     
     clearSelection() {
