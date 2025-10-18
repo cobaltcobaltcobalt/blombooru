@@ -4,14 +4,23 @@ class MediaViewer extends MediaViewerBase {
         this.mediaId = mediaId;
         this.tagValidationCache = new Map();
         this.validationTimeout = null;
+        this.tooltipHelper = null;
         
         this.init();
     }
 
     init() {
         this.initFullscreenViewer();
+        this.initTooltipHelper();
         this.loadMedia();
         this.setupEventListeners();
+    }
+
+    initTooltipHelper() {
+        this.tooltipHelper = new TooltipHelper({
+            id: 'media-tooltip',
+            delay: 300
+        });
     }
 
     async loadMedia() {
@@ -241,16 +250,15 @@ class MediaViewer extends MediaViewerBase {
         const queryString = params.toString();
         relatedMediaSection.style.display = 'block';
 
-        const tooltipElement = this.createTooltip();
         relatedMediaEl.innerHTML = '';
 
         items.forEach(media => {
-            const item = this.createRelatedMediaItem(media, queryString, tooltipElement);
+            const item = this.createRelatedMediaItem(media, queryString);
             relatedMediaEl.appendChild(item);
         });
     }
 
-    createRelatedMediaItem(media, queryString, tooltipElement) {
+    createRelatedMediaItem(media, queryString) {
         const item = document.createElement('div');
         item.className = `gallery-item ${media.file_type}`;
         item.dataset.id = media.id;
@@ -278,7 +286,11 @@ class MediaViewer extends MediaViewerBase {
             item.appendChild(shareIcon);
         }
 
-        this.addTooltipEvents(item, media, tooltipElement);
+        // Add tooltip functionality
+        if (this.tooltipHelper && media.tags && media.tags.length > 0) {
+            this.tooltipHelper.addToElement(item, media.tags);
+        }
+        
         return item;
     }
 
@@ -534,6 +546,13 @@ class MediaViewer extends MediaViewerBase {
         const aiMetadataToggle = this.el('share-ai-metadata-toggle');
         if (aiMetadataToggle) {
             aiMetadataToggle.checked = shareAIMetadata || false;
+        }
+    }
+
+    // Cleanup method
+    destroy() {
+        if (this.tooltipHelper) {
+            this.tooltipHelper.destroy();
         }
     }
 }
