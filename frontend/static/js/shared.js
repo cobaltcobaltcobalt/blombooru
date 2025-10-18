@@ -2,14 +2,32 @@ class SharedViewer extends MediaViewerBase {
     constructor(shareUuid) {
         super();
         this.shareUuid = shareUuid;
+        this.ageVerificationModal = null;
         
         this.init();
     }
 
     init() {
-        this.initFullscreenViewer();    
+        this.initFullscreenViewer();
+        this.initAgeVerificationModal();
         this.loadSharedContent();
-        this.setupAgeVerification();
+    }
+
+    initAgeVerificationModal() {
+        this.ageVerificationModal = new ModalHelper({
+            id: 'age-verification-modal',
+            type: 'danger',
+            title: 'Explicit Content Warning',
+            message: 'This media contains explicit content.<br>By clicking "Yes, I am 18+", you confirm that you are over the age of 18 and consent to viewing adult content.',
+            confirmText: 'Yes, I am 18+',
+            cancelText: 'No, I am not 18',
+            confirmId: 'age-confirm-yes',
+            cancelId: 'age-confirm-no',
+            blurTarget: '.lg\\:col-span-3 > div',
+            onCancel: () => this.denyAge(),
+            closeOnOutsideClick: false,
+            closeOnEscape: false
+        });
     }
 
     async loadSharedContent() {
@@ -42,39 +60,9 @@ class SharedViewer extends MediaViewerBase {
         `;
     }
 
-    setupAgeVerification() {
-        const yesBtn = this.el('age-confirm-yes');
-        const noBtn = this.el('age-confirm-no');
-        
-        if (yesBtn) {
-            yesBtn.addEventListener('click', () => this.confirmAge());
-        }
-        
-        if (noBtn) {
-            noBtn.addEventListener('click', () => this.denyAge());
-        }
-    }
-
     showAgeVerification() {
-        const overlay = this.el('age-verification-overlay');
-        const mediaContainer = document.querySelector('.lg\\:col-span-3 > div');
-        
-        // Blur the media
-        if (mediaContainer) {
-            mediaContainer.classList.add('media-blurred');
-        }
-        
-        // Show overlay
-        overlay.style.display = 'flex';
-    }
-
-    confirmAge() {
-        const overlay = this.el('age-verification-overlay');
-        const mediaContainer = document.querySelector('.lg\\:col-span-3 > div');
-        
-        overlay.style.display = 'none';
-        if (mediaContainer) {
-            mediaContainer.classList.remove('media-blurred');
+        if (this.ageVerificationModal) {
+            this.ageVerificationModal.show();
         }
     }
 

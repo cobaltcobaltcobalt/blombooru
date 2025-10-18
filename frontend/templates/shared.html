@@ -6,27 +6,6 @@
 {% block title %}Shared - {{ app_name }}{% endblock %}
 
 {% block content %}
-<!-- Age Verification Overlay -->
-<div id="age-verification-overlay" class="age-verification-overlay" style="display: none;">
-    <div class="surface border-2 border-danger p-8 max-w-md text-center">
-        <svg class="mx-auto mb-4" width="64" height="64" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="var(--red)"/>
-        </svg>
-        <h2 class="text-xl font-bold mb-4 text-danger">Explicit Content Warning</h2>
-        <p class="text-base mb-6 text">
-            This media contains explicit content. By clicking "Yes, I am 18+", you confirm that you are over the age of 18 and consent to viewing adult content.
-        </p>
-        <div class="flex gap-4 justify-center">
-            <button id="age-confirm-yes" class="px-6 py-3 bg-success hover:bg-success tag-text font-bold text-sm">
-                Yes, I am 18+
-            </button>
-            <button id="age-confirm-no" class="px-6 py-3 bg-danger hover:bg-danger tag-text font-bold text-sm">
-                No, I am not 18
-            </button>
-        </div>
-    </div>
-</div>
-
 <!-- Fullscreen Image Overlay -->
 <div id="fullscreen-overlay">
     <div id="fullscreen-image-wrapper">
@@ -49,6 +28,7 @@
 
 {% block extra_js %}
 <script src="/static/js/fullscreen-mediaviewer.js"></script>
+<script src="/static/js/modal-helper.js"></script>
 <script src="/static/js/media-viewer-base.js"></script>
 <script src="/static/js/shared.js"></script>
 <script>
