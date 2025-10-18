@@ -37,7 +37,7 @@
                 <div id="edit-source-section" style="display: none;" class="pt-3 border-t">
                     <label class="block text-xs font-bold mb-2">Source URL</label>
                     <input type="url" id="source-input" placeholder="https://example.com/source" class="w-full bg px-2 py-1 border text-xs focus:outline-none focus:border-primary mb-2">
-                    <button id="save-source-btn" class="w-full px-3 py-1 bg-primary primary-text hover:bg-primary text-xs">Save Source</button>
+                    <button id="save-source-btn" class="w-full px-3 py-1 bg-primary primary-text transition-colors hover:bg-primary text-xs">Save Source</button>
                 </div>
             </div>
             
@@ -53,8 +53,8 @@
                         <div class="mb-2" style="position: relative;">
                             <div id="tags-input" contenteditable="true" data-placeholder="original highres cat_ears" class="w-full bg px-2 py-1 border text-xs focus:outline-none focus:border-primary" style="min-height: 1.5rem; white-space: pre-wrap; overflow-wrap: break-word;"></div>
                         </div>
-                        <button type="button" id="append-ai-tags-btn" class="w-full px-3 py-1 surface-light hover:surface-light text text-xs mb-2" style="display: none;">Append AI Tags</button>
-                        <button type="submit" class="w-full px-3 py-1 bg-primary primary-text hover:bg-primary text-xs">Save Tags</button>
+                        <button type="button" id="append-ai-tags-btn" class="w-full px-3 py-1 surface-light transition-colors hover:surface-light text text-xs mb-2" style="display: none;">Append AI Tags</button>
+                        <button type="submit" class="w-full px-3 py-1 bg-primary primary-text transition-colors hover:bg-primary text-xs">Save Tags</button>
                     </form>
                 </div>
             </div>
@@ -70,7 +70,7 @@
                 <h3 class="text-sm font-bold mb-3 pb-2 border-b">Actions</h3>
                 
                 <div class="space-y-3">
-                    <a id="download-btn" href="#" download class="block w-full px-3 py-1 surface-light hover:surface-light text text-center text-xs">Download</a>
+                    <a id="download-btn" href="#" download class="block w-full px-3 py-1 surface-light transition-colors hover:surface-light text text-center text-xs">Download</a>
                     
                     <!-- Admin Actions -->
                     <div id="admin-actions" style="display: none;" class="space-y-2 pt-2 border-t">
@@ -81,8 +81,8 @@
                             <option value="explicit">Explicit</option>
                         </select>
                         
-                        <button id="share-btn" class="w-full px-3 py-1 bg-primary primary-text hover:bg-primary text-xs">Share</button>
-                        <button id="delete-btn" class="w-full px-3 py-1 bg-danger hover:bg-danger tag-text text-xs">Delete</button>
+                        <button id="share-btn" class="w-full px-3 py-1 bg-primary transition-colors primary-text hover:bg-primary text-xs">Share</button>
+                        <button id="delete-btn" class="w-full px-3 py-1 bg-danger transition-colors hover:bg-danger tag-text text-xs">Delete</button>
                     </div>
                 </div>
             </div>
@@ -101,8 +101,8 @@
                 </div>
                 <input type="text" id="share-link-input" readonly class="w-full surface px-2 py-1 border focus:outline-none focus:border-primary text-xs text mb-2">
                 <div class="space-y-1">
-                    <button id="copy-share-link-btn" class="w-full px-3 py-1 surface hover:surface text text-xs">Copy Link</button>
-                    <button id="unshare-btn" class="w-full px-3 py-1 surface-light hover:surface-light text text-xs" style="display: none;">Remove Share</button>
+                    <button id="copy-share-link-btn" class="w-full px-3 py-1 surface transition-colors hover:surface text text-xs">Copy Link</button>
+                    <button id="unshare-btn" class="w-full px-3 py-1 surface-light transition-colors hover:surface-light text text-xs" style="display: none;">Remove Share</button>
                 </div>
             </div>
         </div>

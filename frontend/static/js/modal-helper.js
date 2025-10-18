@@ -115,10 +115,10 @@ class ModalHelper {
                 <h2 class="text-xl font-bold mb-4 ${this.getTitleClass(this.options.type)}">${this.options.title}</h2>
                 <p class="text-base mb-6 text">${this.options.message}</p>
                 <div class="flex gap-4 justify-center">
-                    <button id="${this.options.confirmId}" class="px-6 py-3 ${this.getConfirmButtonClass(this.options.type)} tag-text font-bold text-sm">
+                    <button id="${this.options.confirmId}" class="px-6 py-3 transition-colors ${this.getConfirmButtonClass(this.options.type)} tag-text font-bold text-sm">
                         ${this.options.confirmText}
                     </button>
-                    <button id="${this.options.cancelId}" class="px-6 py-3 ${this.getCancelButtonClass(this.options.type)} text font-bold text-sm">
+                    <button id="${this.options.cancelId}" class="px-6 py-3 transition-colors ${this.getCancelButtonClass(this.options.type)} text font-bold text-sm">
                         ${this.options.cancelText}
                     </button>
                 </div>

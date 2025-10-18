@@ -101,7 +101,7 @@ class SharedViewer extends MediaViewerBase {
                         <h3 class="text-sm font-bold mb-3 pb-2 border-b">Actions</h3>
                         <div class="space-y-2">
                             <a id="download-btn" href="/api/shared/${this.shareUuid}/file" download="${media.filename}" 
-                               class="block w-full px-3 py-2 surface-light hover:surface-light text text-center text-xs">
+                               class="block w-full px-3 py-2 surface-light transition-colors hover:surface-light text text-center text-xs">
                                 Download
                             </a>
                         </div>
