@@ -347,13 +347,6 @@ class AdminPanel {
                 if (appNameInput) appNameInput.value = settings.app_name;
             }
 
-            if (settings.default_rating_filter) {
-                const ratingInput = document.querySelector(
-                    `input[name="default-rating"][value="${settings.default_rating_filter}"]`
-                );
-                if (ratingInput) ratingInput.checked = true;
-            }
-
             if (settings.items_per_page) {
                 const itemsPerPageInput = document.getElementById('items-per-page');
                 if (itemsPerPageInput) itemsPerPageInput.value = settings.items_per_page;
@@ -366,11 +359,10 @@ class AdminPanel {
     
     async saveSettings() {
         const appName = document.getElementById('app-name').value;
-        const defaultRating = document.querySelector('input[name="default-rating"]:checked')?.value;
         const theme = document.getElementById('theme-select')?.value;
         const itemsPerPage = document.getElementById('items-per-page')?.value;
 
-        if (!appName || !defaultRating || !theme || !itemsPerPage) {
+        if (!appName || !theme || !itemsPerPage) {
             app.showNotification('Please fill in all settings fields!', 'error');
             return;
         }
@@ -383,7 +375,6 @@ class AdminPanel {
 
         const settings = {
             app_name: appName,
-            default_rating_filter: defaultRating,
             theme: theme,
             items_per_page: itemsPerPageNum
         };

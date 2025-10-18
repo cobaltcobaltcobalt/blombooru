@@ -34,7 +34,6 @@ class Settings:
                 "user": "postgres",
                 "password": ""
             },
-            "default_rating_filter": "explicit",
             "items_per_page": 64,
             "secret_key": os.urandom(32).hex()
         }
