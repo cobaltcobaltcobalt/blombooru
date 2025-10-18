@@ -1,4 +1,4 @@
-class FullscreenImageViewer {
+class FullscreenMediaViewer {
     constructor() {
         this.overlay = null;
         this.image = null;

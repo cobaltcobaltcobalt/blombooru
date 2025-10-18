@@ -20,7 +20,7 @@ class MediaViewer {
     }
 
     initFullscreenViewer() {
-        this.fullscreenViewer = new FullscreenImageViewer();
+        this.fullscreenViewer = new FullscreenMediaViewer();
     }
 
     async loadMedia() {
