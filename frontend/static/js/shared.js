@@ -79,10 +79,7 @@ class SharedViewer extends MediaViewerBase {
     }
 
     denyAge() {
-        window.close();
-        setTimeout(() => {
-            window.location.href = 'about:blank';
-        }, 100);
+        window.location.href = 'about:blank';
     }
 
     renderSharedMedia(media) {
