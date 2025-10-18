@@ -132,6 +132,7 @@ input[type="radio"]:checked + span:hover, span.checked:hover {
 }
 
 .gallery-item a {
+    aspect-ratio: 1;
     width: 100%;
     height: 100%;
     display: flex;
@@ -139,38 +140,29 @@ input[type="radio"]:checked + span:hover, span.checked:hover {
     justify-content: center;
 }
 
-.gallery-item.video a img,
-.gallery-item.gif a img {
-    outline-width: 3px;
-    outline-style:  solid;
-    outline-offset: -3px;
-}
-
-.gallery-item.video a img {
-    outline-color: var(--video-outline);
-}
-
-.gallery-item.gif a img {
-    outline-color: var(--gif-outline);
-}
-
-.gallery-item.selected a img {
-    outline: 3px solid var(--green);
-    outline-offset: -3px;
-}
-
-.gallery-item:hover a img {
-    outline-color: var(--primary-color);
-}
-
 .gallery-item a img {
-    outline-color: var(--border);
-    outline-width: 1px;
-    outline-style:  solid;
-    outline-offset: -1px;
+    border-width: 2px;
+    border-style:  solid;
+    border-color: var(--border);
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
+}
+
+.gallery-item.video a img {
+    border-color: var(--video-outline);
+}
+
+.gallery-item.gif a img {
+    border-color: var(--gif-outline);
+}
+
+.gallery-item.selected a img {
+    border-color: var(--primary-color);
+}
+
+.gallery-item:hover a img {
+    border-color: var(--primary-color);
 }
 
 .popular-tag-item {
