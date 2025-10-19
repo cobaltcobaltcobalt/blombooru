@@ -2,10 +2,8 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 from ..models import Media
 from ..config import settings
-from .media_processor import process_media_file, calculate_file_hash
-from .thumbnail_generator import generate_thumbnail
+from .media_processor import calculate_file_hash
 import uuid
-import shutil
 import re
 
 SUPPORTED_EXTENSIONS = {
