@@ -227,6 +227,102 @@ async def logout(response: Response):
     response.delete_cookie(key="admin_mode")
     return {"message": "Logged out successfully"}
 
+@router.post("/update-admin-password")
+async def update_admin_password(
+    data: dict,
+    current_user: User = Depends(require_admin_mode),
+    db: Session = Depends(get_db)
+):
+    """Update admin password"""
+    new_password = data.get('new_password', '').strip()
+    
+    # Validate password
+    if not new_password:
+        raise HTTPException(status_code=400, detail="New password is required")
+    
+    if len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    
+    if len(new_password) > 50:
+        raise HTTPException(status_code=400, detail="Password is too long (max 50 characters)")
+    
+    try:
+        # Hash the new password
+        password_hash = get_password_hash(new_password)
+        
+        # Update the user's password
+        current_user.password_hash = password_hash
+        db.commit()
+        
+        print(f"Password updated for user: {current_user.username}")
+        
+        return {"message": "Password updated successfully"}
+        
+    except Exception as e:
+        db.rollback()
+        print(f"Error updating password: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update password: {str(e)}")
+
+@router.post("/update-admin-username")
+async def update_admin_username(
+    data: dict,
+    response: Response,
+    current_user: User = Depends(require_admin_mode),
+    db: Session = Depends(get_db)
+):
+    """Update admin username"""
+    new_username = data.get('new_username', '').strip()
+    
+    # Validate username
+    if not new_username:
+        raise HTTPException(status_code=400, detail="New username is required")
+    
+    if len(new_username) < 1:
+        raise HTTPException(status_code=400, detail="Username cannot be empty")
+    
+    # Check if username already exists (and it's not the current user)
+    existing_user = db.query(User).filter(User.username == new_username).first()
+    if existing_user and existing_user.id != current_user.id:
+        raise HTTPException(status_code=400, detail="Username already exists")
+    
+    try:
+        old_username = current_user.username
+        
+        # Update the username
+        current_user.username = new_username
+        db.commit()
+        
+        print(f"Username updated from '{old_username}' to '{new_username}'")
+        
+        # Issue new token with updated username
+        access_token = create_access_token(
+            data={"sub": new_username},
+            expires_delta=timedelta(minutes=43200)
+        )
+        
+        # Update cookie with new token
+        response.set_cookie(
+            key="admin_token",
+            value=access_token,
+            httponly=True,
+            max_age=43200 * 60,
+            samesite="lax"
+        )
+        
+        return {
+            "message": "Username updated successfully",
+            "new_username": new_username
+        }
+        
+    except IntegrityError as e:
+        db.rollback()
+        print(f"Database integrity error: {e}")
+        raise HTTPException(status_code=400, detail="Username already exists")
+    except Exception as e:
+        db.rollback()
+        print(f"Error updating username: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update username: {str(e)}")
+
 @router.post("/toggle-admin-mode")
 async def toggle_admin_mode(
     enabled: bool,
