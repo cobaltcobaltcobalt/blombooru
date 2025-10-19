@@ -302,7 +302,7 @@ class AdminPanel {
                     const file = new File([blob], filename, { type: blob.type });
                     
                     // Add to uploader
-                    await uploader.addScannedFile(file);
+                    await uploader.addScannedFile(file, filePath);
                     loadedCount++;
                     
                 } catch (error) {

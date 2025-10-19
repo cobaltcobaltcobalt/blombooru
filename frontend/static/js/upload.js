@@ -286,7 +286,8 @@ class Uploader {
                     rating: this.baseRating,
                     source: this.baseSource,
                     additionalTags: [],
-                    preview: null
+                    preview: null,
+                    scannedPath: null
                 };
                 
                 this.uploadedFiles.push(fileData);
@@ -603,7 +604,14 @@ class Uploader {
     
     async uploadFile(fileData) {
         const formData = new FormData();
-        formData.append('file', fileData.file);
+
+        // If scanned file, send path instead of file
+        if (fileData.scannedPath) {
+            formData.append('scanned_path', fileData.scannedPath);
+        } else {
+            formData.append('file', fileData.file);
+        }
+
         formData.append('rating', fileData.rating);
 
         const fullTags = this.getFullTags(fileData);
@@ -660,7 +668,7 @@ class Uploader {
         this.fileInput.value = '';
     }
 
-    async addScannedFile(file) {
+    async addScannedFile(file, originalPath) {
         if (this.isValidFile(file)) {
             // Compute hash for duplicate detection
             const hash = await this.computeFileHash(file);
@@ -678,7 +686,8 @@ class Uploader {
                 rating: this.baseRating,
                 source: this.baseSource,
                 additionalTags: [],
-                preview: null
+                preview: null,
+                scannedPath: originalPath
             };
             
             this.uploadedFiles.push(fileData);

@@ -13,7 +13,7 @@ from ..auth import require_admin_mode, get_current_user
 from ..models import Media, Tag, User, blombooru_media_tags
 from ..schemas import MediaResponse, MediaUpdate, MediaCreate, RatingEnum
 from ..config import settings
-from ..utils.media_processor import process_media_file
+from ..utils.media_processor import process_media_file, calculate_file_hash
 from ..utils.thumbnail_generator import generate_thumbnail
 
 router = APIRouter(prefix="/api/media", tags=["media"])
@@ -187,7 +187,8 @@ async def get_media_metadata(
 
 @router.post("/", response_model=MediaResponse)
 async def upload_media(
-    file: UploadFile = File(...),
+    file: UploadFile = File(None),
+    scanned_path: Optional[str] = Form(None),
     rating: RatingEnum = Form(RatingEnum.safe),
     tags: str = Form(""),
     source: Optional[str] = Form(None),
@@ -196,97 +197,129 @@ async def upload_media(
 ):
     """Upload new media"""
     try:
-        # Read file contents to calculate hash first
-        contents = await file.read()
-        file_hash = hashlib.sha256(contents).hexdigest()
+        # Check if this is a scanned file import or regular upload
+        if scanned_path:
+            # SCANNED FILE - use in place, don't copy
+            file_path = Path(scanned_path)
+            
+            # Security check - ensure file is within ORIGINAL_DIR
+            if not file_path.is_absolute():
+                raise HTTPException(status_code=400, detail="Invalid file path")
+            
+            try:
+                file_path = file_path.resolve()
+                file_path.relative_to(settings.ORIGINAL_DIR.resolve())
+            except (ValueError, FileNotFoundError):
+                raise HTTPException(status_code=403, detail="Access denied")
+            
+            if not file_path.exists() or not file_path.is_file():
+                raise HTTPException(status_code=404, detail="File not found")
+            
+            # Calculate hash from existing file
+            file_hash = calculate_file_hash(file_path)
+            unique_filename = file_path.name  # Keep original name
+            
+        else:
+            # REGULAR UPLOAD - save with unique filename
+            if not file:
+                raise HTTPException(status_code=400, detail="Either file or scanned_path is required")
+            
+            # Read file contents to calculate hash first
+            contents = await file.read()
+            file_hash = hashlib.sha256(contents).hexdigest()
+            
+            # Generate UUID for the file
+            media_uuid = str(uuid.uuid4())
+            
+            # Sanitize and get unique filename for the original file
+            def sanitize_filename(filename: str) -> str:
+                """Sanitize filename to be safe for filesystem and web"""
+                path = Path(filename)
+                stem = path.stem
+                ext = path.suffix.lower()
+                
+                # Replace problematic characters with underscores
+                # Keep alphanumeric, spaces, hyphens, underscores, and dots
+                import re
+                stem = re.sub(r'[^\w\s\-\.]', '_', stem)
+                # Replace multiple spaces/underscores with single underscore
+                stem = re.sub(r'[\s_]+', '_', stem)
+                # Remove leading/trailing underscores
+                stem = stem.strip('_')
+                
+                # If stem is empty after sanitization, use the UUID
+                if not stem:
+                    stem = media_uuid
+                
+                return f"{stem}{ext}"
+            
+            def get_unique_filename(directory: Path, filename: str) -> str:
+                """Get a unique filename in the directory by appending a number if needed"""
+                sanitized = sanitize_filename(filename)
+                path = directory / sanitized
+                
+                if not path.exists():
+                    return sanitized
+                
+                # File exists, add a number suffix
+                stem = Path(sanitized).stem
+                ext = Path(sanitized).suffix
+                counter = 1
+                
+                while True:
+                    new_filename = f"{stem}_{counter}{ext}"
+                    new_path = directory / new_filename
+                    if not new_path.exists():
+                        return new_filename
+                    counter += 1
+            
+            # Get unique filename preserving original name
+            unique_filename = get_unique_filename(settings.ORIGINAL_DIR, file.filename)
+            file_path = settings.ORIGINAL_DIR / unique_filename
+            
+            print(f"Uploading file: {file.filename} -> {unique_filename}")
+            
+            # Save the uploaded file
+            with open(file_path, 'wb') as buffer:
+                buffer.write(contents)
+            
+            print(f"File saved to: {file_path}")
         
-        # Check for duplicates BEFORE saving file
+        # Check for duplicates AFTER we have the hash
         existing = db.query(Media).filter(Media.hash == file_hash).first()
         if existing:
             print(f"Duplicate file detected: {file_hash}")
+            # Only delete uploaded file if it was a new upload (not scanned)
+            if not scanned_path and file_path.exists():
+                file_path.unlink(missing_ok=True)
             raise HTTPException(
                 status_code=409, 
                 detail=f"Media already exists (duplicate of {existing.filename})"
             )
         
-        # Generate UUID for thumbnail only
-        media_uuid = str(uuid.uuid4())
-        
-        # Sanitize and get unique filename for the original file
-        def sanitize_filename(filename: str) -> str:
-            """Sanitize filename to be safe for filesystem and web"""
-            path = Path(filename)
-            stem = path.stem
-            ext = path.suffix.lower()
-            
-            # Replace problematic characters with underscores
-            # Keep alphanumeric, spaces, hyphens, underscores, and dots
-            import re
-            stem = re.sub(r'[^\w\s\-\.]', '_', stem)
-            # Replace multiple spaces/underscores with single underscore
-            stem = re.sub(r'[\s_]+', '_', stem)
-            # Remove leading/trailing underscores
-            stem = stem.strip('_')
-            
-            # If stem is empty after sanitization, use the UUID
-            if not stem:
-                stem = media_uuid
-            
-            return f"{stem}{ext}"
-        
-        def get_unique_filename(directory: Path, filename: str) -> str:
-            """Get a unique filename in the directory by appending a number if needed"""
-            sanitized = sanitize_filename(filename)
-            path = directory / sanitized
-            
-            if not path.exists():
-                return sanitized
-            
-            # File exists, add a number suffix
-            stem = Path(sanitized).stem
-            ext = Path(sanitized).suffix
-            counter = 1
-            
-            while True:
-                new_filename = f"{stem}_{counter}{ext}"
-                new_path = directory / new_filename
-                if not new_path.exists():
-                    return new_filename
-                counter += 1
-        
-        # Get unique filename preserving original name
-        unique_filename = get_unique_filename(settings.ORIGINAL_DIR, file.filename)
-        file_path = settings.ORIGINAL_DIR / unique_filename
-        
-        print(f"Uploading file: {file.filename} -> {unique_filename}")
-        
-        with open(file_path, 'wb') as buffer:
-            buffer.write(contents)
-        
-        print(f"File saved to: {file_path}")
-        
         # Process media
         metadata = process_media_file(file_path)
         print(f"Media processed: {metadata}")
-        
-        # Generate thumbnail with UUID name
-        thumbnail_filename = f"{media_uuid}.jpg"
+
+        # Generate thumbnail with same name as media file (but .jpg extension)
+        thumbnail_name = Path(unique_filename).stem
+        thumbnail_filename = f"{thumbnail_name}.jpg"
         thumbnail_path = settings.THUMBNAIL_DIR / thumbnail_filename
-        
+
         print(f"Generating thumbnail: {thumbnail_filename}")
-        
+
         thumbnail_generated = generate_thumbnail(
             file_path,
             thumbnail_path,
             metadata['file_type']
         )
-        
+
         if thumbnail_generated:
             print(f"Thumbnail generated: {thumbnail_path}")
         else:
             print(f"Warning: Thumbnail generation failed")
         
-        # Create media record with the sanitized/unique filename
+        # Create media record with the filename (original for scanned, unique for uploaded)
         relative_path = file_path.relative_to(settings.BASE_DIR)
         relative_thumb = thumbnail_path.relative_to(settings.BASE_DIR) if thumbnail_generated else None
         
@@ -333,9 +366,11 @@ async def upload_media(
         import traceback
         traceback.print_exc()
         
-        # Clean up files on error
-        if 'file_path' in locals() and file_path.exists():
-            file_path.unlink(missing_ok=True)
+        # Clean up files on error (but only if it was a new upload, not scanned)
+        if not scanned_path:
+            if 'file_path' in locals() and file_path.exists():
+                file_path.unlink(missing_ok=True)
+        
         if 'thumbnail_path' in locals() and thumbnail_path.exists():
             thumbnail_path.unlink(missing_ok=True)
             
