@@ -43,6 +43,7 @@ class ThemeRegistry:
     def _register_default_themes(self) -> None:
         """Register built-in themes"""
         self.register_theme(Theme(id="default_dark", name="Default Dark", css_path="/static/css/themes/default_dark.css", is_dark=True))
+        self.register_theme(Theme(id="green", name="Green", css_path="/static/css/themes/green.css", is_dark=False))
         self.register_theme(Theme(id="ctp_mocha", name="Catppuccin Mocha", css_path="/static/css/themes/ctp_mocha.css", is_dark=True))
         self.register_theme(Theme(id="gruvbox_dark_hard", name="gruvbox dark (hard)", css_path="/static/css/themes/gruvbox_dark_hard.css", is_dark=True))
 
