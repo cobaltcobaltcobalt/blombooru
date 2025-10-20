@@ -457,32 +457,35 @@ class MediaViewer extends MediaViewerBase {
     }
 
     extractAIPrompt(metadata) {
-        // Check various common structures for AI prompt
-        const checkLocations = [
-            metadata.parameters?.sui_image_params?.prompt,
-            metadata.parameters?.prompt,
-            metadata.parameters?.Prompt,
-            metadata.Parameters?.sui_image_params?.prompt,
-            metadata.Parameters?.prompt,
-            metadata.Parameters?.Prompt,
-            metadata.sui_image_params?.prompt,
-            metadata.prompt,
-            metadata.Prompt
-        ];
+        // Use the same extraction logic as renderAIMetadata
+        const aiData = this.extractAIData(metadata);
 
-        for (const location of checkLocations) {
-            if (location) return location;
+        if (!aiData) {
+            return null;
         }
 
-        // Fallback: search through all nested objects
-        for (const [key, value] of Object.entries(metadata)) {
-            if (typeof value === 'object' && value !== null) {
-                if (value.prompt || value.Prompt) {
-                    return value.prompt || value.Prompt;
-                }
-                if (value.sui_image_params?.prompt) {
-                    return value.sui_image_params.prompt;
-                }
+        // Extract the positive prompt from the parsed AI data
+        // Check various possible keys for the prompt
+        const promptLocations = [
+            aiData.prompt,
+            aiData.Prompt,
+            aiData.positive_prompt,
+            aiData.positive,
+            aiData.sui_image_params?.prompt
+        ];
+
+        for (const location of promptLocations) {
+            if (location && typeof location === 'string') {
+                return location;
+            }
+        }
+
+        // Fallback: if aiData has a prompt nested somewhere
+        for (const [key, value] of Object.entries(aiData)) {
+            if (key.toLowerCase().includes('prompt') && 
+                !key.toLowerCase().includes('negative') &&
+                typeof value === 'string') {
+                return value;
             }
         }
 

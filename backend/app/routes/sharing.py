@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session, joinedload
+from PIL import Image
+import json
 from ..database import get_db
 from ..models import Media
 from ..config import settings
@@ -79,7 +81,6 @@ async def get_shared_metadata(share_uuid: str, db: Session = Depends(get_db)):
     if not media.share_ai_metadata:
         raise HTTPException(status_code=403, detail="AI metadata not shared")
     
-    # Use the same metadata extraction logic from media.py
     file_path = settings.BASE_DIR / media.path
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Media file not found")
@@ -87,29 +88,76 @@ async def get_shared_metadata(share_uuid: str, db: Session = Depends(get_db)):
     metadata = {}
     
     try:
-        from PIL import Image
-        
         with Image.open(file_path) as img:
-            if hasattr(img, 'info'):
+            # Get PNG text chunks (ComfyUI, A1111, SwarmUI often use these)
+            if hasattr(img, 'info') and img.info:
                 for key, value in img.info.items():
-                    if key.lower() in ['parameters', 'prompt', 'comment', 'usercomment']:
+                    # Store all text chunks
+                    if isinstance(value, str):
+                        # Try to parse as JSON first
                         try:
-                            import json
                             metadata[key] = json.loads(value)
-                        except:
+                        except (json.JSONDecodeError, ValueError):
+                            # Store as string if not valid JSON
                             metadata[key] = value
+                    else:
+                        metadata[key] = value
             
+            # Get EXIF data (for JPEG, WebP, etc.)
             if hasattr(img, 'getexif'):
                 exif = img.getexif()
-                if exif and 0x9286 in exif:
-                    try:
-                        import json
-                        metadata['parameters'] = json.loads(exif[0x9286])
-                    except:
-                        metadata['parameters'] = exif[0x9286]
+                if exif:
+                    # UserComment tag (0x9286) - often contains AI parameters
+                    if 0x9286 in exif:
+                        user_comment = exif[0x9286]
+                        # Handle bytes
+                        if isinstance(user_comment, bytes):
+                            try:
+                                user_comment = user_comment.decode('utf-8', errors='ignore')
+                            except:
+                                pass
+                        
+                        # Try to parse as JSON
+                        if isinstance(user_comment, str):
+                            try:
+                                metadata['parameters'] = json.loads(user_comment)
+                            except (json.JSONDecodeError, ValueError):
+                                metadata['parameters'] = user_comment
+                    
+                    # ImageDescription tag (0x010E) - sometimes used for metadata
+                    if 0x010E in exif:
+                        description = exif[0x010E]
+                        if isinstance(description, str):
+                            try:
+                                parsed = json.loads(description)
+                                # Merge with metadata
+                                if isinstance(parsed, dict):
+                                    metadata.update(parsed)
+                                else:
+                                    metadata['description'] = parsed
+                            except (json.JSONDecodeError, ValueError):
+                                metadata['description'] = description
+            
+            # Legacy EXIF method (for older PIL versions)
+            if hasattr(img, '_getexif') and callable(img._getexif):
+                try:
+                    legacy_exif = img._getexif()
+                    if legacy_exif and 0x9286 in legacy_exif:
+                        user_comment = legacy_exif[0x9286]
+                        if isinstance(user_comment, bytes):
+                            user_comment = user_comment.decode('utf-8', errors='ignore')
+                        if isinstance(user_comment, str) and 'parameters' not in metadata:
+                            try:
+                                metadata['parameters'] = json.loads(user_comment)
+                            except (json.JSONDecodeError, ValueError):
+                                metadata['parameters'] = user_comment
+                except:
+                    pass
         
         return metadata
         
     except Exception as e:
-        print(f"Error reading metadata: {e}")
+        print(f"Error reading shared metadata for {share_uuid}: {e}")
+        import traceback
+        traceback.print_exc()
         return {}
