@@ -186,7 +186,7 @@ Blombooru is designed to be easily themeable.
 
 - **CSS Variables:** The core colors are controlled by CSS variables defined in the default theme(s).
 
-- **Custom Themes:** To create your own theme, simply create a new `.css` file in the `frontend/static/themes/` directory, copy the entire contents of the `default_dark.css` theme, and start customizing! To actually use the theme, you need to register it in the `backend/app/themes.py` file.
+- **Custom Themes:** To make your own theme, simply create a new `.css` file in the `frontend/static/themes/` directory, copy the entire contents of the `default_dark.css` theme, and start customizing! To actually use the theme, you need to register it in the `backend/app/themes.py` file.
 
 Your new theme will automatically appear in the theme-picker dropdown in the Admin Panel.
 
