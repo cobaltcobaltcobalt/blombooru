@@ -3,7 +3,7 @@
 **Your Personal, Self-Hosted Media Tagging Tool.**
 
 Blombooru is a single-user, private alternative to image boorus like Danbooru and Gelbooru.  
-It is designed for individuals who want a powerful, local, simple to use, and modern solution for organizing and tagging their personal media collections. With a focus on a clean user experience, robust administration, and easy customization, Blombooru puts you in complete control of your library.
+It is designed for individuals who want a powerful, simple to use, and modern solution for organizing and tagging their personal media collections. With a focus on a clean user experience, robust administration, and easy customization, Blombooru puts you in complete control of your library.
 
 ## Key Features
 
