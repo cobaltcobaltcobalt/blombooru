@@ -9,6 +9,8 @@ class Uploader {
         this.baseSource = '';
         this.fileHashes = new Set();
         this.tagInputHelper = new TagInputHelper();
+        this.baseRatingSelect = null;
+        this.individualRatingSelect = null;
         
         if (this.uploadArea) {
             this.init();
@@ -64,33 +66,47 @@ class Uploader {
             
             <div class="mb-4">
                 <label class="block text-xs font-bold mb-2">Base Rating</label>
-                <select id="base-rating" class="w-full px-3 py-2 surface border text-xs focus:outline-none focus:border-primary">
-                    <option value="safe">Safe</option>
-                    <option value="questionable">Questionable</option>
-                    <option value="explicit">Explicit</option>
-                </select>
+                <div id="base-rating" class="custom-select" data-value="safe">
+                    <button class="custom-select-trigger w-full flex items-center justify-between gap-3 px-3 py-2 surface border text-xs cursor-pointer focus:outline-none focus:border-primary" type="button">
+                        <span class="custom-select-value text-secondary">Safe</span>
+                        <svg class="custom-select-arrow flex-shrink-0 transition-transform duration-200 text-secondary" width="12" height="12" viewBox="0 0 12 12">
+                            <path fill="currentColor" d="M6 9L1 4h10z"/>
+                        </svg>
+                    </button>
+                    <div class="custom-select-dropdown surface border border-primary max-h-60 overflow-y-auto shadow-lg">
+                        <div class="custom-select-option px-3 py-2 cursor-pointer hover:surface text text-xs selected" data-value="safe">Safe</div>
+                        <div class="custom-select-option px-3 py-2 cursor-pointer hover:surface text text-xs" data-value="questionable">Questionable</div>
+                        <div class="custom-select-option px-3 py-2 cursor-pointer hover:surface text text-xs" data-value="explicit">Explicit</div>
+                    </div>
+                </div>
             </div>
             
             <div class="mb-4">
                 <label class="block text-xs font-bold mb-2">Base Source URL (optional)</label>
-                <input type="url" id="base-source" placeholder="https://example.com/source" class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
+                <input type="url" id="base-source" placeholder="https://example.com/source" class="w-full surface px-3 py-2 border text-xs focus:outline-none focus:border-primary">
             </div>
             
-            <div class="mb-4">
+            <div>
                 <label class="block text-xs font-bold mb-2">Base Tags (prefixed to all media)</label>
                 <div style="position: relative;">
-                    <div id="base-tags" contenteditable="true" data-placeholder="original highres cat_ears" class="tag-input w-full surface px-2 py-1 border text-xs focus:outline-none focus:border-primary" style="min-height: 1.5rem; white-space: pre-wrap; overflow-wrap: break-word;"></div>
+                    <div id="base-tags" contenteditable="true" data-placeholder="original highres cat_ears" class="tag-input w-full surface px-3 py-2 border text-xs focus:outline-none focus:border-primary" style="min-height: 1.5rem; white-space: pre-wrap; overflow-wrap: break-word;"></div>
                 </div>
             </div>
         `;
         
         this.uploadArea.parentNode.insertBefore(controlsDiv, this.uploadArea.nextSibling);
         
-        // Setup event listeners
-        document.getElementById('base-rating').addEventListener('change', (e) => {
-            this.baseRating = e.target.value;
-            this.updateAllMediaRatings();
-        });
+        // Initialize custom select for base rating
+        const baseRatingElement = document.getElementById('base-rating');
+        if (baseRatingElement) {
+            this.baseRatingSelect = new CustomSelect(baseRatingElement);
+            
+            // Listen for change events
+            baseRatingElement.addEventListener('change', (e) => {
+                this.baseRating = e.detail.value;
+                this.updateAllMediaRatings();
+            });
+        }
         
         document.getElementById('base-source').addEventListener('input', (e) => {
             this.baseSource = e.target.value.trim();
@@ -140,22 +156,30 @@ class Uploader {
                     
                     <div class="mb-3">
                         <label class="block text-xs font-bold mb-2">Individual Rating</label>
-                        <select id="individual-rating" class="w-full px-3 py-2 bg border text-xs focus:outline-none focus:border-primary">
-                            <option value="safe">Safe</option>
-                            <option value="questionable">Questionable</option>
-                            <option value="explicit">Explicit</option>
-                        </select>
+                        <div id="individual-rating" class="custom-select" data-value="safe">
+                            <button class="custom-select-trigger w-full flex items-center justify-between gap-3 px-3 py-2 surface border text-xs cursor-pointer focus:outline-none focus:border-primary" type="button">
+                                <span class="custom-select-value text-secondary">Safe</span>
+                                <svg class="custom-select-arrow flex-shrink-0 transition-transform duration-200 text-secondary" width="12" height="12" viewBox="0 0 12 12">
+                                    <path fill="currentColor" d="M6 9L1 4h10z"/>
+                                </svg>
+                            </button>
+                            <div class="custom-select-dropdown surface border border-primary max-h-60 overflow-y-auto shadow-lg">
+                                <div class="custom-select-option px-3 py-2 cursor-pointer hover:surface text text-xs selected" data-value="safe">Safe</div>
+                                <div class="custom-select-option px-3 py-2 cursor-pointer hover:surface text text-xs" data-value="questionable">Questionable</div>
+                                <div class="custom-select-option px-3 py-2 cursor-pointer hover:surface text text-xs" data-value="explicit">Explicit</div>
+                            </div>
+                        </div>
                     </div>
                     
                     <div class="mb-3">
                         <label class="block text-xs font-bold mb-2">Individual Source URL (optional)</label>
-                        <input type="url" id="individual-source" placeholder="https://example.com/source" class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
+                        <input type="url" id="individual-source" placeholder="https://example.com/source" class="w-full surface px-3 py-2 border text-xs focus:outline-none focus:border-primary">
                     </div>
                     
                     <div class="mb-3">
                         <label class="block text-xs font-bold mb-2">Additional Tags (base tags are prefixed automatically)</label>
                         <div style="position: relative;">
-                            <div id="individual-tags" contenteditable="true" data-placeholder="solo long_hair" class="tag-input w-full surface px-2 py-1 border text-xs focus:outline-none focus:border-primary" style="min-height: 1.5rem; white-space: pre-wrap; overflow-wrap: break-word;"></div>
+                            <div id="individual-tags" contenteditable="true" data-placeholder="solo long_hair" class="tag-input w-full surface px-3 py-2 border text-xs focus:outline-none focus:border-primary" style="min-height: 1.5rem; white-space: pre-wrap; overflow-wrap: break-word;"></div>
                         </div>
                     </div>
                     
@@ -170,13 +194,19 @@ class Uploader {
         
         document.getElementById('base-controls').parentNode.insertBefore(gridDiv, document.getElementById('base-controls').nextSibling);
         
-        // Setup individual controls
-        document.getElementById('individual-rating').addEventListener('change', (e) => {
-            if (this.selectedFileIndex !== null) {
-                this.uploadedFiles[this.selectedFileIndex].rating = e.target.value;
-                this.updateThumbnailIndicator(this.selectedFileIndex);
-            }
-        });
+        // Initialize custom select for individual rating
+        const individualRatingElement = document.getElementById('individual-rating');
+        if (individualRatingElement) {
+            this.individualRatingSelect = new CustomSelect(individualRatingElement);
+            
+            // Listen for change events
+            individualRatingElement.addEventListener('change', (e) => {
+                if (this.selectedFileIndex !== null) {
+                    this.uploadedFiles[this.selectedFileIndex].rating = e.detail.value;
+                    this.updateThumbnailIndicator(this.selectedFileIndex);
+                }
+            });
+        }
         
         document.getElementById('individual-source').addEventListener('input', (e) => {
             if (this.selectedFileIndex !== null) {
@@ -442,7 +472,12 @@ class Uploader {
         // Show individual controls
         document.getElementById('individual-controls').style.display = 'block';
         document.getElementById('current-filename').textContent = fileData.file.name;
-        document.getElementById('individual-rating').value = fileData.rating;
+        
+        // Update individual rating select
+        if (this.individualRatingSelect) {
+            this.individualRatingSelect.setValue(fileData.rating);
+        }
+        
         document.getElementById('individual-source').value = fileData.source || '';
         const individualTagsInput = document.getElementById('individual-tags');
         individualTagsInput.textContent = fileData.additionalTags.join(' ');
@@ -471,8 +506,8 @@ class Uploader {
             this.updateThumbnailIndicator(index);
         });
         
-        if (this.selectedFileIndex !== null) {
-            document.getElementById('individual-rating').value = this.baseRating;
+        if (this.selectedFileIndex !== null && this.individualRatingSelect) {
+            this.individualRatingSelect.setValue(this.baseRating);
         }
     }
     
@@ -651,7 +686,15 @@ class Uploader {
         const individualTagsInput = document.getElementById('individual-tags');
         if (baseTagsInput) baseTagsInput.textContent = '';
         if (individualTagsInput) individualTagsInput.textContent = '';
-        document.getElementById('base-rating').value = 'safe';
+        
+        // Reset custom selects
+        if (this.baseRatingSelect) {
+            this.baseRatingSelect.setValue('safe');
+        }
+        if (this.individualRatingSelect) {
+            this.individualRatingSelect.setValue('safe');
+        }
+        
         document.getElementById('base-source').value = '';
         document.getElementById('individual-controls').style.display = 'none';
         

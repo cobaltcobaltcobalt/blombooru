@@ -3,6 +3,7 @@ class AdminPanel {
         this.aliasCache = new Set();
         this.tagInputHelper = new TagInputHelper();
         this.validationTimeout = null;
+        this.themeSelect = null;
         this.init();
     }
     
@@ -16,6 +17,7 @@ class AdminPanel {
         this.setupTagManagement();
         this.loadTagStats();
         this.loadMediaStats();
+        this.setupCustomSelects();
         this.loadThemes();
     }
     
@@ -25,6 +27,16 @@ class AdminPanel {
             new TagAutocomplete(tagsSearch, {
                 multipleValues: true
             });
+        }
+    }
+
+    setupCustomSelects() {
+        const themeSelectElement = document.getElementById('theme-select');
+        if (themeSelectElement) {
+            this.themeSelect = new CustomSelect(themeSelectElement);
+            console.log('Theme select initialized: ', this.themeSelect);
+        } else {
+            console.error('Theme select element not found');
         }
     }
     
@@ -367,7 +379,8 @@ class AdminPanel {
     
     async saveSettings() {
         const appName = document.getElementById('app-name').value;
-        const theme = document.getElementById('theme-select')?.value;
+        const themeSelectElement = document.getElementById('theme-select');
+        const theme = themeSelectElement?.dataset.value;
         const itemsPerPage = document.getElementById('items-per-page')?.value;
 
         if (!appName || !theme || !itemsPerPage) {
@@ -801,29 +814,21 @@ class AdminPanel {
             const response = await fetch('/api/admin/themes');
             const data = await response.json();
 
-            const themeSelect = document.getElementById('theme-select');
-            if (!themeSelect) return;
+            if (!this.themeSelect) {
+                console.error('themeSelect is not initialized!');
+                return;
+            }
 
-            themeSelect.innerHTML = '';
-
-            data.themes.forEach(theme => {
-                const option = document.createElement('option');
-                option.value = theme.id;
-
-                if (theme.is_dark) {
-                    option.textContent = '🌙 ';
-                } else {
-                    option.textContent = '☀️ ';
-                }
-
-                option.textContent += theme.name;
-
-                if (theme.id === data.current_theme) {
-                    option.selected = true;
-                }
-
-                themeSelect.appendChild(option);
+            const options = data.themes.map(theme => {
+                const emoji = theme.is_dark ? '🌙 ' : '☀️ ';
+                return {
+                    value: theme.id,
+                    text: emoji + theme.name,
+                    selected: theme.id === data.current_theme
+                };
             });
+
+            this.themeSelect.setOptions(options);
 
         } catch (error) {
             console.error('Error loading themes:', error);
