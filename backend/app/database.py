@@ -51,7 +51,6 @@ def init_db():
     if engine is None:
         init_engine()
     
-    # Import models to register them
     from . import models
     
     Base.metadata.create_all(bind=engine)

@@ -10,7 +10,6 @@ from datetime import datetime
 
 app = FastAPI(title="Blombooru", version="1.16.5")
 
-# Mount static files
 static_path = Path(__file__).parent.parent.parent / "frontend" / "static"
 templates_path = Path(__file__).parent.parent.parent / "frontend" / "templates"
 
@@ -19,7 +18,6 @@ templates = Jinja2Templates(directory=str(templates_path))
 
 templates.env.globals['get_current_year'] = lambda: datetime.now().year
 
-# Include routers
 app.include_router(admin.router)
 app.include_router(media.router)
 app.include_router(tags.router)
@@ -31,10 +29,7 @@ async def startup_event():
     """Run on startup"""
     if not settings.IS_FIRST_RUN:
         try:
-            # Initialize database engine
             init_engine()
-            
-            # Initialize database schema
             init_db()
                 
             print("Blombooru started successfully")
@@ -43,7 +38,6 @@ async def startup_event():
     else:
         print("First run detected - please complete onboarding")
 
-# HTML Routes
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Home page"""

@@ -14,7 +14,6 @@ router = APIRouter(prefix="/api/shared", tags=["sharing"])
 @router.get("/{share_uuid}")
 async def get_shared_content(share_uuid: str, db: Session = Depends(get_db)):
     """Get shared media"""
-    # Check if it's a media share
     media = db.query(Media).options(joinedload(Media.tags)).filter(
         Media.share_uuid == share_uuid,
         Media.is_shared == True
@@ -43,7 +42,6 @@ async def get_shared_file(share_uuid: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Shared media not found")
     
     file_path = settings.BASE_DIR / media.path
-    # Strip metadata when AI metadata sharing is disabled
     strip_metadata = not media.share_ai_metadata
     
     return serve_media_file(file_path, media.mime_type, strip_metadata=strip_metadata)
@@ -73,7 +71,6 @@ async def get_shared_metadata(share_uuid: str, db: Session = Depends(get_db)):
     if not media:
         raise HTTPException(status_code=404, detail="Shared media not found")
     
-    # Check if AI metadata sharing is enabled
     if not media.share_ai_metadata:
         raise HTTPException(status_code=403, detail="AI metadata not shared")
     

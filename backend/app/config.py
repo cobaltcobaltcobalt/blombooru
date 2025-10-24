@@ -12,12 +12,10 @@ class Settings:
         self.DATA_DIR = self.BASE_DIR / "data"
         self.SETTINGS_FILE = self.DATA_DIR / "settings.json"
         
-        # Create directories
         self.ORIGINAL_DIR.mkdir(parents=True, exist_ok=True)
         self.THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
         self.DATA_DIR.mkdir(parents=True, exist_ok=True)
         
-        # Load settings
         self.settings = self.load_settings()
         
     def load_settings(self) -> dict:

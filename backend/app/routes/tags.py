@@ -38,11 +38,9 @@ async def autocomplete_tags(
     """Autocomplete tag suggestions"""
     from ..models import TagAlias
     
-    # Check if query exactly matches an alias
     alias = db.query(TagAlias).filter(TagAlias.alias_name.ilike(q)).first()
     
     if alias:
-        # Get the target tag
         target_tag = db.query(Tag).filter(Tag.id == alias.target_tag_id).first()
         if target_tag:
             return [{
@@ -137,12 +135,10 @@ async def get_related_tags(
     if not tag:
         raise HTTPException(status_code=404, detail="Tag not found")
     
-    # Find media with this tag
     media_with_tag = db.query(Media.id).join(blombooru_media_tags).filter(
         blombooru_media_tags.c.tag_id == tag.id
     ).subquery()
     
-    # Find other tags on those media
     related = db.query(
         Tag,
         func.count(blombooru_media_tags.c.media_id).label('cooccurrence')
@@ -166,12 +162,10 @@ async def related_tags(
     tags: str = Query(...),
     db: Session = Depends(get_db)
 ):
-    # Split input tags
     tag_list = [t.strip() for t in tags.split(',') if t.strip()]
     if not tag_list:
         return []
 
-    # Find media that has any of the input tags
     subquery = db.query(
         Media.id
     ).join(
@@ -182,7 +176,6 @@ async def related_tags(
         Tag.name.in_(tag_list)
     ).subquery()
 
-    # Find commonly co-occurring tags
     related = db.query(
         Tag,
         func.count(blombooru_media_tags.c.media_id).label('frequency')

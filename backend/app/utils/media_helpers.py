@@ -9,14 +9,9 @@ from typing import Dict, Any, Optional
 def extract_image_metadata(file_path: Path) -> Dict[str, Any]:
     """Extract metadata from media files (EXIF, PNG chunks, XMP, etc.)"""
     metadata = {}
-    
-    # Check file type first
     mime_type, _ = mimetypes.guess_type(str(file_path))
     
-    # Only process image files
     if not mime_type or not mime_type.startswith('image/'):
-        # For video files or unknown types, return empty metadata
-        # You could extend this to extract video metadata using ffprobe or similar
         return metadata
     
     try:
@@ -24,16 +19,12 @@ def extract_image_metadata(file_path: Path) -> Dict[str, Any]:
             # Get PNG text chunks (ComfyUI, A1111, SwarmUI often use these)
             if hasattr(img, 'info') and img.info:
                 for key, value in img.info.items():
-                    # Store all text chunks
                     if isinstance(value, str):
-                        # Try to parse as JSON first
                         try:
                             metadata[key] = json.loads(value)
                         except (json.JSONDecodeError, ValueError):
-                            # Store as string if not valid JSON
                             metadata[key] = value
                     elif isinstance(value, bytes):
-                        # Handle byte strings
                         try:
                             decoded = value.decode('utf-8', errors='ignore')
                             try:
@@ -45,18 +36,15 @@ def extract_image_metadata(file_path: Path) -> Dict[str, Any]:
                     else:
                         metadata[key] = value
             
-            # Get EXIF data (for JPEG, WebP, etc.)
             if hasattr(img, 'getexif'):
                 exif = img.getexif()
                 if exif:
                     # UserComment tag (0x9286) - often contains AI parameters
                     if 0x9286 in exif:
                         user_comment = exif[0x9286]
-                        # Handle bytes
                         if isinstance(user_comment, bytes):
                             try:
                                 user_comment = user_comment.decode('utf-8', errors='ignore')
-                                # Remove any null bytes or special characters
                                 user_comment = user_comment.replace('\x00', '').strip()
                             except:
                                 pass
@@ -80,7 +68,6 @@ def extract_image_metadata(file_path: Path) -> Dict[str, Any]:
                         if isinstance(description, str) and description:
                             try:
                                 parsed = json.loads(description)
-                                # Merge with metadata
                                 if isinstance(parsed, dict):
                                     metadata.update(parsed)
                                 else:
@@ -154,7 +141,7 @@ def extract_video_metadata(file_path: Path) -> Dict[str, Any]:
     """Extract metadata from video files."""
     metadata = {}
     
-    # Todo: add proper video metadata extraction using:
+    # Todo: add proper video metadata extraction using either:
     # - ffprobe (from ffmpeg)
     # - pymediainfo
     # - opencv-python
@@ -164,7 +151,6 @@ def extract_video_metadata(file_path: Path) -> Dict[str, Any]:
         metadata['file_size'] = stat.st_size
         metadata['file_type'] = 'video'
         
-        # Try to get mime type
         mime_type, _ = mimetypes.guess_type(str(file_path))
         if mime_type:
             metadata['mime_type'] = mime_type
@@ -176,16 +162,13 @@ def extract_video_metadata(file_path: Path) -> Dict[str, Any]:
 
 def extract_media_metadata(file_path: Path) -> Dict[str, Any]:
     """Extract metadata from any media file (image or video)."""
-    # Determine file type
     mime_type, _ = mimetypes.guess_type(str(file_path))
-    
     if mime_type:
         if mime_type.startswith('image/'):
             return extract_image_metadata(file_path)
         elif mime_type.startswith('video/'):
             return extract_video_metadata(file_path)
     
-    # Unknown type, return empty metadata
     return {}
 
 def serve_media_file(file_path: Path,  mime_type: str,  error_message: str = "File not found", strip_metadata: bool = False) -> FileResponse:
@@ -193,29 +176,24 @@ def serve_media_file(file_path: Path,  mime_type: str,  error_message: str = "Fi
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=error_message)
     
-    # If metadata stripping is not requested, serve the file as-is
     if not strip_metadata:
         return FileResponse(file_path, media_type=mime_type)
     
-    # Only strip metadata from images
     if mime_type and mime_type.startswith('image/'):
         try:
             import io
             import tempfile
             from fastapi.responses import Response
             
-            # Open the image with PIL
             with Image.open(file_path) as img:
                 # Convert RGBA to RGB if necessary (for JPEG output)
                 if mime_type == 'image/jpeg' and img.mode in ('RGBA', 'LA', 'P'):
-                    # Create a white background
                     background = Image.new('RGB', img.size, (255, 255, 255))
                     if img.mode == 'P':
                         img = img.convert('RGBA')
                     background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
                     img = background
                 
-                # Save to bytes buffer without metadata
                 output = io.BytesIO()
                 
                 # Determine format from mime type
@@ -250,7 +228,6 @@ def serve_media_file(file_path: Path,  mime_type: str,  error_message: str = "Fi
                 img.save(output, **save_kwargs)
                 output.seek(0)
                 
-                # Return the cleaned image
                 return Response(
                     content=output.getvalue(),
                     media_type=mime_type,
@@ -261,14 +238,12 @@ def serve_media_file(file_path: Path,  mime_type: str,  error_message: str = "Fi
                 
         except Exception as e:
             print(f"Error stripping metadata from {file_path}: {e}")
-            # Fall back to serving the original file
             return FileResponse(file_path, media_type=mime_type)
     
     if mime_type and mime_type.startswith('video/'):
         print(f"Warning: Metadata stripping not supported for video files, serving as-is: {file_path}")
         return FileResponse(file_path, media_type=mime_type)
     
-    # For other file types, serve as-is
     return FileResponse(file_path, media_type=mime_type)
 
 def sanitize_filename(filename: str, fallback: str = "file") -> str:
@@ -279,15 +254,10 @@ def sanitize_filename(filename: str, fallback: str = "file") -> str:
     stem = path.stem
     ext = path.suffix.lower()
     
-    # Replace problematic characters with underscores
-    # Keep alphanumeric, spaces, hyphens, underscores, and dots
     stem = re.sub(r'[^\w\s\-\.]', '_', stem)
-    # Replace multiple spaces/underscores with single underscore
     stem = re.sub(r'[\s_]+', '_', stem)
-    # Remove leading/trailing underscores
     stem = stem.strip('_')
     
-    # If stem is empty after sanitization, use the fallback
     if not stem:
         stem = fallback
     

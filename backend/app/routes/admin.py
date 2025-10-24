@@ -27,7 +27,6 @@ async def complete_onboarding(data: OnboardingData):
     if not settings.IS_FIRST_RUN:
         raise HTTPException(status_code=400, detail="Onboarding already completed")
     
-    # Validate inputs
     if not data.app_name or len(data.app_name.strip()) == 0:
         raise HTTPException(status_code=400, detail="Application name is required")
     
@@ -40,7 +39,6 @@ async def complete_onboarding(data: OnboardingData):
     if len(data.admin_password) > 128:
         raise HTTPException(status_code=400, detail="Admin password is too long (max 128 characters)")
     
-    # Test database connection
     print("=== Starting onboarding process ===")
     print(f"1. Testing database connection to {data.database.host}:{data.database.port}/{data.database.name}")
     
@@ -78,34 +76,28 @@ async def complete_onboarding(data: OnboardingData):
         from .. import database
         from sqlalchemy.orm import sessionmaker
         
-        # Create temporary engine
         temp_db_url = f"postgresql://{data.database.user}:{data.database.password}@{data.database.host}:{data.database.port}/{data.database.name}"
         temp_engine = sqlalchemy_create_engine(temp_db_url, pool_pre_ping=True)
         new_session_local = sessionmaker(autocommit=False, autoflush=False, bind=temp_engine)
         
-        # Create all tables
         database.Base.metadata.create_all(bind=temp_engine)
         print("✓ Database schema created")
         
-        # Create admin user
         print("3. Creating admin user...")
         db = new_session_local()
         try:
-            # Hash the password
             try:
                 password_hash = get_password_hash(data.admin_password)
                 print(f"✓ Password hashed successfully")
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to hash password: {str(e)}")
             
-            # Create admin user
             admin = User(
                 username=data.admin_username,
                 password_hash=password_hash
             )
             db.add(admin)
             
-            # Commit everything
             db.commit()
             print("✓ Admin user created")
             
@@ -125,7 +117,6 @@ async def complete_onboarding(data: OnboardingData):
         finally:
             db.close()
         
-        # Everything worked! Now save settings to file
         print("4. Saving settings...")
         try:
             settings.save_settings({
@@ -151,7 +142,6 @@ async def complete_onboarding(data: OnboardingData):
         print("=== Onboarding completed successfully ===")
             
     except HTTPException:
-        # Clean up on HTTP exceptions
         if new_session_local:
             try:
                 new_session_local.close_all()
@@ -164,7 +154,6 @@ async def complete_onboarding(data: OnboardingData):
                 pass
         raise
     except Exception as e:
-        # Clean up on other exceptions
         if new_session_local:
             try:
                 new_session_local.close_all()
@@ -201,7 +190,6 @@ async def login(credentials: UserLogin, response: Response, db: Session = Depend
             expires_delta=timedelta(minutes=43200)
         )
         
-        # Set cookie
         response.set_cookie(
             key="admin_token",
             value=access_token,
@@ -236,7 +224,6 @@ async def update_admin_password(
     """Update admin password"""
     new_password = data.get('new_password', '').strip()
     
-    # Validate password
     if not new_password:
         raise HTTPException(status_code=400, detail="New password is required")
     
@@ -247,10 +234,7 @@ async def update_admin_password(
         raise HTTPException(status_code=400, detail="Password is too long (max 50 characters)")
     
     try:
-        # Hash the new password
         password_hash = get_password_hash(new_password)
-        
-        # Update the user's password
         current_user.password_hash = password_hash
         db.commit()
         
@@ -273,7 +257,6 @@ async def update_admin_username(
     """Update admin username"""
     new_username = data.get('new_username', '').strip()
     
-    # Validate username
     if not new_username:
         raise HTTPException(status_code=400, detail="New username is required")
     
@@ -288,19 +271,17 @@ async def update_admin_username(
     try:
         old_username = current_user.username
         
-        # Update the username
         current_user.username = new_username
         db.commit()
         
         print(f"Username updated from '{old_username}' to '{new_username}'")
         
-        # Issue new token with updated username
+        # Issue new token with updated username and update cookie
         access_token = create_access_token(
             data={"sub": new_username},
             expires_delta=timedelta(minutes=43200)
         )
         
-        # Update cookie with new token
         response.set_cookie(
             key="admin_token",
             value=access_token,
@@ -374,7 +355,7 @@ async def scan_media(
     
     return {
         'new_files': result['new_files'],
-        'files': [f['path'] for f in result['files']]  # Return just the paths
+        'files': [f['path'] for f in result['files']]
     }
     
 @router.get("/get-untracked-file")
@@ -397,7 +378,6 @@ async def get_untracked_file(
     try:
         file_path = file_path.resolve()
         settings.ORIGINAL_DIR.resolve()
-        # Make sure it's within the original directory
         file_path.relative_to(settings.ORIGINAL_DIR.resolve())
     except (ValueError, FileNotFoundError):
         raise HTTPException(status_code=403, detail="Access denied")
@@ -405,7 +385,6 @@ async def get_untracked_file(
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
     
-    # Determine mime type
     mime_type, _ = mimetypes.guess_type(str(file_path))
     if not mime_type:
         mime_type = "application/octet-stream"
@@ -425,10 +404,7 @@ async def get_media_stats(
     from ..models import Media
     from sqlalchemy import func
     
-    # Get total count
     total_media = db.query(Media).count()
-    
-    # Get counts by file type
     total_images = db.query(Media).filter(Media.file_type == 'image').count()
     total_gifs = db.query(Media).filter(Media.file_type == 'gif').count()
     total_videos = db.query(Media).filter(Media.file_type == 'video').count()
@@ -451,11 +427,9 @@ async def import_tags_csv(
     import io
     from ..models import Tag, TagAlias
     
-    # Read CSV content
     contents = await file.read()
     csv_text = contents.decode('utf-8')
     
-    # Category mapping
     category_map = {
         0: 'general',
         1: 'artist',
@@ -485,8 +459,6 @@ async def import_tags_csv(
         tag_data = []  # Store (tag_name, category, aliases_str) for pass 2
         tags_to_create = []
         rows_processed = 0
-        
-        # Get existing tags
         existing_tags = {tag.name: tag for tag in db.query(Tag).all()}
         
         for row_num, row in enumerate(csv_reader, 1):
@@ -498,7 +470,6 @@ async def import_tags_csv(
                 if not tag_name:
                     continue
                 
-                # Skip tags that are too long
                 if len(tag_name) > MAX_TAG_LENGTH:
                     skipped_long_tags += 1
                     errors.append(f"Row {row_num}: Tag '{tag_name[:50]}...' too long ({len(tag_name)} chars)")
@@ -516,7 +487,6 @@ async def import_tags_csv(
                 # Store for pass 2
                 tag_data.append((tag_name, category, aliases_str))
                 
-                # Check if tag exists
                 if tag_name in existing_tags:
                     tag = existing_tags[tag_name]
                     if tag.category != category:
@@ -566,7 +536,6 @@ async def import_tags_csv(
         
         print(f"Pass 1 complete: {tags_created} tags created, {tags_updated} updated, {skipped_long_tags} skipped (too long)")
         
-        # Clear memory
         existing_tags = None
         tags_to_create = None
         db.expire_all()
@@ -594,9 +563,7 @@ async def import_tags_csv(
         
         print(f"Tag mapping complete: {len(tag_map)} tags")
         
-        # Get existing aliases
         existing_aliases = {alias.alias_name for alias in db.query(TagAlias.alias_name).all()}
-        
         aliases_to_create = []
         rows_processed = 0
         
@@ -607,14 +574,12 @@ async def import_tags_csv(
                 
                 tag_id = tag_map[tag_name]
                 
-                # Parse aliases
                 alias_names = set()
                 for a in aliases_str.split(','):
                     alias = a.strip().lower()
                     if not alias or alias == tag_name:
                         continue
                     
-                    # Skip aliases that are too long
                     if len(alias) > MAX_ALIAS_LENGTH:
                         skipped_long_aliases += 1
                         continue
@@ -672,7 +637,6 @@ async def import_tags_csv(
         
         print(f"Pass 2 complete: {aliases_created} aliases created, {skipped_long_aliases} skipped (too long)")
         
-        # Return result
         result = {
             "message": "Tags imported successfully",
             "tags_created": tags_created,
@@ -732,7 +696,6 @@ async def clear_all_tags(
     from ..models import Tag, TagAlias
     
     try:
-        # Delete all tag relationships first
         db.query(TagAlias).delete()
         db.query(Tag).delete()
         
@@ -753,7 +716,6 @@ async def delete_tag(
     from ..models import Tag
     
     try:
-        # Find the tag
         tag = db.query(Tag).filter(Tag.id == tag_id).first()
         
         if not tag:
@@ -819,19 +781,16 @@ async def bulk_create_tags(
             tag_name = tag_data['name'].lower().strip()
             category = tag_data.get('category', 'general')
             
-            # Check if tag already exists
             existing = db.query(Tag).filter(Tag.name == tag_name).first()
             if existing:
                 skipped += 1
                 continue
             
-            # Check if it's an alias
             alias = db.query(TagAlias).filter(TagAlias.alias_name == tag_name).first()
             if alias:
                 skipped += 1
                 continue
             
-            # Create tag
             tag = Tag(
                 name=tag_name,
                 category=category,

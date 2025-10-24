@@ -27,15 +27,10 @@ def sanitize_filename(filename: str) -> str:
     stem = path.stem
     ext = path.suffix
     
-    # Replace problematic characters with underscores
-    # Keep alphanumeric, spaces, hyphens, underscores, and dots
     stem = re.sub(r'[^\w\s\-\.]', '_', stem)
-    # Replace multiple spaces/underscores with single underscore
     stem = re.sub(r'[\s_]+', '_', stem)
-    # Remove leading/trailing underscores
     stem = stem.strip('_')
     
-    # If stem is empty after sanitization, use a UUID
     if not stem:
         stem = str(uuid.uuid4())
     
@@ -57,15 +52,10 @@ def find_untracked_media(db: Session) -> dict:
     all_media = db.query(Media).all()
     
     for media in all_media:
-        # Add hash if it exists
         if media.hash:
             tracked_hashes.add(media.hash)
-        
-        # Add filename
         if media.filename:
             tracked_filenames.add(media.filename)
-        
-        # Add absolute path
         if media.path:
             try:
                 abs_path = (settings.BASE_DIR / media.path).resolve()
@@ -73,7 +63,6 @@ def find_untracked_media(db: Session) -> dict:
             except:
                 pass
         
-        # Also check original_path if it exists
         if hasattr(media, 'original_path') and media.original_path:
             try:
                 abs_path = Path(media.original_path).resolve()
@@ -86,29 +75,22 @@ def find_untracked_media(db: Session) -> dict:
     print(f"Tracked paths: {len(tracked_paths)}")
     print(f"Tracked filenames: {len(tracked_filenames)}")
     
-    # Scan directory
     for file_path in original_dir.rglob('*'):
         if not file_path.is_file() or not is_supported_file(file_path.name):
             continue
         
         try:
-            # Get absolute path for comparison
             abs_path = str(file_path.resolve())
             
-            # Check if tracked by path
             if abs_path in tracked_paths:
                 continue
-            
-            # Check if tracked by filename
             if file_path.name in tracked_filenames:
                 continue
             
-            # Check if tracked by hash
             file_hash = calculate_file_hash(file_path)
             if file_hash in tracked_hashes:
                 continue
             
-            # File is untracked - add to list
             untracked_files.append({
                 'path': str(file_path),
                 'filename': file_path.name,

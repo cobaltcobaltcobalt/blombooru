@@ -20,7 +20,6 @@ class FileTypeEnum(str, Enum):
     video = "video"
     gif = "gif"
 
-# Tag Schemas
 class TagBase(BaseModel):
     name: str
     category: TagCategoryEnum = TagCategoryEnum.general
@@ -35,7 +34,6 @@ class TagResponse(TagBase):
     
     model_config = ConfigDict(from_attributes=True)
 
-# Media Schemas
 class MediaBase(BaseModel):
     rating: RatingEnum = RatingEnum.safe
 
@@ -68,7 +66,6 @@ class MediaResponse(MediaBase):
     
     model_config = ConfigDict(from_attributes=True)
 
-# Auth Schemas
 class UserCreate(BaseModel):
     username: str
     password: str
@@ -87,7 +84,6 @@ class ChangePasswordData(BaseModel):
 class ChangeUsernameData(BaseModel):
     new_username: str = Field(..., min_length=1)
 
-# Settings Schemas
 class DatabaseSettings(BaseModel):
     host: str
     port: int

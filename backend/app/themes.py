@@ -54,5 +54,4 @@ class ThemeRegistry:
         self.register_theme(Theme(id="everforest_light_soft", name="Everforest Light (Soft)", css_path="/static/css/themes/everforest_light_soft.css", is_dark=False))
         self.register_theme(Theme(id="green", name="Green", css_path="/static/css/themes/green.css", is_dark=False))
 
-# Global theme registry instance
 theme_registry = ThemeRegistry()

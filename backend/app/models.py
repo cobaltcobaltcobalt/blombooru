@@ -21,7 +21,6 @@ class FileTypeEnum(str, enum.Enum):
     video = "video"
     gif = "gif"
 
-# Association Tables
 blombooru_media_tags = Table(
     'blombooru_media_tags',
     Base.metadata,
@@ -50,7 +49,7 @@ class Media(Base):
     file_size = Column(Integer)
     width = Column(Integer)
     height = Column(Integer)
-    duration = Column(Float, nullable=True)  # For videos
+    duration = Column(Float, nullable=True)
     rating = Column(Enum(RatingEnum), default=RatingEnum.safe, index=True)
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     is_shared = Column(Boolean, default=False, index=True)

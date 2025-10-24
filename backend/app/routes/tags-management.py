@@ -27,10 +27,8 @@ def parse_aliases(aliases_str: str) -> List[str]:
     if not aliases_str or aliases_str.strip() == '':
         return []
     
-    # Remove quotes if present
     aliases_str = aliases_str.strip('"\'')
     
-    # Split by comma and clean each tag
     return [tag.strip() for tag in aliases_str.split(',') if tag.strip()]
 
 @router.post("/import-csv")
@@ -45,7 +43,6 @@ async def import_tags_csv(
         raise HTTPException(status_code=400, detail="File must be a CSV")
     
     try:
-        # Read CSV content
         content = await file.read()
         csv_text = content.decode('utf-8')
         csv_reader = csv.reader(io.StringIO(csv_text))
@@ -57,7 +54,6 @@ async def import_tags_csv(
             "errors": []
         }
         
-        # Process each row
         for row_num, row in enumerate(csv_reader, 1):
             try:
                 if len(row) < 4:
@@ -72,16 +68,13 @@ async def import_tags_csv(
                 if not tag_name:
                     continue
                 
-                # Get or create main tag
                 tag = db.query(Tag).filter(Tag.name == tag_name).first()
                 
                 if tag:
-                    # Update existing tag
                     if tag.category != category:
                         tag.category = category
                         stats["tags_updated"] += 1
                 else:
-                    # Create new tag
                     tag = Tag(
                         name=tag_name,
                         category=category,
@@ -96,7 +89,6 @@ async def import_tags_csv(
                 for alias_name in alias_names:
                     alias_name = alias_name.lower()
                     
-                    # Check if alias already exists
                     existing_alias = db.query(TagAlias).filter(
                         TagAlias.alias_name == alias_name
                     ).first()
@@ -113,7 +105,6 @@ async def import_tags_csv(
                 stats["errors"].append(f"Row {row_num}: {str(e)}")
                 continue
         
-        # Commit all changes
         db.commit()
         
         return {
@@ -163,7 +154,6 @@ async def clear_all_tags(
         )
     
     try:
-        # Delete in order due to foreign keys
         db.query(TagAlias).delete()
         db.query(Tag).delete()
         db.commit()
@@ -191,7 +181,6 @@ async def search_tags(
     
     results = []
     for tag in tags:
-        # Get aliases
         aliases = db.query(TagAlias).filter(
             TagAlias.target_tag_id == tag.id
         ).all()

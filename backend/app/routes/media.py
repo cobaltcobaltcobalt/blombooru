@@ -61,10 +61,8 @@ async def get_media_list(
         limit = settings.get_items_per_page()
     
     try:
-        # Don't filter by is_shared - show all media in your private gallery
         query = db.query(Media)
         
-        # Filter by rating
         if rating and rating != "explicit":
             allowed_ratings = {
                 "safe": [RatingEnum.safe],
@@ -72,7 +70,6 @@ async def get_media_list(
             }
             query = query.filter(Media.rating.in_(allowed_ratings.get(rating, [])))
         
-        # Order by upload date
         query = query.order_by(desc(Media.uploaded_at))
         
         # Pagination
@@ -80,7 +77,6 @@ async def get_media_list(
         total = query.count()
         media_list = query.offset(offset).limit(limit).all()
         
-        # Convert to response models
         items = [MediaResponse.model_validate(m) for m in media_list]
         
         return {
@@ -154,9 +150,8 @@ async def upload_media(
 ):
     """Upload new media"""
     try:
-        # Check if this is a scanned file import or regular upload
         if scanned_path:
-            # SCANNED FILE - use in place, don't copy
+            # SCANNED FILE 
             file_path = Path(scanned_path)
             
             # Security check - ensure file is within ORIGINAL_DIR
@@ -177,24 +172,19 @@ async def upload_media(
             unique_filename = file_path.name  # Keep original name
             
         else:
-            # REGULAR UPLOAD - save with unique filename
+            # REGULAR UPLOAD
             if not file:
                 raise HTTPException(status_code=400, detail="Either file or scanned_path is required")
             
-            # Read file contents to calculate hash first
             contents = await file.read()
             file_hash = hashlib.sha256(contents).hexdigest()
-            
-            # Generate UUID for the file
             media_uuid = str(uuid.uuid4())
             
-            # Get unique filename preserving original name
             unique_filename = get_unique_filename(settings.ORIGINAL_DIR, file.filename)
             file_path = settings.ORIGINAL_DIR / unique_filename
             
             print(f"Uploading file: {file.filename} -> {unique_filename}")
             
-            # Save the uploaded file
             with open(file_path, 'wb') as buffer:
                 buffer.write(contents)
             
@@ -212,11 +202,9 @@ async def upload_media(
                 detail=f"Media already exists (duplicate of {existing.filename})"
             )
         
-        # Process media
         metadata = process_media_file(file_path)
         print(f"Media processed: {metadata}")
 
-        # Generate thumbnail with same name as media file (but .jpg extension)
         thumbnail_name = Path(unique_filename).stem
         thumbnail_filename = f"{thumbnail_name}.jpg"
         thumbnail_path = settings.THUMBNAIL_DIR / thumbnail_filename
@@ -234,7 +222,6 @@ async def upload_media(
         else:
             print(f"Warning: Thumbnail generation failed")
         
-        # Create media record with the filename (original for scanned, unique for uploaded)
         relative_path = file_path.relative_to(settings.BASE_DIR)
         relative_thumb = thumbnail_path.relative_to(settings.BASE_DIR) if thumbnail_generated else None
         
@@ -253,7 +240,6 @@ async def upload_media(
             source=source if source else None
         )
         
-        # Add tags
         tag_ids = []
         if tags:
             tag_list = [t.strip() for t in tags.split() if t.strip()]
@@ -281,7 +267,7 @@ async def upload_media(
         import traceback
         traceback.print_exc()
         
-        # Clean up files on error (but only if it was a new upload, not scanned)
+        # Clean up files on error (only if it was a new upload, not scanned)
         if not scanned_path:
             if 'file_path' in locals() and file_path.exists():
                 file_path.unlink(missing_ok=True)
@@ -303,7 +289,6 @@ async def update_media(
     if not media:
         raise HTTPException(status_code=404, detail="Media not found")
     
-    # Update fields
     if updates.rating:
         media.rating = updates.rating
     
@@ -312,21 +297,13 @@ async def update_media(
     
     affected_tag_ids = []
     if updates.tags is not None:
-        # Get old tag IDs
         old_tag_ids = [tag.id for tag in media.tags]
-        
-        # Update tags
         media.tags = get_or_create_tags(db, updates.tags)
-        
-        # Get new tag IDs
         new_tag_ids = [tag.id for tag in media.tags]
-        
-        # All tags that need count updates
         affected_tag_ids = list(set(old_tag_ids + new_tag_ids))
     
     db.commit()
     
-    # Update tag counts AFTER commit
     if affected_tag_ids:
         update_tag_counts(db, affected_tag_ids)
         db.commit()
@@ -346,10 +323,8 @@ async def delete_media(
     if not media:
         raise HTTPException(status_code=404, detail="Media not found")
     
-    # Get tag IDs before deletion
     tag_ids = [tag.id for tag in media.tags]
     
-    # Delete files
     file_path = settings.BASE_DIR / media.path
     file_path.unlink(missing_ok=True)
     
@@ -360,7 +335,6 @@ async def delete_media(
     db.delete(media)
     db.commit()
     
-    # Update tag counts after deletion
     if tag_ids:
         update_tag_counts(db, tag_ids)
         db.commit()
@@ -495,15 +469,12 @@ async def extract_archive(
                     if total_size > MAX_EXTRACTED_SIZE:
                         raise HTTPException(status_code=400, detail="Extracted files too large (max 500MB)")
                     
-                    # Read file content
                     with open(extracted_file, 'rb') as f:
                         file_content = f.read()
                     
-                    # Determine MIME type
                     import mimetypes
                     mime_type, _ = mimetypes.guess_type(extracted_file.name)
                     
-                    # Only include valid media files
                     valid_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/webm']
                     if mime_type in valid_types:
                         extracted_files.append({

@@ -16,7 +16,6 @@ def parse_search_query(query_string: str) -> dict:
     exclude_tags = []
     wildcards = []
     
-    # Split by spaces, handle quoted strings
     tokens = re.findall(r'[^\s"]+|"[^"]*"', query_string)
     
     for token in tokens:
@@ -62,7 +61,6 @@ async def search_media(
         limit = settings.get_items_per_page()
     query = db.query(Media)
     
-    # Apply rating filter
     if rating and rating != "explicit":
         allowed_ratings = {
             "safe": [RatingEnum.safe],
@@ -70,7 +68,6 @@ async def search_media(
         }
         query = query.filter(Media.rating.in_(allowed_ratings.get(rating, [])))
     
-    # Parse search query
     if q:
         parsed = parse_search_query(q)
         
@@ -111,7 +108,6 @@ async def search_media(
                 )
                 query = query.filter(~subquery)
     
-    # Order by upload date
     query = query.order_by(desc(Media.uploaded_at))
     
     # Pagination
@@ -119,7 +115,6 @@ async def search_media(
     total = query.count()
     media_list = query.offset(offset).limit(limit).all()
     
-    # Convert to response models
     items = [MediaResponse.model_validate(m) for m in media_list]
     
     return {

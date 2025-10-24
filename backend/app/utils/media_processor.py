@@ -26,7 +26,6 @@ def determine_file_type(mime_type: str, filename: str, file_path: Path = None) -
     elif mime_type == 'image/gif':
         return FileTypeEnum.gif
     elif mime_type == 'image/webp':
-        # Check if WebP is animated
         if file_path and is_animated_webp(file_path):
             return FileTypeEnum.gif
         else:
@@ -34,7 +33,6 @@ def determine_file_type(mime_type: str, filename: str, file_path: Path = None) -
     elif mime_type.startswith('image/'):
         return FileTypeEnum.image
     else:
-        # Fallback to extension
         ext = filename.lower().split('.')[-1]
         if ext in ['mp4', 'webm', 'mov', 'avi', 'mkv']:
             return FileTypeEnum.video
@@ -58,11 +56,9 @@ def is_animated_webp(file_path: Path) -> bool:
             if header[0:4] != b'RIFF' or header[8:12] != b'WEBP':
                 return False
             
-            # Read the rest of the file to look for ANIM chunk
-            # ANIM chunk should be early in the file
-            chunk_data = f.read(1024)  # Read first 1KB after header
+            # Look for ANIM chunk in the next 1KB
+            chunk_data = f.read(1024)
             
-            # Look for 'ANIM' chunk marker
             return b'ANIM' in chunk_data
     except Exception as e:
         print(f"Error checking if WebP is animated: {e}")

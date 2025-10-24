@@ -17,10 +17,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 43200  # 30 days
 
 def get_password_hash(password: str) -> str:
     """Hash a password using PBKDF2-SHA256"""
-    # Generate a random salt
     salt = secrets.token_hex(32)
-    
-    # Hash the password with the salt
     pwdhash = hashlib.pbkdf2_hmac(
         'sha256',
         password.encode('utf-8'),
@@ -28,24 +25,19 @@ def get_password_hash(password: str) -> str:
         100000  # iterations
     )
     
-    # Return salt and hash combined
     return f"{salt}${pwdhash.hex()}"
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash"""
     try:
-        # Split the stored password into salt and hash
         salt, stored_hash = hashed_password.split('$')
-        
-        # Hash the provided password with the same salt
         pwdhash = hashlib.pbkdf2_hmac(
             'sha256',
             plain_password.encode('utf-8'),
             salt.encode('utf-8'),
-            100000
+            100000  # iterations
         )
         
-        # Compare the hashes
         return pwdhash.hex() == stored_hash
     except Exception as e:
         print(f"Password verification error: {e}")
@@ -74,7 +66,6 @@ def get_current_user(
     admin_token: Optional[str] = Cookie(default=None),
     db: Session = Depends(get_db)
 ):
-    # Check cookie first, then bearer token
     token_to_use = admin_token or token
     
     if not token_to_use:

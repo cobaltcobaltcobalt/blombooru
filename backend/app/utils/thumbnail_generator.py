@@ -19,7 +19,6 @@ def generate_image_thumbnail(source_path: Path, thumbnail_path: Path) -> bool:
             elif img.mode != 'RGB':
                 img = img.convert('RGB')
             
-            # Create thumbnail
             img.thumbnail(THUMBNAIL_SIZE, Image.Resampling.LANCZOS)
             img.save(thumbnail_path, 'JPEG', quality=85, optimize=True)
         return True
