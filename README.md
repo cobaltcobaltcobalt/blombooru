@@ -5,6 +5,23 @@
 Blombooru is a single-user, private alternative to image boorus like Danbooru and Gelbooru.  
 It is designed for individuals who want a powerful, simple to use, and modern solution for organizing and tagging their personal media collections. With a focus on a clean user experience, robust administration, and easy customization, Blombooru puts you in complete control of your library.
 
+<details>
+<summary>View screenshots</summary>
+
+**Homepage**  
+<img width="1920" height="1084" alt="Homepage" src="https://github.com/user-attachments/assets/eaa9b99e-ff64-439f-bb00-e5a37c53db3a" />
+
+**Media-viewer page**
+<img width="1920" height="1722" alt="Media-viewer page" src="https://github.com/user-attachments/assets/c3dcebf7-2cee-475b-b428-54986a27c42c" />
+
+**Shared media page**
+<img width="1920" height="1733" alt="Shared media page" src="https://github.com/user-attachments/assets/6fa43d69-eb44-46a4-85b4-99e85322fbea" />
+
+**Admin panel**
+<img width="1920" height="2369" alt="Admin panel" src="https://github.com/user-attachments/assets/19db7c83-bbcb-48c6-a505-78f03ea6964e" />
+
+</details>
+
 ## Key Features
 
 - **Danbooru-Style Tagging:** A familiar and powerful tagging system with categories (artist, character, copyright, etc.), tag-based searching, and negative tag exclusion.
@@ -17,6 +34,8 @@ It is designed for individuals who want a powerful, simple to use, and modern so
 
 - **Highly Customizable Theming:** Tailor the look and feel using simple CSS variables. Drop new `.css` files into the `themes` folder, register the themes in `themes.py`, and restart.
 
+- **Many Themes to Choose From:** By default, Blombooru comes with the four Catppuccin color palettes, gruvbox light & dark, Everforest light & dark, OLED, and more, available as themes!
+
 - **AI-Friendly:** You can easily view accompanying AI metadata for *(almost)* any media generated with SwarmUI, ComfyUI, A1111, and more. You can even append tags to the tag editor from the AI prompt.
 
 - **Secure Media Sharing:** Generate unique, persistent links to share specific media. Shared items are presented in a stripped-down, secure view with optional sharing of AI metadata.
@@ -24,10 +43,6 @@ It is designed for individuals who want a powerful, simple to use, and modern so
 - **Flexible Media Uploads:** Add media via drag-and-drop, by importing a compressed archive, or by simply placing files in the storage directory and pressing the "Scan for Untracked Media" button.
 
 - **User-Friendly Onboarding:** A simple first-time setup process to configure your admin account, database connection, and branding.
-
-<img width="4388" height="2242" alt="image" src="https://github.com/user-attachments/assets/adfde7fc-9bae-4155-b72d-f00d685f7769" />
-
-*I am logged in as the admin in the above image, hence the checkbox in the top left corner of all media thumbnails*
 
 ## Installation & Setup
 
