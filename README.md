@@ -88,12 +88,12 @@ docker compose down
 
 ### Python
 
+> [!NOTE]
+> The python install  is mostly just recommended for development purposes.
+
 **Prerequisites**  
 - Python 3.10+ *(I am using Python 3.13.7)*
 - PostgreSQL 17
-
-> [!NOTE]
-> The python install  is mostly just recommended for development purposes.
 
 1. **Clone the repository**
 
