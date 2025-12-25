@@ -283,12 +283,45 @@ class Uploader {
     }
     
     async computeFileHash(file) {
-        // Compute SHA-256 hash of file content
+        // Check if crypto.subtle is available (HTTPS or localhost)
+        if (window.crypto && window.crypto.subtle) {
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+                const hashArray = Array.from(new Uint8Array(hashBuffer));
+                const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+                return hashHex;
+            } catch (error) {
+                console.warn('crypto.subtle failed, falling back to simple hash:', error);
+            }
+        }
+        
+        // Fallback: Use a simple hash based on file properties and content sample
         const arrayBuffer = await file.arrayBuffer();
-        const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        return hashHex;
+        const bytes = new Uint8Array(arrayBuffer);
+
+        // Create a hash from file metadata and content sample
+        let hash = 0;
+        const str = `${file.name}-${file.size}-${file.lastModified}-${file.type}`;
+
+        // Hash the metadata string
+        for (let i = 0; i < str.length; i++) {
+            const char = str.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32bit integer
+        }
+
+        // Sample bytes from the file (beginning, middle, end)
+        const sampleSize = Math.min(1000, bytes.length);
+        const step = Math.max(1, Math.floor(bytes.length / sampleSize));
+
+        for (let i = 0; i < bytes.length; i += step) {
+            hash = ((hash << 5) - hash) + bytes[i];
+            hash = hash & hash;
+        }
+
+        // Convert to hex string
+        return Math.abs(hash).toString(16).padStart(8, '0');
     }
     
     async handleFiles(files) {
