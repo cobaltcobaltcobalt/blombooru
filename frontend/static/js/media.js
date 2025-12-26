@@ -7,6 +7,13 @@ class MediaViewer extends MediaViewerBase {
         this.tooltipHelper = null;
         this.ratingSelect = null;
 
+        // WD Tagger settings
+        this.wdTaggerSettings = {
+            generalThreshold: 0.35,
+            characterThreshold: 0.85,
+            modelName: 'wd-eva02-large-tagger-v3'
+        };
+
         this.init();
     }
 
@@ -92,6 +99,12 @@ class MediaViewer extends MediaViewerBase {
             if (this.currentMedia.rating) {
                 this.ratingSelect.setValue(this.currentMedia.rating);
             }
+        }
+
+        // Show predict button (always available for admin)
+        const predictBtn = this.el('predict-wd-tags-btn');
+        if (predictBtn) {
+            predictBtn.style.display = 'block';
         }
 
         // Load albums
@@ -318,12 +331,164 @@ class MediaViewer extends MediaViewerBase {
             await this.appendAITags();
         });
 
+        this.el('predict-wd-tags-btn')?.addEventListener('click', async () => {
+            await this.predictWDTags();
+        });
+
         this.el('add-to-albums-btn')?.addEventListener('click', () => {
             this.addToAlbums();
         });
     }
 
-    // Admin action methods
+    // ==================== WD Tagger Methods ====================
+
+    async predictWDTags() {
+        const btn = this.el('predict-wd-tags-btn');
+        if (!btn) return;
+
+        try {
+            // Check model status first
+            const statusRes = await fetch(`/api/ai-tagger/model-status/${this.wdTaggerSettings.modelName}`);
+            if (!statusRes.ok) {
+                throw new Error('Failed to check model status');
+            }
+
+            const status = await statusRes.json();
+
+            if (!status.is_downloaded && !status.is_loaded) {
+                // Show download confirmation modal
+                const modal = new ModalHelper({
+                    id: 'wd-download-modal',
+                    type: 'info',
+                    title: 'Download AI Model',
+                    message: `The AI tagging model needs to be downloaded first.<br><br>
+                              <strong>Model:</strong> ${this.wdTaggerSettings.modelName}<br>
+                              <strong>Size:</strong> ~${status.download_size_mb || 850} MB<br><br>
+                              This only needs to be done once.`,
+                    confirmText: 'Download & Predict',
+                    cancelText: 'Cancel',
+                    showIcon: true,
+                    onConfirm: async () => {
+                        await this.downloadModelAndPredict(btn);
+                    }
+                });
+                modal.show();
+                return;
+            }
+
+            // Model is ready, perform prediction
+            await this.performWDPrediction(btn);
+
+        } catch (e) {
+            console.error('Error checking model status:', e);
+            app.showNotification('Error checking AI model status: ' + e.message, 'error');
+        }
+    }
+
+    async downloadModelAndPredict(btn) {
+        this.setButtonState(btn, 'Downloading...', true);
+
+        try {
+            const res = await fetch(`/api/ai-tagger/download/${this.wdTaggerSettings.modelName}`, {
+                method: 'POST'
+            });
+
+            if (!res.ok) {
+                const error = await res.json().catch(() => ({}));
+                throw new Error(error.detail || 'Download failed');
+            }
+
+            // Download complete, now predict
+            await this.performWDPrediction(btn);
+
+        } catch (e) {
+            console.error('Error downloading model:', e);
+            app.showNotification('Failed to download AI model: ' + e.message, 'error');
+            this.setButtonState(btn, 'Predict Tags (AI)', false);
+        }
+    }
+
+    async performWDPrediction(btn) {
+        this.setButtonState(btn, 'Predicting...', true);
+
+        try {
+            const res = await fetch(`/api/ai-tagger/predict/${this.mediaId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    general_threshold: this.wdTaggerSettings.generalThreshold,
+                    character_threshold: this.wdTaggerSettings.characterThreshold,
+                    model_name: this.wdTaggerSettings.modelName
+                })
+            });
+
+            if (!res.ok) {
+                const error = await res.json().catch(() => ({}));
+                throw new Error(error.detail || 'Prediction failed');
+            }
+
+            const result = await res.json();
+
+            // Get current tags from input
+            const tagsInput = this.el('tags-input');
+            const currentText = this.tagInputHelper.getPlainTextFromDiv(tagsInput).trim();
+            const currentTags = currentText ? currentText.split(/\s+/) : [];
+            const existingSet = new Set(currentTags.map(t => t.toLowerCase()));
+
+            // Process predicted tags
+            const predictedTags = result.tags
+                .map(t => t.name.replace(/ /g, '_'))
+                .filter(t => !existingSet.has(t.toLowerCase()));
+
+            if (predictedTags.length === 0) {
+                app.showNotification('No new tags predicted', 'info');
+                this.setButtonState(btn, 'Predict Tags (AI)', false);
+                return;
+            }
+
+            // Validate predicted tags against database
+            this.setButtonState(btn, 'Validating...', true);
+
+            const validTags = [];
+            for (const tag of predictedTags) {
+                const validTag = await this.getTagOrAlias(tag);
+                if (validTag && !existingSet.has(validTag.toLowerCase())) {
+                    validTags.push(validTag);
+                    existingSet.add(validTag.toLowerCase());
+                }
+            }
+
+            if (validTags.length === 0) {
+                app.showNotification('No valid tags found in predictions', 'info');
+            } else {
+                const allTags = [...currentTags, ...validTags];
+                tagsInput.textContent = allTags.join(' ');
+                await this.validateAndStyleTags();
+                app.showNotification(`Added ${validTags.length} predicted tag(s)`, 'success');
+            }
+
+        } catch (e) {
+            console.error('Error predicting tags:', e);
+            app.showNotification('Error predicting tags: ' + e.message, 'error');
+        } finally {
+            this.setButtonState(btn, 'Predict Tags (AI)', false);
+        }
+    }
+
+    setButtonState(btn, text, disabled) {
+        if (!btn) return;
+        const textSpan = btn.querySelector('.btn-text');
+        if (textSpan) {
+            textSpan.textContent = text;
+        } else {
+            btn.textContent = text;
+        }
+        btn.disabled = disabled;
+        btn.style.opacity = disabled ? '0.7' : '1';
+    }
+
+    // ==================== Album Methods ====================
+
     async loadAlbums() {
         try {
             const res = await fetch(`/api/media/${this.mediaId}/albums`);
@@ -430,6 +595,8 @@ class MediaViewer extends MediaViewerBase {
         }
     }
 
+    // ==================== Tag Methods ====================
+
     async saveTags() {
         const tagsInput = this.el('tags-input');
         const validTags = this.tagInputHelper.getValidTagsFromInput(tagsInput);
@@ -472,6 +639,8 @@ class MediaViewer extends MediaViewerBase {
         }
     }
 
+    // ==================== Share Methods ====================
+
     async shareMedia() {
         try {
             const res = await app.apiCall(`/api/media/${this.mediaId}/share`, { method: 'POST' });
@@ -484,6 +653,7 @@ class MediaViewer extends MediaViewerBase {
     copyShareLink() {
         this.el('share-link-input').select();
         document.execCommand('copy');
+        app.showNotification('Link copied to clipboard', 'success');
     }
 
     async unshareMedia() {
@@ -544,7 +714,12 @@ class MediaViewer extends MediaViewerBase {
         }
     }
 
+    // ==================== AI Metadata Tags ====================
+
     async appendAITags() {
+        const btn = this.el('append-ai-tags-btn');
+        this.setButtonState(btn, 'Processing...', true);
+
         try {
             const res = await fetch(`/api/media/${this.mediaId}/metadata`);
             if (!res.ok) {
@@ -599,6 +774,8 @@ class MediaViewer extends MediaViewerBase {
         } catch (e) {
             console.error('Error appending AI tags:', e);
             app.showNotification('Error processing AI tags: ' + e.message, 'error');
+        } finally {
+            this.setButtonState(btn, 'Append AI Tags', false);
         }
     }
 
