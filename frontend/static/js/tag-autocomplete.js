@@ -8,10 +8,10 @@ class TagAutocomplete {
             containerClasses: '',
             ...options
         };
-        
+
         this.setupAutocomplete();
     }
-    
+
     escapeHtml(text) {
         return text
             .replace(/&/g, '&amp;')
@@ -20,18 +20,18 @@ class TagAutocomplete {
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#039;');
     }
-    
+
     setupAutocomplete() {
         // Create suggestions container
         this.suggestionsEl = document.createElement('div');
-        
+
         // Build class list with base classes and optional extra classes
-        this.suggestionsEl.className = this.options.containerClasses 
-            ? `tag-suggestions hidden ${this.options.containerClasses}` 
+        this.suggestionsEl.className = this.options.containerClasses
+            ? `tag-suggestions hidden ${this.options.containerClasses}`
             : 'tag-suggestions hidden';
-        
+
         this.input.parentNode.insertBefore(this.suggestionsEl, this.input.nextSibling);
-        
+
         // Add event listeners
         this.input.addEventListener('input', this.onInput.bind(this));
         this.input.addEventListener('keydown', this.onKeydown.bind(this));
@@ -41,14 +41,14 @@ class TagAutocomplete {
             }
         });
     }
-    
+
     async onInput() {
         const query = this.getCurrentQuery();
         if (query.length < 1) {
             this.hideSuggestions();
             return;
         }
-        
+
         try {
             const suggestions = await this.fetchSuggestions(query);
             this.showSuggestions(suggestions);
@@ -56,14 +56,14 @@ class TagAutocomplete {
             console.error('Error fetching suggestions:', error);
         }
     }
-    
+
     getInputValue() {
         if (this.isContentEditable) {
             return this.input.textContent || '';
         }
         return this.input.value;
     }
-    
+
     setInputValue(value) {
         if (this.isContentEditable) {
             this.input.textContent = value;
@@ -71,33 +71,33 @@ class TagAutocomplete {
             this.input.value = value;
         }
     }
-    
+
     getCursorPosition() {
         if (this.isContentEditable) {
             const selection = window.getSelection();
             if (selection.rangeCount === 0) return 0;
-            
+
             const range = selection.getRangeAt(0);
             const preCaretRange = range.cloneRange();
             preCaretRange.selectNodeContents(this.input);
             preCaretRange.setEnd(range.endContainer, range.endOffset);
-            
+
             return preCaretRange.toString().length;
         }
         return this.input.selectionStart;
     }
-    
+
     setCursorPosition(position) {
         if (this.isContentEditable) {
             const selection = window.getSelection();
             const range = document.createRange();
-            
+
             let currentOffset = 0;
             let found = false;
-            
+
             const traverseNodes = (node) => {
                 if (found) return;
-                
+
                 if (node.nodeType === Node.TEXT_NODE) {
                     const nodeLength = node.textContent.length;
                     if (currentOffset + nodeLength >= position) {
@@ -114,7 +114,7 @@ class TagAutocomplete {
                     }
                 }
             };
-            
+
             try {
                 traverseNodes(this.input);
                 if (!found && this.input.lastChild) {
@@ -130,25 +130,25 @@ class TagAutocomplete {
             this.input.setSelectionRange(position, position);
         }
     }
-    
+
     getCurrentQuery() {
         if (!this.options.multipleValues) {
             return this.getInputValue().trim();
         }
-        
+
         const cursorPos = this.getCursorPosition();
         const value = this.getInputValue();
         const beforeCursor = value.substring(0, cursorPos);
         const lastSpace = beforeCursor.lastIndexOf(' ');
         return beforeCursor.substring(lastSpace + 1).trim();
     }
-    
+
     async fetchSuggestions(query) {
         const response = await fetch(`/api/tags/autocomplete?q=${encodeURIComponent(query)}`);
         if (!response.ok) throw new Error('Failed to fetch suggestions');
         return response.json();
     }
-    
+
     showSuggestions(suggestions) {
         if (!suggestions.length) {
             this.hideSuggestions();
@@ -191,14 +191,14 @@ class TagAutocomplete {
             });
         });
     }
-    
+
     hideSuggestions() {
         this.suggestionsEl.classList.add('hidden');
         this.suggestionsEl.querySelectorAll('.tag-suggestion.selected').forEach(el => {
             el.classList.remove('selected');
         });
     }
-    
+
     selectSuggestion(tagName) {
         if (!this.options.multipleValues) {
             this.setInputValue(tagName);
@@ -208,43 +208,43 @@ class TagAutocomplete {
             const beforeCursor = value.substring(0, cursorPos);
             const afterCursor = value.substring(cursorPos);
             const lastSpace = beforeCursor.lastIndexOf(' ');
-            
+
             const newValue = lastSpace === -1
                 ? tagName + (afterCursor.startsWith(' ') ? '' : ' ') + afterCursor
                 : beforeCursor.substring(0, lastSpace + 1) + tagName + (afterCursor.startsWith(' ') ? '' : ' ') + afterCursor;
-            
+
             this.setInputValue(newValue);
-            
+
             // Set cursor position after the inserted tag
-            const newCursorPos = lastSpace === -1 
-                ? tagName.length + 1 
+            const newCursorPos = lastSpace === -1
+                ? tagName.length + 1
                 : lastSpace + 1 + tagName.length + 1;
             this.setCursorPosition(newCursorPos);
-            
+
             // Trigger input event for validation
             const event = new Event('input', { bubbles: true });
             this.input.dispatchEvent(event);
         }
-        
+
         this.hideSuggestions();
         this.input.focus();
-        
+
         if (this.options.onSelect) {
             this.options.onSelect(tagName);
         }
     }
-    
+
     onKeydown(e) {
         const suggestions = this.suggestionsEl.querySelectorAll('.tag-suggestion');
-        
+
         // If suggestions are not visible, don't handle keyboard events
         if (this.suggestionsEl.classList.contains('hidden') || suggestions.length === 0) {
             return;
         }
-        
+
         const selected = this.suggestionsEl.querySelector('.tag-suggestion.selected');
         const selectedIndex = selected ? parseInt(selected.dataset.index) : -1;
-        
+
         switch (e.key) {
             case 'ArrowDown':
                 e.preventDefault();
@@ -255,7 +255,7 @@ class TagAutocomplete {
                     suggestions[nextIndex].scrollIntoView({ block: 'nearest' });
                 }
                 break;
-                
+
             case 'ArrowUp':
                 e.preventDefault();
                 if (suggestions.length > 0) {
@@ -275,14 +275,14 @@ class TagAutocomplete {
                     suggestions[nextIndex].scrollIntoView({ block: 'nearest' });
                 }
                 break;
-                
+
             case 'Enter':
                 if (selected) {
                     e.preventDefault();
                     this.selectSuggestion(selected.dataset.name);
                 }
                 break;
-                
+
             case 'Escape':
                 e.preventDefault();
                 this.hideSuggestions();

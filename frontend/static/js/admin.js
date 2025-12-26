@@ -6,7 +6,7 @@ class AdminPanel {
         this.themeSelect = null;
         this.init();
     }
-    
+
     async init() {
         await this.checkAuth();
         await this.hideAdminPanelButton();
@@ -20,7 +20,7 @@ class AdminPanel {
         this.setupCustomSelects();
         this.loadThemes();
     }
-    
+
     setupTagAutocomplete() {
         const tagsSearch = document.getElementById('tag-search-input');
         if (tagsSearch && typeof TagAutocomplete !== 'undefined') {
@@ -34,22 +34,29 @@ class AdminPanel {
         const themeSelectElement = document.getElementById('theme-select');
         if (themeSelectElement) {
             this.themeSelect = new CustomSelect(themeSelectElement);
-            console.log('Theme select initialized: ', this.themeSelect);
-        } else {
-            console.error('Theme select element not found');
+        }
+
+        const defaultSortElement = document.getElementById('default-sort');
+        if (defaultSortElement) {
+            this.defaultSortSelect = new CustomSelect(defaultSortElement);
+        }
+
+        const defaultOrderElement = document.getElementById('default-order');
+        if (defaultOrderElement) {
+            this.defaultOrderSelect = new CustomSelect(defaultOrderElement);
         }
     }
-    
+
     async checkAuth() {
         try {
             const response = await fetch('/api/admin/settings');
             if (response.ok) {
                 document.getElementById('login-section').style.display = 'none';
                 document.getElementById('settings-section').style.display = 'block';
-                
+
                 app.updateAuthStatus(true);
                 await this.enableAdminMode();
-                
+
                 return true;
             } else {
                 document.getElementById('login-section').style.display = 'block';
@@ -65,13 +72,13 @@ class AdminPanel {
             return false;
         }
     }
-    
+
     async enableAdminMode() {
         try {
             const response = await fetch('/api/admin/toggle-admin-mode?enabled=true', {
                 method: 'POST'
             });
-            
+
             if (response.ok) {
                 app.isAdminMode = true;
                 app.updateUI();
@@ -92,7 +99,7 @@ class AdminPanel {
             }
         }
     }
-    
+
     setupEventListeners() {
         // Settings form
         const settingsForm = document.getElementById('settings-form');
@@ -102,13 +109,13 @@ class AdminPanel {
                 this.saveSettings();
             });
         }
-        
+
         // Scan media button
         const scanBtn = document.getElementById('scan-media-btn');
         if (scanBtn) {
             scanBtn.addEventListener('click', () => this.scanMedia());
         }
-        
+
         // Login form
         const loginForm = document.getElementById('login-form');
         if (loginForm) {
@@ -117,7 +124,7 @@ class AdminPanel {
                 this.login();
             });
         }
-        
+
         // Add tags form
         const addTagsForm = document.getElementById('add-tags-form');
         if (addTagsForm) {
@@ -126,7 +133,7 @@ class AdminPanel {
                 this.addNewTags();
             });
         }
-        
+
         // Change password form
         const changePasswordForm = document.getElementById('change-admin-password-form');
         if (changePasswordForm) {
@@ -135,7 +142,7 @@ class AdminPanel {
                 this.changePassword();
             });
         }
-        
+
         // Change username form
         const changeUsernameForm = document.getElementById('change-admin-username-form');
         if (changeUsernameForm) {
@@ -145,77 +152,77 @@ class AdminPanel {
             });
         }
     }
-    
+
     async changePassword() {
         const newPassword = document.getElementById('new-admin-password').value;
         const statusDiv = document.getElementById('change-password-status');
         const resultDiv = document.getElementById('change-password-result');
-        
+
         try {
             const result = await app.apiCall('/api/admin/update-admin-password', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ new_password: newPassword })
             });
-            
+
             statusDiv.style.display = 'block';
             resultDiv.className = 'text-success';
             resultDiv.textContent = '✓ ' + result.message;
-            
+
             // Clear the password field
             document.getElementById('new-admin-password').value = '';
-            
+
             // Hide success message after 3 seconds
             setTimeout(() => {
                 statusDiv.style.display = 'none';
             }, 3000);
-            
+
         } catch (error) {
             statusDiv.style.display = 'block';
             resultDiv.className = 'text-danger';
             resultDiv.textContent = '✗ ' + error.message;
         }
     }
-    
+
     async changeUsername() {
         const newUsername = document.getElementById('new-admin-username').value;
         const statusDiv = document.getElementById('change-username-status');
         const resultDiv = document.getElementById('change-username-result');
-        
+
         try {
             const result = await app.apiCall('/api/admin/update-admin-username', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ new_username: newUsername })
             });
-            
+
             statusDiv.style.display = 'block';
             resultDiv.className = 'text-success';
             resultDiv.textContent = '✓ ' + result.message;
-            
+
             // Update displayed username if you show it anywhere
             app.showNotification('Username updated successfully. You are now logged in as: ' + result.new_username, 'success');
-            
+
             // Clear the username field
             document.getElementById('new-admin-username').value = '';
-            
+
             // Hide success message after 3 seconds
             setTimeout(() => {
                 statusDiv.style.display = 'none';
             }, 3000);
-            
+
         } catch (error) {
             statusDiv.style.display = 'block';
             resultDiv.className = 'text-danger';
             resultDiv.textContent = '✗ ' + error.message;
         }
     }
-    
+
     // Helper methods for tag validation
     parseTagWithCategory(tagString) {
         const prefixes = ['artist:', 'copyright:', 'character:', 'meta:'];
         const normalized = tagString.trim().toLowerCase();
-        
+
         for (const prefix of prefixes) {
             if (normalized.startsWith(prefix)) {
                 const category = prefix.slice(0, -1); // Remove the colon
@@ -223,15 +230,15 @@ class AdminPanel {
                 return { tagName, category };
             }
         }
-        
+
         // No prefix, default to general
         return { tagName: normalized, category: 'general' };
     }
-    
+
     async validateAndStyleNewTags() {
         const tagsInput = document.getElementById('new-tags-input');
         if (!tagsInput) return;
-        
+
         await this.tagInputHelper.validateAndStyleTags(tagsInput, {
             validationCache: this.tagInputHelper.tagValidationCache,
             checkFunction: (tag) => {
@@ -241,13 +248,13 @@ class AdminPanel {
             invertLogic: true
         });
     }
-    
+
     setupNewTagsInput() {
         const tagsInput = document.getElementById('new-tags-input');
         if (!tagsInput) return;
-        
+
         this.tagInputHelper.setupTagInput(tagsInput, 'new-tags-input', {
-            onValidate: () => {},
+            onValidate: () => { },
             checkFunction: (tag) => {
                 const { tagName } = this.parseTagWithCategory(tag);
                 return this.tagInputHelper.checkTagOrAliasExists(tagName);
@@ -255,40 +262,40 @@ class AdminPanel {
             invertLogic: true
         });
     }
-    
+
     async addNewTags() {
         const tagsInput = document.getElementById('new-tags-input');
         const statusDiv = document.getElementById('add-tags-status');
         const resultDiv = document.getElementById('add-tags-result');
-        
+
         const text = this.tagInputHelper.getPlainTextFromDiv(tagsInput);
         const tagStrings = text.split(/\s+/).filter(t => t.length > 0);
-        
+
         if (tagStrings.length === 0) {
             app.showNotification('Please enter at least one tag!', 'error');
             return;
         }
-        
+
         // Parse and filter tags
         const tagsToCreate = [];
         const ignoredTags = [];
-        
+
         for (const tagString of tagStrings) {
             const { tagName, category } = this.parseTagWithCategory(tagString);
             const shouldIgnore = this.tagInputHelper.tagValidationCache.get(tagName);
-            
+
             if (shouldIgnore) {
                 ignoredTags.push(tagString);
             } else {
                 tagsToCreate.push({ name: tagName, category });
             }
         }
-        
+
         if (tagsToCreate.length === 0) {
             app.showNotification('All tags already exist or are aliases.', 'error', 'Nothing to add');
             return;
         }
-        
+
         // Show loading
         statusDiv.style.display = 'block';
         resultDiv.innerHTML = `
@@ -296,13 +303,13 @@ class AdminPanel {
                 <strong>Adding tags...</strong>
             </div>
         `;
-        
+
         try {
             const response = await app.apiCall('/api/admin/bulk-create-tags', {
                 method: 'POST',
                 body: JSON.stringify({ tags: tagsToCreate })
             });
-            
+
             let html = `
                 <div class="bg-success p-3 mb-2 tag-text">
                     <strong>Tags added successfully!</strong>
@@ -313,7 +320,7 @@ class AdminPanel {
                     <div>Errors: <strong class="text">${response.errors.length}</strong></div>
                 </div>
             `;
-            
+
             if (ignoredTags.length > 0) {
                 html += `
                     <div class="mt-2 p-2 surface-light border text-xs">
@@ -322,7 +329,7 @@ class AdminPanel {
                     </div>
                 `;
             }
-            
+
             if (response.errors.length > 0) {
                 html += `
                     <div class="mt-2 p-2 bg-warning tag-text text-xs">
@@ -331,16 +338,16 @@ class AdminPanel {
                     </div>
                 `;
             }
-            
+
             resultDiv.innerHTML = html;
-            
+
             // Clear input and cache
             tagsInput.textContent = '';
             this.tagInputHelper.clearCache();
-            
+
             // Reload stats
             await this.loadTagStats();
-            
+
         } catch (error) {
             resultDiv.innerHTML = `
                 <div class="bg-danger p-3 tag-text">
@@ -349,7 +356,7 @@ class AdminPanel {
             `;
         }
     }
-    
+
     async loadSettings() {
         try {
             const response = await fetch('/api/admin/settings');
@@ -372,11 +379,19 @@ class AdminPanel {
                 if (itemsPerPageInput) itemsPerPageInput.value = settings.items_per_page;
             }
 
+            if (settings.default_sort && this.defaultSortSelect) {
+                this.defaultSortSelect.setValue(settings.default_sort);
+            }
+
+            if (settings.default_order && this.defaultOrderSelect) {
+                this.defaultOrderSelect.setValue(settings.default_order);
+            }
+
         } catch (error) {
             console.error('Error loading settings:', error);
         }
     }
-    
+
     async saveSettings() {
         const appName = document.getElementById('app-name').value;
         const themeSelectElement = document.getElementById('theme-select');
@@ -394,45 +409,50 @@ class AdminPanel {
             return;
         }
 
+        const defaultSort = this.defaultSortSelect ? this.defaultSortSelect.getValue() : null;
+        const defaultOrder = this.defaultOrderSelect ? this.defaultOrderSelect.getValue() : null;
+
         const settings = {
             app_name: appName,
             theme: theme,
-            items_per_page: itemsPerPageNum
+            items_per_page: itemsPerPageNum,
+            default_sort: defaultSort,
+            default_order: defaultOrder
         };
-        
+
         try {
             await app.apiCall('/api/admin/settings', {
                 method: 'PATCH',
                 body: JSON.stringify(settings)
             });
-            
+
             location.reload();
         } catch (error) {
             app.showNotification(error.message, 'error', 'Error saving settings');
         }
     }
-    
+
     async scanMedia() {
         const scanBtn = document.getElementById('scan-media-btn');
         const originalText = scanBtn.textContent;
         scanBtn.disabled = true;
         scanBtn.textContent = 'Scanning...';
-        
+
         try {
             const result = await app.apiCall('/api/admin/scan-media', {
                 method: 'POST'
             });
-            
+
             if (result.new_files === 0) {
                 app.showNotification('No new untracked media files found.', 'info');
                 scanBtn.disabled = false;
                 scanBtn.textContent = originalText;
                 return;
             }
-            
+
             // Show loading message
             scanBtn.textContent = `Loading ${result.new_files} file(s)...`;
-            
+
             // Get the uploader instance
             const uploader = window.uploaderInstance;
             if (!uploader) {
@@ -441,38 +461,38 @@ class AdminPanel {
                 scanBtn.textContent = originalText;
                 return;
             }
-            
+
             // Fetch and add each file to the uploader
             let loadedCount = 0;
             let skippedCount = 0;
-            
+
             for (const filePath of result.files) {
                 try {
                     scanBtn.textContent = `Loading ${loadedCount + 1}/${result.new_files}...`;
-                    
+
                     // Fetch the file from the server
                     const response = await fetch(`/api/admin/get-untracked-file?path=${encodeURIComponent(filePath)}`);
-                    
+
                     if (!response.ok) {
                         console.error(`Failed to fetch file: ${filePath}`);
                         skippedCount++;
                         continue;
                     }
-                    
+
                     const blob = await response.blob();
                     const filename = filePath.split('/').pop().split('\\').pop(); // Handle both Unix and Windows paths
                     const file = new File([blob], filename, { type: blob.type });
-                    
+
                     // Add to uploader
                     await uploader.addScannedFile(file, filePath);
                     loadedCount++;
-                    
+
                 } catch (error) {
                     console.error(`Error loading file ${filePath}:`, error);
                     skippedCount++;
                 }
             }
-            
+
             // Show results
             let message = `Loaded ${loadedCount} file(s) into the editor.`;
             if (skippedCount > 0) {
@@ -482,7 +502,7 @@ class AdminPanel {
                 message += '\n\nYou can now edit tags and ratings before submitting.';
             }
             app.showNotification(message, 'success');
-            
+
         } catch (error) {
             console.error('Scan error:', error);
             app.showNotification(error.message, 'error', 'Error scanning media');
@@ -491,18 +511,18 @@ class AdminPanel {
             scanBtn.textContent = originalText;
         }
     }
-    
+
     async login() {
         const username = document.getElementById('username').value;
         const password = document.getElementById('password').value;
         const errorDiv = document.getElementById('login-error');
         const submitBtn = document.querySelector('#login-form button[type="submit"]');
-        
+
         // Clear previous error
         errorDiv.style.display = 'none';
         submitBtn.disabled = true;
         submitBtn.textContent = 'Logging in...';
-        
+
         try {
             const response = await fetch('/api/admin/login', {
                 method: 'POST',
@@ -511,7 +531,7 @@ class AdminPanel {
                 },
                 body: JSON.stringify({ username, password })
             });
-            
+
             if (response.ok) {
                 console.log('Login successful, redirecting...');
                 window.location.href = '/admin';
@@ -535,38 +555,38 @@ class AdminPanel {
     setupTagManagement() {
         // Setup new tags input validation
         this.setupNewTagsInput();
-        
+
         // CSV upload
         const uploadArea = document.getElementById('csv-upload-area');
         const fileInput = document.getElementById('csv-file-input');
-        
+
         uploadArea?.addEventListener('click', () => fileInput?.click());
-        
+
         uploadArea?.addEventListener('dragover', (e) => {
             e.preventDefault();
             uploadArea.style.backgroundColor = '#334155';
         });
-        
+
         uploadArea?.addEventListener('dragleave', () => {
             uploadArea.style.backgroundColor = '';
         });
-        
+
         uploadArea?.addEventListener('drop', (e) => {
             e.preventDefault();
             uploadArea.style.backgroundColor = '';
-            
+
             const files = e.dataTransfer.files;
             if (files.length > 0) {
                 this.uploadCSV(files[0]);
             }
         });
-        
+
         fileInput?.addEventListener('change', (e) => {
             if (e.target.files.length > 0) {
                 this.uploadCSV(e.target.files[0]);
             }
         });
-        
+
         // Tag search
         const searchBtn = document.getElementById('tag-search-btn');
         const searchInput = document.getElementById('tag-search-input');
@@ -589,20 +609,20 @@ class AdminPanel {
                 this.searchTags();
             }
         });
-        
+
         // Clear tags
         const clearBtn = document.getElementById('clear-tags-btn');
         clearBtn?.addEventListener('click', () => this.clearAllTags());
     }
-    
+
     async loadTagStats() {
         try {
             const response = await fetch('/api/admin/tag-stats');
             const stats = await response.json();
-            
+
             const totalTagsEl = document.getElementById('total-tags');
             const totalAliasesEl = document.getElementById('total-aliases');
-            
+
             if (totalTagsEl) totalTagsEl.textContent = stats.total_tags;
             if (totalAliasesEl) totalAliasesEl.textContent = stats.total_aliases;
         } catch (error) {
@@ -628,11 +648,11 @@ class AdminPanel {
             console.error('Error loading media stats:', error);
         }
     }
-    
+
     async uploadCSV(file) {
         const statusDiv = document.getElementById('csv-import-status');
         const progressDiv = document.getElementById('csv-import-progress');
-        
+
         statusDiv.style.display = 'block';
         progressDiv.innerHTML = `
             <div class="bg-primary primary-text p-3 mb-2">
@@ -640,23 +660,23 @@ class AdminPanel {
                 <span class="text-xs">This <em>can</em> take a while. Do not refresh the page.</span>
             </div>
         `;
-        
+
         try {
             const formData = new FormData();
             formData.append('file', file);
-            
+
             const response = await fetch('/api/admin/import-tags-csv', {
                 method: 'POST',
                 body: formData
             });
-            
+
             if (!response.ok) {
                 const error = await response.json();
                 throw new Error(error.detail || 'Upload failed');
             }
-            
+
             const result = await response.json();
-            
+
             let html = `
                 <div class="bg-success p-3 mb-2 tag-text">
                     <strong>${result.message}</strong>
@@ -667,7 +687,7 @@ class AdminPanel {
                     <div>Tags updated: <strong class="text">${result.tags_updated}</strong></div>
                     <div>Aliases created: <strong class="text">${result.aliases_created}</strong></div>
             `;
-            
+
             if (result.skipped_long_tags > 0 || result.skipped_long_aliases > 0) {
                 html += `
                     <div class="pt-2 border-t mt-2">
@@ -677,9 +697,9 @@ class AdminPanel {
                     </div>
                 `;
             }
-            
+
             html += '</div>';
-            
+
             if (result.errors && result.errors.length > 0) {
                 html += `
                     <div class="bg-warning p-3 mt-2 tag-text text-xs">
@@ -688,12 +708,12 @@ class AdminPanel {
                     </div>
                 `;
             }
-            
+
             progressDiv.innerHTML = html;
-            
+
             // Reload stats
             await this.loadTagStats();
-            
+
         } catch (error) {
             progressDiv.innerHTML = `
                 <div class="bg-danger p-3 tag-text">
@@ -702,25 +722,25 @@ class AdminPanel {
             `;
         }
     }
-    
+
     async searchTags() {
         const query = document.getElementById('tag-search-input').value;
         const resultsDiv = document.getElementById('tag-search-results');
-        
+
         if (!query) {
             resultsDiv.innerHTML = '';
             return;
         }
-        
+
         try {
             const response = await fetch(`/api/admin/search-tags?q=${encodeURIComponent(query)}`);
             const data = await response.json();
-            
+
             if (data.tags.length === 0) {
                 resultsDiv.innerHTML = '<p class="text-xs text-secondary p-3">No tags found</p>';
                 return;
             }
-            
+
             resultsDiv.innerHTML = data.tags.map(tag => `
                 <div class="bg p-3 border-b flex justify-between items-center">
                     <div>
@@ -731,7 +751,7 @@ class AdminPanel {
                     <span class="text-xs text-secondary uppercase">${tag.category}</span>
                 </div>
             `).join('');
-            
+
             // Add event listeners to delete buttons
             resultsDiv.querySelectorAll('.delete-tag-btn').forEach(btn => {
                 btn.addEventListener('click', () => {
@@ -739,13 +759,13 @@ class AdminPanel {
                     this.deleteTag(tagId);
                 });
             });
-            
+
         } catch (error) {
             console.error('Error searching tags:', error);
             resultsDiv.innerHTML = '<p class="text-xs text-danger p-3">Error searching tags</p>';
         }
     }
-    
+
     async deleteTag(tagId) {
         const modal = new ModalHelper({
             id: 'delete-tag-modal',
@@ -766,7 +786,7 @@ class AdminPanel {
                 }
             }
         });
-        
+
         modal.show();
     }
 
@@ -805,7 +825,7 @@ class AdminPanel {
                 secondModal.show();
             }
         });
-        
+
         firstModal.show();
     }
 

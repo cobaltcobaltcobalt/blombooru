@@ -54,6 +54,8 @@ async def get_media_list(
     page: int = 1,
     limit: int = Query(None),
     rating: Optional[str] = None,
+    sort: Optional[str] = None,
+    order: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     """Get paginated media list"""
@@ -70,7 +72,24 @@ async def get_media_list(
             }
             query = query.filter(Media.rating.in_(allowed_ratings.get(rating, [])))
         
-        query = query.order_by(desc(Media.uploaded_at))
+        # Sorting
+        sort_by = sort if sort else settings.get_default_sort()
+        sort_order = order if order else settings.get_default_order()
+        
+        sort_column = Media.uploaded_at
+        if sort_by == 'created_at':
+            sort_column = Media.created_at
+        elif sort_by == 'filename':
+            sort_column = Media.filename
+        elif sort_by == 'file_size':
+            sort_column = Media.file_size
+        elif sort_by == 'file_type':
+            sort_column = Media.file_type
+            
+        if sort_order == 'asc':
+            query = query.order_by(sort_column.asc())
+        else:
+            query = query.order_by(sort_column.desc())
         
         # Pagination
         offset = (page - 1) * limit
@@ -237,7 +256,8 @@ async def upload_media(
             height=metadata['height'],
             duration=metadata['duration'],
             rating=rating,
-            source=source if source else None
+            source=source if source else None,
+            created_at=metadata.get('created_at')
         )
         
         tag_ids = []

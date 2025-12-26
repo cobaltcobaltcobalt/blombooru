@@ -11,12 +11,12 @@ class Uploader {
         this.tagInputHelper = new TagInputHelper();
         this.baseRatingSelect = null;
         this.individualRatingSelect = null;
-        
+
         if (this.uploadArea) {
             this.init();
         }
     }
-    
+
     init() {
         this.setupDragAndDrop();
         this.setupFileInput();
@@ -24,37 +24,37 @@ class Uploader {
         this.createPreviewGrid();
         this.createSubmitControls();
     }
-    
+
     setupDragAndDrop() {
         this.uploadArea.addEventListener('click', () => {
             this.fileInput.click();
         });
-        
+
         this.uploadArea.addEventListener('dragover', (e) => {
             e.preventDefault();
             this.uploadArea.classList.add('drag-over');
         });
-        
+
         this.uploadArea.addEventListener('dragleave', () => {
             this.uploadArea.classList.remove('drag-over');
         });
-        
+
         this.uploadArea.addEventListener('drop', (e) => {
             e.preventDefault();
             this.uploadArea.classList.remove('drag-over');
-            
+
             const files = Array.from(e.dataTransfer.files);
             this.handleFiles(files);
         });
     }
-    
+
     setupFileInput() {
         this.fileInput.addEventListener('change', (e) => {
             const files = Array.from(e.target.files);
             this.handleFiles(files);
         });
     }
-    
+
     setupBaseControls() {
         // Create base controls container
         const controlsDiv = document.createElement('div');
@@ -93,32 +93,32 @@ class Uploader {
                 </div>
             </div>
         `;
-        
+
         this.uploadArea.parentNode.insertBefore(controlsDiv, this.uploadArea.nextSibling);
-        
+
         // Initialize custom select for base rating
         const baseRatingElement = document.getElementById('base-rating');
         if (baseRatingElement) {
             this.baseRatingSelect = new CustomSelect(baseRatingElement);
-            
+
             // Listen for change events
             baseRatingElement.addEventListener('change', (e) => {
                 this.baseRating = e.detail.value;
                 this.updateAllMediaRatings();
             });
         }
-        
+
         document.getElementById('base-source').addEventListener('input', (e) => {
             this.baseSource = e.target.value.trim();
             this.updateAllMediaSources();
         });
-        
+
         const baseTagsInput = document.getElementById('base-tags');
         baseTagsInput.addEventListener('input', (e) => {
             this.baseTags = this.tagInputHelper.getValidTagsFromInput(e.target);
             this.updateAllMediaTags();
         });
-        
+
         // Setup tag validation
         this.tagInputHelper.setupTagInput(baseTagsInput, 'base-tags', {
             onValidate: () => {
@@ -126,7 +126,7 @@ class Uploader {
                 this.updateAllMediaTags();
             }
         });
-        
+
         // Initialize tag autocomplete if available
         if (typeof TagAutocomplete !== 'undefined') {
             new TagAutocomplete(baseTagsInput, {
@@ -141,7 +141,7 @@ class Uploader {
             });
         }
     }
-    
+
     createPreviewGrid() {
         const gridDiv = document.createElement('div');
         gridDiv.id = 'preview-grid';
@@ -191,14 +191,14 @@ class Uploader {
                 </div>
             </div>
         `;
-        
+
         document.getElementById('base-controls').parentNode.insertBefore(gridDiv, document.getElementById('base-controls').nextSibling);
-        
+
         // Initialize custom select for individual rating
         const individualRatingElement = document.getElementById('individual-rating');
         if (individualRatingElement) {
             this.individualRatingSelect = new CustomSelect(individualRatingElement);
-            
+
             // Listen for change events
             individualRatingElement.addEventListener('change', (e) => {
                 if (this.selectedFileIndex !== null) {
@@ -207,41 +207,41 @@ class Uploader {
                 }
             });
         }
-        
+
         document.getElementById('individual-source').addEventListener('input', (e) => {
             if (this.selectedFileIndex !== null) {
                 this.uploadedFiles[this.selectedFileIndex].source = e.target.value.trim();
             }
         });
-        
+
         const individualTagsInput = document.getElementById('individual-tags');
         individualTagsInput.addEventListener('input', (e) => {
             if (this.selectedFileIndex !== null) {
-                this.uploadedFiles[this.selectedFileIndex].additionalTags = 
+                this.uploadedFiles[this.selectedFileIndex].additionalTags =
                     this.tagInputHelper.getValidTagsFromInput(e.target);
                 this.updateFinalTagsPreview();
                 this.updateThumbnailIndicator(this.selectedFileIndex);
             }
         });
-        
+
         // Setup tag validation for individual tags
         this.tagInputHelper.setupTagInput(individualTagsInput, 'individual-tags', {
             onValidate: () => {
                 if (this.selectedFileIndex !== null) {
-                    this.uploadedFiles[this.selectedFileIndex].additionalTags = 
+                    this.uploadedFiles[this.selectedFileIndex].additionalTags =
                         this.tagInputHelper.getValidTagsFromInput(individualTagsInput);
                     this.updateFinalTagsPreview();
                     this.updateThumbnailIndicator(this.selectedFileIndex);
                 }
             }
         });
-        
+
         document.getElementById('remove-media-btn').addEventListener('click', () => {
             if (this.selectedFileIndex !== null) {
                 this.removeMedia(this.selectedFileIndex);
             }
         });
-        
+
         // Initialize tag autocomplete for individual tags
         if (typeof TagAutocomplete !== 'undefined') {
             new TagAutocomplete(individualTagsInput, {
@@ -250,7 +250,7 @@ class Uploader {
                     setTimeout(() => {
                         this.tagInputHelper.validateAndStyleTags(individualTagsInput);
                         if (this.selectedFileIndex !== null) {
-                            this.uploadedFiles[this.selectedFileIndex].additionalTags = 
+                            this.uploadedFiles[this.selectedFileIndex].additionalTags =
                                 this.tagInputHelper.getValidTagsFromInput(individualTagsInput);
                             this.updateFinalTagsPreview();
                             this.updateThumbnailIndicator(this.selectedFileIndex);
@@ -260,7 +260,7 @@ class Uploader {
             });
         }
     }
-    
+
     createSubmitControls() {
         const submitDiv = document.createElement('div');
         submitDiv.id = 'submit-controls';
@@ -270,18 +270,18 @@ class Uploader {
             <button id="cancel-all-btn" class="flex-1 px-4 py-2 surface-light transition-colors hover:surface-light text text-xs">Cancel & Clear All</button>
             <button id="submit-all-btn" class="flex-1 px-4 py-2 bg-primary primary-text transition-colors hover:bg-primary text-xs font-bold">Submit All Media</button>
         `;
-        
+
         document.getElementById('preview-grid').parentNode.insertBefore(submitDiv, document.getElementById('preview-grid').nextSibling);
-        
+
         document.getElementById('submit-all-btn').addEventListener('click', () => {
             this.submitAll();
         });
-        
+
         document.getElementById('cancel-all-btn').addEventListener('click', () => {
             this.cancelAll();
         });
     }
-    
+
     async computeFileHash(file) {
         // Check if crypto.subtle is available (HTTPS or localhost)
         if (window.crypto && window.crypto.subtle) {
@@ -295,7 +295,7 @@ class Uploader {
                 console.warn('crypto.subtle failed, falling back to simple hash:', error);
             }
         }
-        
+
         // Fallback: Use a simple hash based on file properties and content sample
         const arrayBuffer = await file.arrayBuffer();
         const bytes = new Uint8Array(arrayBuffer);
@@ -323,7 +323,7 @@ class Uploader {
         // Convert to hex string
         return Math.abs(hash).toString(16).padStart(8, '0');
     }
-    
+
     async handleFiles(files) {
         for (const file of files) {
             // Check if it's a zip or tar.gz file
@@ -331,18 +331,18 @@ class Uploader {
                 await this.handleArchive(file);
                 continue;
             }
-            
+
             if (this.isValidFile(file)) {
                 // Compute hash for duplicate detection
                 const hash = await this.computeFileHash(file);
-                
+
                 // Silently ignore duplicates
                 if (this.fileHashes.has(hash)) {
                     continue;
                 }
-                
+
                 this.fileHashes.add(hash);
-                
+
                 const fileData = {
                     file: file,
                     hash: hash,
@@ -352,41 +352,41 @@ class Uploader {
                     preview: null,
                     scannedPath: null
                 };
-                
+
                 this.uploadedFiles.push(fileData);
                 this.createPreview(fileData, this.uploadedFiles.length - 1);
             }
         }
-        
+
         if (this.uploadedFiles.length > 0) {
             document.getElementById('base-controls').style.display = 'block';
             document.getElementById('preview-grid').style.display = 'block';
             document.getElementById('submit-controls').style.display = 'flex';
         }
     }
-    
+
     async handleArchive(archiveFile) {
         // Show loading indicator
         const loadingDiv = document.createElement('div');
         loadingDiv.className = 'bg-primary primary-text p-2 mb-2 text-xs';
         loadingDiv.textContent = `Extracting ${archiveFile.name}...`;
         this.uploadArea.parentNode.insertBefore(loadingDiv, this.uploadArea.nextSibling);
-        
+
         try {
             const formData = new FormData();
             formData.append('file', archiveFile);
-            
+
             const response = await fetch('/api/media/extract-archive', {
                 method: 'POST',
                 body: formData
             });
-            
+
             if (!response.ok) {
                 throw new Error(`Failed to extract archive: ${response.statusText}`);
             }
-            
+
             const result = await response.json();
-            
+
             // result.files contains array of extracted file data
             for (const extractedFileData of result.files) {
                 // Convert base64 to blob
@@ -397,16 +397,16 @@ class Uploader {
                 }
                 const blob = new Blob([bytes], { type: extractedFileData.mime_type });
                 const file = new File([blob], extractedFileData.filename, { type: extractedFileData.mime_type });
-                
+
                 if (this.isValidFile(file)) {
                     const hash = await this.computeFileHash(file);
-                    
+
                     if (this.fileHashes.has(hash)) {
                         continue;
                     }
-                    
+
                     this.fileHashes.add(hash);
-                    
+
                     const fileData = {
                         file: file,
                         hash: hash,
@@ -415,15 +415,15 @@ class Uploader {
                         additionalTags: [],
                         preview: null
                     };
-                    
+
                     this.uploadedFiles.push(fileData);
                     this.createPreview(fileData, this.uploadedFiles.length - 1);
                 }
             }
-            
+
             loadingDiv.textContent = `✓ Extracted ${result.files.length} files from ${archiveFile.name}`;
             setTimeout(() => loadingDiv.remove(), 3000);
-            
+
         } catch (error) {
             console.error('Archive extraction error:', error);
             loadingDiv.className = 'bg-danger tag-text p-2 mb-2 text-xs';
@@ -431,7 +431,7 @@ class Uploader {
             setTimeout(() => loadingDiv.remove(), 5000);
         }
     }
-    
+
     isValidFile(file) {
         const validTypes = [
             'image/jpeg', 'image/png', 'image/gif', 'image/webp',
@@ -439,15 +439,15 @@ class Uploader {
         ];
         return validTypes.includes(file.type);
     }
-    
+
     createPreview(fileData, index) {
         const container = document.getElementById('preview-thumbnails');
         const thumbnailDiv = document.createElement('div');
         thumbnailDiv.className = 'relative cursor-pointer border-2 hover:border-primary transition-colors';
         thumbnailDiv.dataset.index = index;
-        
+
         const isVideo = fileData.file.type.startsWith('video/');
-        
+
         if (isVideo) {
             const video = document.createElement('video');
             video.className = 'w-full h-24 object-cover';
@@ -460,37 +460,37 @@ class Uploader {
             img.src = URL.createObjectURL(fileData.file);
             thumbnailDiv.appendChild(img);
         }
-        
+
         // Add indicator overlay
         const indicator = document.createElement('div');
         indicator.className = 'absolute top-0 right-0 surface bg-opacity-75 px-1 text-xs';
         indicator.innerHTML = `<span class="rating-indicator">${fileData.rating[0].toUpperCase()}</span>`;
         thumbnailDiv.appendChild(indicator);
-        
+
         // Add tags indicator
         const tagsIndicator = document.createElement('div');
         tagsIndicator.className = 'absolute bottom-0 left-0 right-0 surface bg-opacity-75 px-1 text-xs truncate tags-indicator';
         tagsIndicator.textContent = this.getFullTags(fileData).join(' ') || 'No tags';
         thumbnailDiv.appendChild(tagsIndicator);
-        
+
         thumbnailDiv.addEventListener('click', (e) => {
             const clickedIndex = parseInt(e.currentTarget.dataset.index);
             this.selectMedia(clickedIndex);
         });
-        
+
         container.appendChild(thumbnailDiv);
     }
-    
+
     selectMedia(index) {
         this.selectedFileIndex = index;
         const fileData = this.uploadedFiles[index];
-        
+
         // Safety check
         if (!fileData) {
             console.error('No file data at index', index);
             return;
         }
-        
+
         // Update UI
         document.querySelectorAll('#preview-thumbnails > div').forEach((div, i) => {
             if (i === index) {
@@ -501,26 +501,26 @@ class Uploader {
                 div.classList.add('border');
             }
         });
-        
+
         // Show individual controls
         document.getElementById('individual-controls').style.display = 'block';
         document.getElementById('current-filename').textContent = fileData.file.name;
-        
+
         // Update individual rating select
         if (this.individualRatingSelect) {
             this.individualRatingSelect.setValue(fileData.rating);
         }
-        
+
         document.getElementById('individual-source').value = fileData.source || '';
         const individualTagsInput = document.getElementById('individual-tags');
         individualTagsInput.textContent = fileData.additionalTags.join(' ');
-        
+
         // Validate existing tags
         setTimeout(() => this.tagInputHelper.validateAndStyleTags(individualTagsInput), 100);
-        
+
         this.updateFinalTagsPreview();
     }
-    
+
     updateFinalTagsPreview() {
         if (this.selectedFileIndex !== null) {
             const fileData = this.uploadedFiles[this.selectedFileIndex];
@@ -528,94 +528,94 @@ class Uploader {
             document.getElementById('final-tags-preview').textContent = finalTags.join(' ') || 'None';
         }
     }
-    
+
     getFullTags(fileData) {
         return [...this.baseTags, ...fileData.additionalTags];
     }
-    
+
     updateAllMediaRatings() {
         this.uploadedFiles.forEach((fileData, index) => {
             fileData.rating = this.baseRating;
             this.updateThumbnailIndicator(index);
         });
-        
+
         if (this.selectedFileIndex !== null && this.individualRatingSelect) {
             this.individualRatingSelect.setValue(this.baseRating);
         }
     }
-    
+
     updateAllMediaSources() {
         this.uploadedFiles.forEach((fileData) => {
             fileData.source = this.baseSource;
         });
-        
+
         if (this.selectedFileIndex !== null) {
             document.getElementById('individual-source').value = this.baseSource;
         }
     }
-    
+
     updateAllMediaTags() {
         // Update all thumbnails
         this.uploadedFiles.forEach((fileData, index) => {
             this.updateThumbnailIndicator(index);
         });
-        
+
         // Update preview if media is selected
         if (this.selectedFileIndex !== null) {
             this.updateFinalTagsPreview();
         }
     }
-    
+
     updateThumbnailIndicator(index) {
         const thumbnail = document.querySelector(`#preview-thumbnails > div[data-index="${index}"]`);
         if (thumbnail) {
             const fileData = this.uploadedFiles[index];
             const ratingIndicator = thumbnail.querySelector('.rating-indicator');
             const tagsIndicator = thumbnail.querySelector('.tags-indicator');
-            
+
             if (ratingIndicator) {
                 ratingIndicator.textContent = fileData.rating[0].toUpperCase();
             }
-            
+
             if (tagsIndicator) {
                 const fullTags = this.getFullTags(fileData);
                 tagsIndicator.textContent = fullTags.join(' ') || 'No tags';
             }
         }
     }
-    
+
     removeMedia(index) {
         // If only one file left, cancel all
         if (this.uploadedFiles.length === 1) {
             this.cancelAll();
             return;
         }
-        
+
         // Remove file hash from set
         const fileData = this.uploadedFiles[index];
         this.fileHashes.delete(fileData.hash);
-        
+
         // Remove thumbnail
         const thumbnail = document.querySelector(`#preview-thumbnails > div[data-index="${index}"]`);
         if (thumbnail) {
             thumbnail.remove();
         }
-        
+
         // Remove from array
         this.uploadedFiles.splice(index, 1);
-        
+
         // Update remaining thumbnail indices
         document.querySelectorAll('#preview-thumbnails > div').forEach((div, i) => {
             div.dataset.index = i;
         });
-        
+
         // Select the media to the left, or first item if we removed the first
         const newIndex = Math.min(index > 0 ? index - 1 : 0, this.uploadedFiles.length - 1);
         if (this.uploadedFiles.length > 0) {
             this.selectMedia(newIndex);
         }
     }
-    
+
     async submitAll() {
         if (this.uploadedFiles.length === 0) return;
 
@@ -669,7 +669,7 @@ class Uploader {
             window.location.reload();
         }
     }
-    
+
     async uploadFile(fileData) {
         const formData = new FormData();
 
@@ -703,7 +703,7 @@ class Uploader {
 
         return await response.json();
     }
-    
+
     cancelAll() {
         // Clear all data
         this.uploadedFiles = [];
@@ -712,14 +712,14 @@ class Uploader {
         this.baseRating = 'safe';
         this.baseSource = '';
         this.fileHashes.clear();
-        
+
         // Clear UI
         document.getElementById('preview-thumbnails').innerHTML = '';
         const baseTagsInput = document.getElementById('base-tags');
         const individualTagsInput = document.getElementById('individual-tags');
         if (baseTagsInput) baseTagsInput.textContent = '';
         if (individualTagsInput) individualTagsInput.textContent = '';
-        
+
         // Reset custom selects
         if (this.baseRatingSelect) {
             this.baseRatingSelect.setValue('safe');
@@ -727,10 +727,10 @@ class Uploader {
         if (this.individualRatingSelect) {
             this.individualRatingSelect.setValue('safe');
         }
-        
+
         document.getElementById('base-source').value = '';
         document.getElementById('individual-controls').style.display = 'none';
-        
+
         // Hide sections
         document.getElementById('base-controls').style.display = 'none';
         document.getElementById('preview-grid').style.display = 'none';
@@ -739,7 +739,7 @@ class Uploader {
         // Clear helper cache
         this.tagInputHelper.clearCache();
         this.tagInputHelper.clearTimeouts();
-        
+
         // Reset file input
         this.fileInput.value = '';
     }
@@ -748,14 +748,14 @@ class Uploader {
         if (this.isValidFile(file)) {
             // Compute hash for duplicate detection
             const hash = await this.computeFileHash(file);
-            
+
             // Silently ignore duplicates
             if (this.fileHashes.has(hash)) {
                 return;
             }
-            
+
             this.fileHashes.add(hash);
-            
+
             const fileData = {
                 file: file,
                 hash: hash,
@@ -765,10 +765,10 @@ class Uploader {
                 preview: null,
                 scannedPath: originalPath
             };
-            
+
             this.uploadedFiles.push(fileData);
             this.createPreview(fileData, this.uploadedFiles.length - 1);
-            
+
             // Show UI sections if not already visible
             if (this.uploadedFiles.length === 1) {
                 document.getElementById('base-controls').style.display = 'block';

@@ -33,12 +33,22 @@ class Settings:
                 "password": ""
             },
             "items_per_page": 64,
+            "default_sort": "uploaded_at",
+            "default_order": "desc",
             "secret_key": os.urandom(32).hex()
         }
     
     def get_items_per_page(self) -> int:
         """Get items per page setting"""
         return self.settings.get("items_per_page", 64)
+    
+    def get_default_sort(self) -> str:
+        """Get default sort setting"""
+        return self.settings.get("default_sort", "uploaded_at")
+        
+    def get_default_order(self) -> str:
+        """Get default order setting"""
+        return self.settings.get("default_order", "desc")
     
     def save_settings(self, settings: dict):
         self.settings.update(settings)

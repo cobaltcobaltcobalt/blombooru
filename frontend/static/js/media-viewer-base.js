@@ -15,7 +15,7 @@ class MediaViewerBase {
     // Common rendering methods
     renderInfo(media, options = {}) {
         const { downloadUrl, isShared } = options;
-        
+
         let infoHTML = `
             <div class="info-row"><span>Filename</span><strong>${media.filename}</strong></div>
             <div class="info-row"><span>Type</span><strong>${media.file_type}</strong></div>
@@ -53,33 +53,33 @@ class MediaViewerBase {
         const { clickable = true } = options;
         const container = this.el('tags-container');
         const groups = { artist: [], character: [], copyright: [], general: [], meta: [] };
-        
+
         (media.tags || []).forEach(tag => {
             if (groups[tag.category]) {
                 groups[tag.category].push(tag);
             }
         });
-        
+
         let html = '';
         Object.entries(groups).forEach(([category, tags]) => {
             if (!tags.length) return;
-            
+
             tags.sort((a, b) => a.name.localeCompare(b.name));
-            
+
             html += `
                 <div class="tag-category">
                     <h4>${category}</h4>
                     <div class="tag-list">
-                        ${tags.map(tag => 
-                            clickable 
-                                ? `<a href="/?q=${encodeURIComponent(tag.name)}" class="tag ${category} tag-text">${tag.name}</a>`
-                                : `<span class="tag ${category} tag-text">${tag.name}</span>`
-                        ).join('')}
+                        ${tags.map(tag =>
+                clickable
+                    ? `<a href="/?q=${encodeURIComponent(tag.name)}" class="tag ${category} tag-text">${tag.name}</a>`
+                    : `<span class="tag ${category} tag-text">${tag.name}</span>`
+            ).join('')}
                     </div>
                 </div>
             `;
         });
-        
+
         container.innerHTML = html || '<p class="text-xs text-secondary mb-3">No tags</p>';
     }
 
@@ -181,8 +181,8 @@ class MediaViewerBase {
         // Try to find ComfyUI workflow in 'prompt' field
         if (metadata.prompt) {
             try {
-                const parsed = typeof metadata.prompt === 'string' 
-                    ? JSON.parse(metadata.prompt) 
+                const parsed = typeof metadata.prompt === 'string'
+                    ? JSON.parse(metadata.prompt)
                     : metadata.prompt;
 
                 // Check if it looks like a ComfyUI workflow (has numbered nodes)
@@ -201,8 +201,8 @@ class MediaViewerBase {
         // Try 'workflow' field
         if (!workflow && metadata.workflow) {
             try {
-                workflow = typeof metadata.workflow === 'string' 
-                    ? JSON.parse(metadata.workflow) 
+                workflow = typeof metadata.workflow === 'string'
+                    ? JSON.parse(metadata.workflow)
                     : metadata.workflow;
             } catch (e) {
                 console.error('Failed to parse workflow:', e);
@@ -343,7 +343,7 @@ class MediaViewerBase {
                     data.prompt = promptNodes[0].text;
                 } else if (promptNodes.length === 2) {
                     // Fallback: use heuristics (negative prompts often contain certain keywords)
-                    const likelyNegative = promptNodes.find(p => 
+                    const likelyNegative = promptNodes.find(p =>
                         /\b(bad|worst|ugly|deformed|blurry|low quality|watermark)\b/i.test(p.text)
                     );
                     const likelyPositive = promptNodes.find(p => p !== likelyNegative);
@@ -374,7 +374,7 @@ class MediaViewerBase {
 
         // Format LoRAs for display
         if (data.loras && data.loras.length > 0) {
-            const loraList = data.loras.map(lora => 
+            const loraList = data.loras.map(lora =>
                 `${lora.name} (model: ${lora.strength_model || 'N/A'}, clip: ${lora.strength_clip || 'N/A'})`
             ).join(', ');
             data.loras = loraList;
@@ -413,9 +413,9 @@ class MediaViewerBase {
                     // Start collecting negative prompt
                     parsingNegative = true;
                     currentPrompt = line.substring(line.indexOf(':') + 1).trim();
-                } else if (line.includes('Steps:') || line.includes('Sampler:') || 
-                           line.includes('CFG scale:') || line.includes('Seed:') || 
-                           line.includes('Size:') || line.includes('Model:')) {
+                } else if (line.includes('Steps:') || line.includes('Sampler:') ||
+                    line.includes('CFG scale:') || line.includes('Seed:') ||
+                    line.includes('Size:') || line.includes('Model:')) {
                     // This is the parameters line
                     // Save any prompt we were building
                     if (currentPrompt) {
@@ -481,7 +481,7 @@ class MediaViewerBase {
 
             html += `<div class="ai-section mb-3">`;
             html += `<h4 class="text-xs font-bold text-[var(--primary-color)] mb-2">${sectionTitle}</h4>`;
-            
+
             if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
                 html += `<div class="ml-2">`;
                 Object.entries(value).forEach(([subKey, subValue]) => {
@@ -508,7 +508,7 @@ class MediaViewerBase {
             const newContainer = container.cloneNode(true);
             container.parentNode.replaceChild(newContainer, container);
 
-            newContainer.addEventListener('click', function(e) {
+            newContainer.addEventListener('click', function (e) {
                 const selection = window.getSelection();
                 if (selection && selection.toString().length > 0) {
                     return;
@@ -518,7 +518,7 @@ class MediaViewerBase {
                 window.toggleExpand(id);
             });
 
-            newContainer.addEventListener('dblclick', function(e) {
+            newContainer.addEventListener('dblclick', function (e) {
                 e.stopPropagation();
             });
         });
@@ -547,7 +547,7 @@ class MediaViewerBase {
         if (typeof value === 'boolean') {
             return value ? 'Yes' : 'No';
         }
-        
+
         if (typeof value === 'string') {
             const escaped = value.replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -562,11 +562,11 @@ class MediaViewerBase {
             }
             return escaped;
         }
-        
+
         if (Array.isArray(value)) {
             return value.join(', ');
         }
-        
+
         return String(value);
     }
 
@@ -586,7 +586,7 @@ class MediaViewerBase {
 }
 
 // Global function for expand/collapse functionality
-window.toggleExpand = function(id) {
+window.toggleExpand = function (id) {
     const truncated = document.getElementById(id + '-truncated');
     const full = document.getElementById(id + '-full');
 

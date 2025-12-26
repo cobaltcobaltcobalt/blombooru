@@ -236,7 +236,7 @@ class FullscreenMediaViewer {
 }
 
 // Global function for expand/collapse functionality
-window.toggleExpand = function(id) {
+window.toggleExpand = function (id) {
     const truncated = document.getElementById(id + '-truncated');
     const full = document.getElementById(id + '-full');
 

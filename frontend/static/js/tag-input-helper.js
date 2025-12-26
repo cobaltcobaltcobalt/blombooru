@@ -23,12 +23,12 @@ class TagInputHelper {
     getCursorPosition(element) {
         const selection = window.getSelection();
         if (selection.rangeCount === 0) return 0;
-        
+
         const range = selection.getRangeAt(0);
         const preCaretRange = range.cloneRange();
         preCaretRange.selectNodeContents(element);
         preCaretRange.setEnd(range.endContainer, range.endOffset);
-        
+
         return preCaretRange.toString().length;
     }
 
@@ -36,13 +36,13 @@ class TagInputHelper {
     setCursorPosition(element, offset) {
         const selection = window.getSelection();
         const range = document.createRange();
-        
+
         let currentOffset = 0;
         let found = false;
-        
+
         const traverseNodes = (node) => {
             if (found) return;
-            
+
             if (node.nodeType === Node.TEXT_NODE) {
                 const nodeLength = node.textContent.length;
                 if (currentOffset + nodeLength >= offset) {
@@ -59,7 +59,7 @@ class TagInputHelper {
                 }
             }
         };
-        
+
         try {
             traverseNodes(element);
             if (!found && element.lastChild) {
@@ -77,7 +77,7 @@ class TagInputHelper {
     async checkTagExists(tagName) {
         if (!tagName || !tagName.trim()) return true;
         const normalized = tagName.toLowerCase().trim();
-        
+
         try {
             const res = await fetch(`/api/tags/${encodeURIComponent(normalized)}`);
             return res.ok;
@@ -91,21 +91,21 @@ class TagInputHelper {
     async checkTagOrAliasExists(tagName) {
         if (!tagName || !tagName.trim()) return false;
         const normalized = tagName.toLowerCase().trim();
-        
+
         try {
             // Check if it's a tag
             const tagRes = await fetch(`/api/tags/${encodeURIComponent(normalized)}`);
             if (tagRes.ok) {
                 return true;
             }
-            
+
             // Check if it's an alias
             const aliasRes = await fetch(`/api/admin/check-alias?name=${encodeURIComponent(normalized)}`);
             if (aliasRes.ok) {
                 const data = await aliasRes.json();
                 return data.exists;
             }
-            
+
             return false;
         } catch (e) {
             console.error('Error checking tag/alias:', e);
@@ -122,14 +122,14 @@ class TagInputHelper {
         } = options;
 
         if (!inputElement) return;
-        
+
         const text = this.getPlainTextFromDiv(inputElement);
         const cursorPos = this.getCursorPosition(inputElement);
-        
+
         // Split by whitespace
         const parts = text.split(/(\s+)/);
         const tags = [];
-        
+
         // Check each non-whitespace part
         for (let part of parts) {
             if (part.trim()) {
@@ -138,17 +138,17 @@ class TagInputHelper {
                     const exists = await checkFunction(normalized);
                     validationCache.set(normalized, exists);
                 }
-                
+
                 const isValid = validationCache.get(normalized);
                 // If invertLogic is true, mark as invalid if exists
                 const shouldMarkInvalid = invertLogic ? isValid : !isValid;
-                
+
                 tags.push({ text: part, isInvalid: shouldMarkInvalid });
             } else {
                 tags.push({ text: part, isWhitespace: true });
             }
         }
-        
+
         // Build styled HTML with escaped content
         let html = '';
         for (let tag of tags) {
@@ -160,7 +160,7 @@ class TagInputHelper {
                 html += this.escapeHtml(tag.text);
             }
         }
-        
+
         // Update content if changed
         if (inputElement.innerHTML !== html) {
             inputElement.innerHTML = html || '';
@@ -179,7 +179,7 @@ class TagInputHelper {
         } = options;
 
         if (!inputElement) return;
-        
+
         // Handle input events
         inputElement.addEventListener('input', () => {
             if (this.validationTimeouts.has(inputId)) {
@@ -195,7 +195,7 @@ class TagInputHelper {
             }, validateDelay);
             this.validationTimeouts.set(inputId, timeout);
         });
-        
+
         // Immediate validation on space
         inputElement.addEventListener('keyup', async (e) => {
             if (e.key === ' ') {
@@ -210,14 +210,14 @@ class TagInputHelper {
                 if (onValidate) onValidate();
             }
         });
-        
+
         // Prevent default Enter behavior
         inputElement.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
             }
         });
-        
+
         // Paste as plain text
         inputElement.addEventListener('paste', (e) => {
             e.preventDefault();
@@ -230,7 +230,7 @@ class TagInputHelper {
     getValidTagsFromInput(inputElement, validationCache = this.tagValidationCache) {
         const text = this.getPlainTextFromDiv(inputElement);
         const allTags = text.split(/\s+/).filter(t => t.length > 0);
-        
+
         const validTags = [];
         for (const tag of allTags) {
             const normalized = tag.toLowerCase().trim();
@@ -239,7 +239,7 @@ class TagInputHelper {
                 validTags.push(tag);
             }
         }
-        
+
         return validTags;
     }
 

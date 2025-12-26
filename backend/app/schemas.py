@@ -59,6 +59,7 @@ class MediaResponse(MediaBase):
     height: Optional[int]
     duration: Optional[float]
     uploaded_at: datetime
+    created_at: Optional[datetime]
     is_shared: bool
     share_uuid: Optional[str]
     source: Optional[str] = None
@@ -100,4 +101,6 @@ class OnboardingData(BaseModel):
 class SettingsUpdate(BaseModel):
     app_name: Optional[str] = None
     items_per_page: Optional[int] = None
+    default_sort: Optional[str] = None
+    default_order: Optional[str] = None
     theme: Optional[str] = None

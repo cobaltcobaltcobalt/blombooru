@@ -6,55 +6,56 @@ class Gallery {
         this.selectedItems = new Set();
         this.tagCounts = new Map();
         this.tooltipHelper = null;
-        
+
         this.galleryContainer = document.getElementById('gallery-grid');
         this.loadingIndicator = document.getElementById('loading-indicator');
         this.popularTagsContainer = document.getElementById('popular-tags');
         this.pageNavTop = document.getElementById('page-nav-top');
-        
+
         if (this.galleryContainer) {
             this.init();
         }
     }
-    
+
     init() {
         this.setupBulkActions();
         this.setupRatingFilter();
+        this.setupSorting();
         this.setupPageJumpModal();
         this.initTooltip();
-        
+
         // Get page from URL or default to 1
         const params = new URLSearchParams(window.location.search);
         this.currentPage = parseInt(params.get('page')) || 1;
-        
+
         // Load initial page
         this.loadPage();
     }
-    
+
     initTooltip() {
         this.tooltipHelper = new TooltipHelper({
             id: 'gallery-tooltip',
             delay: 300
         });
     }
-    
+
     setupRatingFilter() {
         // Setup rating filter change handlers
         document.querySelectorAll('.rating-filter-input').forEach(radio => {
             radio.addEventListener('change', (e) => {
                 const selectedRating = e.target.value;
-                
+
                 // Update label styling
                 this.updateRatingFilterLabels(selectedRating);
-                
+
                 // Store the selected rating in localStorage for persistence
                 localStorage.setItem('selectedRating', selectedRating);
-                
+
                 // Reload gallery with new rating
                 this.reloadWithRating(selectedRating);
             });
         });
-        
+
         // Also setup for any input[name="rating"] (in case there are duplicates)
         document.querySelectorAll('input[name="rating"]').forEach(input => {
             input.addEventListener('change', (e) => {
@@ -62,23 +63,23 @@ class Gallery {
                 this.updateRatingFilterLabels(selectedValue);
             });
         });
-        
+
         // Set initial state from localStorage
         const savedRating = localStorage.getItem('selectedRating') || 'explicit';
         const savedRadio = document.querySelector(`input[value="${savedRating}"]`);
-        
+
         if (savedRadio) {
             savedRadio.checked = true;
             this.updateRatingFilterLabels(savedRating);
         }
     }
-    
+
     updateRatingFilterLabels(selectedValue) {
         // Remove 'checked' class from all labels
         document.querySelectorAll('.rating-filter-label').forEach(label => {
             label.classList.remove('checked');
         });
-        
+
         // Add 'checked' class to the selected radio's label
         document.querySelectorAll(`input[name="rating"][value="${selectedValue}"]`).forEach(radio => {
             radio.checked = true;
@@ -87,45 +88,84 @@ class Gallery {
             }
         });
     }
-    
+
+    setupSorting() {
+        const sortSelectEl = document.getElementById('sort-by-select');
+        const orderSelectEl = document.getElementById('sort-order-select');
+
+        if (sortSelectEl && orderSelectEl) {
+            const sortSelect = new CustomSelect(sortSelectEl);
+            const orderSelect = new CustomSelect(orderSelectEl);
+
+            // Set initial values from URL or defaults
+            const params = new URLSearchParams(window.location.search);
+            if (params.has('sort')) sortSelect.setValue(params.get('sort'));
+            if (params.has('order')) orderSelect.setValue(params.get('order'));
+
+            const handleSortChange = () => {
+                const sort = sortSelect.getValue();
+                const order = orderSelect.getValue();
+
+                const url = new URL(window.location);
+                url.searchParams.set('sort', sort);
+                url.searchParams.set('order', order);
+                url.searchParams.set('page', this.currentPage);
+                window.history.pushState({}, '', url);
+
+                this.loadPage();
+            };
+
+            sortSelectEl.addEventListener('change', handleSortChange);
+            orderSelectEl.addEventListener('change', handleSortChange);
+        }
+    }
+
     reloadWithRating(rating) {
         this.galleryContainer.innerHTML = '';
         this.tagCounts.clear();
-        
+
         const url = new URL(window.location);
         url.searchParams.set('rating', rating);
         window.history.replaceState({}, '', url);
-        
+
         this.loadPage();
     }
-    
+
     async loadPage() {
         if (this.isLoading) return;
-        
+
         this.isLoading = true;
         this.showLoading();
-        
+
         // Clear gallery for new page
         this.galleryContainer.innerHTML = '';
         this.tagCounts.clear();
-        
+
         try {
             const params = new URLSearchParams(window.location.search);
             params.set('page', this.currentPage);
-            
+
             // Add rating filter
             const ratingFilter = document.querySelector('input[name="rating"]:checked');
             if (ratingFilter) {
                 params.set('rating', ratingFilter.value);
             }
-            
+
+            // Add sorting
+            const sortSelect = document.getElementById('sort-by-select');
+            const orderSelect = document.getElementById('sort-order-select');
+            if (sortSelect && orderSelect) {
+                params.set('sort', sortSelect.dataset.value);
+                params.set('order', orderSelect.dataset.value);
+            }
+
             const endpoint = params.has('q') ? '/api/search' : '/api/media/';
             const url = `${endpoint}?${params.toString()}`;
-            
+
             console.log('Loading gallery page:', url);
-            
+
             const response = await fetch(url);
-            
+
             // Check if response is ok
             if (!response.ok) {
                 const contentType = response.headers.get('content-type');
@@ -138,12 +178,12 @@ class Gallery {
                     throw new Error(`Server returned ${response.status}: ${text.substring(0, 100)}`);
                 }
             }
-            
+
             const data = await response.json();
             console.log('Gallery data loaded:', data);
-            
+
             this.totalPages = data.pages || 1;
-            
+
             if (data.items && data.items.length > 0) {
                 this.processTagCounts(data.items);
                 this.renderItems(data.items);
@@ -154,7 +194,7 @@ class Gallery {
                     this.showEmptyState();
                 }
             }
-            
+
         } catch (error) {
             console.error('Error loading gallery:', error);
             this.showError(error.message);
@@ -163,30 +203,30 @@ class Gallery {
             this.hideLoading();
         }
     }
-    
+
     renderPagination() {
         if (this.totalPages <= 1) {
             this.pageNavTop.style.display = 'none';
             return;
         }
-        
+
         const paginationHTML = this.generatePaginationHTML();
-        
+
         this.pageNavTop.querySelector('div').innerHTML = paginationHTML;
         this.pageNavTop.style.display = 'block';
-                
+
         // Add click handlers
         this.setupPaginationHandlers(this.pageNavTop);
     }
-    
+
     generatePaginationHTML() {
         const pages = [];
         const current = this.currentPage;
         const total = this.totalPages;
-        
+
         // Always show first page
         pages.push(this.createPageButton(1, current === 1));
-        
+
         if (total <= 7) {
             // Show all pages if 7 or fewer
             for (let i = 2; i <= total; i++) {
@@ -217,21 +257,21 @@ class Gallery {
                 pages.push(this.createPageButton(total, false));
             }
         }
-        
+
         return pages.join(' <span class="text-secondary">|</span> ');
     }
-    
+
     createPageButton(pageNum, isActive) {
         if (isActive) {
             return `<span class="px-2 py-1 font-bold text-primary">${pageNum}</span>`;
         }
         return `<a href="#" class="px-2 py-1 hover:text-primary page-link" data-page="${pageNum}">${pageNum}</a>`;
     }
-    
+
     createEllipsis() {
         return `<a href="#" class="px-2 py-1 hover:text-primary page-ellipsis">...</a>`;
     }
-    
+
     setupPaginationHandlers(container) {
         container.querySelectorAll('.page-link').forEach(link => {
             link.addEventListener('click', (e) => {
@@ -240,7 +280,7 @@ class Gallery {
                 this.goToPage(page);
             });
         });
-        
+
         container.querySelectorAll('.page-ellipsis').forEach(ellipsis => {
             ellipsis.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -248,13 +288,13 @@ class Gallery {
             });
         });
     }
-    
+
     setupPageJumpModal() {
         const modal = document.getElementById('page-jump-modal');
         const input = document.getElementById('page-jump-input');
         const goBtn = document.getElementById('page-jump-go');
         const cancelBtn = document.getElementById('page-jump-cancel');
-        
+
         goBtn.addEventListener('click', () => {
             const page = parseInt(input.value);
             if (page >= 1 && page <= this.totalPages) {
@@ -262,17 +302,17 @@ class Gallery {
                 this.goToPage(page);
             }
         });
-        
+
         cancelBtn.addEventListener('click', () => {
             modal.style.display = 'none';
         });
-        
+
         input.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 goBtn.click();
             }
         });
-        
+
         // Close on outside click
         modal.addEventListener('click', (e) => {
             if (e.target === modal) {
@@ -280,30 +320,30 @@ class Gallery {
             }
         });
     }
-    
+
     showPageJumpModal() {
         const modal = document.getElementById('page-jump-modal');
         const input = document.getElementById('page-jump-input');
-        
+
         input.max = this.totalPages;
         input.value = this.currentPage;
         modal.style.display = 'flex';
         input.focus();
         input.select();
     }
-    
+
     goToPage(page) {
         if (page < 1 || page > this.totalPages || page === this.currentPage) return;
-        
+
         this.currentPage = page;
-        
+
         const url = new URL(window.location);
         url.searchParams.set('page', page);
         window.history.pushState({}, '', url);
-        
+
         this.loadPage();
     }
-    
+
     processTagCounts(items) {
         items.forEach(item => {
             if (item.tags && Array.isArray(item.tags)) {
@@ -317,29 +357,29 @@ class Gallery {
             }
         });
     }
-    
+
     updatePopularTags() {
         if (!this.popularTagsContainer) return;
-        
+
         // Convert map to array and sort by count
         const sortedTags = Array.from(this.tagCounts.entries())
             .sort((a, b) => b[1].count - a[1].count)
             .slice(0, 20);
-        
+
         if (sortedTags.length === 0) {
             this.popularTagsContainer.innerHTML = '<p class="text-secondary">No tags found</p>';
             return;
         }
-        
+
         // Get current search query
         const currentParams = new URLSearchParams(window.location.search);
         const currentQuery = currentParams.get('q') || '';
         const currentTags = currentQuery.split(/\s+/).filter(t => t.length > 0);
-        
+
         this.popularTagsContainer.innerHTML = sortedTags.map(([tagName, data]) => {
             // Check if this tag is already in the search
             const isInQuery = currentTags.includes(tagName);
-            
+
             // Build the new query
             let newQuery;
             if (isInQuery) {
@@ -352,11 +392,11 @@ class Gallery {
                 // No existing query, just use this tag
                 newQuery = tagName;
             }
-            
+
             const params = new URLSearchParams(window.location.search);
             params.set('q', newQuery);
             params.delete('page');
-            
+
             return `
                 <div class="${isInQuery ? 'popular-tag-item opacity-50' : 'popular-tag-item'}">
                     <a href="/?${params.toString()}" class="popular-tag-name tag ${data.category} tag-text" ${isInQuery ? 'style="pointer-events: none;"' : ''}>${tagName}</a>
@@ -365,14 +405,14 @@ class Gallery {
             `;
         }).join('');
     }
-    
+
     renderItems(items) {
         items.forEach(item => {
             const element = this.createGalleryItem(item);
             this.galleryContainer.appendChild(element);
         });
     }
-    
+
     createGalleryItem(media) {
         const item = document.createElement('div');
         item.className = `gallery-item ${media.file_type}`;
@@ -392,7 +432,7 @@ class Gallery {
             }
             this.updateBulkActionsUI();
         });
-        
+
         const img = document.createElement('img');
         img.src = `/api/media/${media.id}/thumbnail`;
         img.alt = media.filename;
@@ -402,20 +442,20 @@ class Gallery {
             console.error('Failed to load thumbnail for media:', media.id);
             img.src = '/static/images/no-thumbnail.png'; // Fallback image
         };
-        
+
         const link = document.createElement('a');
         const params = new URLSearchParams(window.location.search);
         const queryString = params.toString();
         link.href = `/media/${media.id}${queryString ? '?' + queryString : ''}`;
         link.appendChild(img);
-        
+
         if (this.tooltipHelper && media.tags && media.tags.length > 0) {
             this.tooltipHelper.addToElement(item, media.tags);
         }
-        
+
         item.appendChild(checkbox);
         item.appendChild(link);
-        
+
         // Add share icon if shared
         if (media.is_shared) {
             const shareIcon = document.createElement('div');
@@ -423,19 +463,19 @@ class Gallery {
             shareIcon.textContent = 'SHARED';
             item.appendChild(shareIcon);
         }
-        
+
         return item;
     }
-    
+
     setupBulkActions() {
         const bulkDeleteBtn = document.getElementById('bulk-delete-btn');
         const selectAllBtn = document.getElementById('select-all-btn');
         const deselectAllBtn = document.getElementById('deselect-all-btn');
-        
+
         if (bulkDeleteBtn) {
             bulkDeleteBtn.addEventListener('click', () => this.bulkDelete());
         }
-        
+
         if (selectAllBtn) {
             selectAllBtn.addEventListener('click', () => this.selectAll());
         }
@@ -444,22 +484,22 @@ class Gallery {
             deselectAllBtn.addEventListener('click', () => this.clearSelection());
         }
     }
-    
+
     updateBulkActionsUI() {
         const bulkActions = document.getElementById('bulk-actions');
         if (bulkActions) {
             bulkActions.style.display = this.selectedItems.size > 0 ? 'block' : 'none';
         }
-        
+
         const count = document.getElementById('selected-count');
         if (count) {
             count.textContent = this.selectedItems.size;
         }
     }
-    
+
     async bulkDelete() {
         const itemCount = this.selectedItems.size;
-        
+
         const modal = new ModalHelper({
             id: `bulk-delete-modal-${itemCount > 1 ? 'multi-item' : 'single-item'}`,
             type: 'danger',
@@ -475,7 +515,7 @@ class Gallery {
                         await app.apiCall(`/api/media/${id}`, {
                             method: 'DELETE'
                         });
-                        
+
                         const element = document.querySelector(`[data-id="${id}"]`);
                         if (element) {
                             element.remove();
@@ -484,15 +524,15 @@ class Gallery {
                         console.error(`Error deleting media ${id}:`, error);
                     }
                 }
-                
+
                 this.clearSelection();
                 this.loadPage();
             }
         });
-        
+
         modal.show();
     }
-    
+
     clearSelection() {
         this.selectedItems.clear();
         document.querySelectorAll('.gallery-item').forEach(item => {
@@ -507,7 +547,7 @@ class Gallery {
         document.querySelectorAll('.gallery-item').forEach(item => {
             const id = parseInt(item.dataset.id);
             const checkbox = item.querySelector('.checkbox');
-            
+
             if (checkbox && !checkbox.checked) {
                 checkbox.checked = true;
                 this.selectedItems.add(id);
@@ -516,19 +556,19 @@ class Gallery {
         });
         this.updateBulkActionsUI();
     }
-    
+
     showLoading() {
         if (this.loadingIndicator) {
             this.loadingIndicator.style.display = 'block';
         }
     }
-    
+
     hideLoading() {
         if (this.loadingIndicator) {
             this.loadingIndicator.style.display = 'none';
         }
     }
-    
+
     showEmptyState() {
         this.galleryContainer.innerHTML = `
             <div style="grid-column: 1 / -1; text-align: center; padding: 4rem; color: var(--text-secondary);">
@@ -537,12 +577,12 @@ class Gallery {
                 ${app.isAuthenticated ? '<a href="/admin" class="btn">Go to Admin Panel</a>' : ''}
             </div>
         `;
-        
+
         if (this.popularTagsContainer) {
             this.popularTagsContainer.innerHTML = '<p class="text-secondary">No tags found</p>';
         }
     }
-    
+
     showError(message) {
         const errorDiv = document.createElement('div');
         errorDiv.style.cssText = `

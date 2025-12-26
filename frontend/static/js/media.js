@@ -6,7 +6,7 @@ class MediaViewer extends MediaViewerBase {
         this.validationTimeout = null;
         this.tooltipHelper = null;
         this.ratingSelect = null;
-        
+
         this.init();
     }
 
@@ -38,18 +38,18 @@ class MediaViewer extends MediaViewerBase {
                 aiMetadataShareToggle.style.display = 'none';
             }
 
-            await this.renderAIMetadata(this.currentMedia, { 
-                showControls: app.isAdminMode 
+            await this.renderAIMetadata(this.currentMedia, {
+                showControls: app.isAdminMode
             });
-            
+
             if (app.isAdminMode) {
                 this.setupAdminMode();
             }
-            
+
             if (this.currentMedia.is_shared) {
                 this.showShareLink(this.currentMedia.share_uuid, this.currentMedia.share_ai_metadata);
             }
-            
+
             await this.loadRelatedMedia();
         } catch (e) {
             console.error('loadMedia error', e);
@@ -62,13 +62,13 @@ class MediaViewer extends MediaViewerBase {
         this.el('admin-actions').style.display = 'block';
         this.el('unshare-btn').style.display = 'block';
         this.setupTagInput();
-        
+
         // Set source input value
         const sourceInput = this.el('source-input');
         if (sourceInput) {
             sourceInput.value = this.currentMedia.source || '';
         }
-        
+
         // Initialize tag autocomplete
         const tagsInput = this.el('tags-input');
         if (tagsInput) {
@@ -78,12 +78,12 @@ class MediaViewer extends MediaViewerBase {
                     setTimeout(() => this.validateAndStyleTags(), 100);
                 }
             });
-            
+
             // Set initial tags
             tagsInput.textContent = (this.currentMedia.tags || []).map(t => t.name).join(' ');
             setTimeout(() => this.validateAndStyleTags(), 100);
         }
-        
+
         // Initialize custom select for rating
         const ratingSelectElement = this.el('rating-select');
         if (ratingSelectElement) {
@@ -100,7 +100,7 @@ class MediaViewer extends MediaViewerBase {
             container.innerHTML = `<video controls loop><source src="/api/media/${media.id}/file" type="${media.mime_type}"></video>`;
         } else {
             container.innerHTML = `<img src="/api/media/${media.id}/file" alt="${media.filename}" id="main-media-image">`;
-            
+
             setTimeout(() => {
                 const mainImage = this.el('main-media-image');
                 if (mainImage) {
@@ -118,9 +118,9 @@ class MediaViewer extends MediaViewerBase {
     setupTagInput() {
         const tagsInput = this.el('tags-input');
         if (!tagsInput) return;
-        
+
         this.tagInputHelper.setupTagInput(tagsInput, 'media-tags-input', {
-            onValidate: () => {},
+            onValidate: () => { },
             validationCache: this.tagInputHelper.tagValidationCache,
             checkFunction: (tag) => this.tagInputHelper.checkTagExists(tag)
         });
@@ -129,7 +129,7 @@ class MediaViewer extends MediaViewerBase {
     async validateAndStyleTags() {
         const tagsInput = this.el('tags-input');
         if (!tagsInput) return;
-        
+
         await this.tagInputHelper.validateAndStyleTags(tagsInput, {
             validationCache: this.tagInputHelper.tagValidationCache,
             checkFunction: (tag) => this.tagInputHelper.checkTagExists(tag)
@@ -139,11 +139,11 @@ class MediaViewer extends MediaViewerBase {
     async getTagOrAlias(tagName) {
         if (!tagName || !tagName.trim()) return null;
         const normalized = tagName.toLowerCase().trim();
-        
+
         try {
             const res = await fetch(`/api/tags/${encodeURIComponent(normalized)}`);
             if (!res.ok) return null;
-            
+
             const data = await res.json();
             return data.aliased_to || data.name;
         } catch (e) {
@@ -159,7 +159,7 @@ class MediaViewer extends MediaViewerBase {
         }
 
         let generalTags = this.currentMedia.tags.filter(t => t.category === 'general');
-    
+
         if (!generalTags.length) {
             this.hideRelatedMedia();
             return;
@@ -240,7 +240,7 @@ class MediaViewer extends MediaViewerBase {
         if (this.tooltipHelper && media.tags && media.tags.length > 0) {
             this.tooltipHelper.addToElement(item, media.tags);
         }
-        
+
         return item;
     }
 
@@ -300,15 +300,15 @@ class MediaViewer extends MediaViewerBase {
     async saveTags() {
         const tagsInput = this.el('tags-input');
         const validTags = this.tagInputHelper.getValidTagsFromInput(tagsInput);
-        
+
         try {
-            await app.apiCall(`/api/media/${this.mediaId}`, { 
-                method: 'PATCH', 
-                body: JSON.stringify({ tags: validTags }) 
+            await app.apiCall(`/api/media/${this.mediaId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ tags: validTags })
             });
             location.reload();
-        } catch (e) { 
-            app.showNotification(e.message, 'error', 'Error updating tags'); 
+        } catch (e) {
+            app.showNotification(e.message, 'error', 'Error updating tags');
         }
     }
 
@@ -317,25 +317,25 @@ class MediaViewer extends MediaViewerBase {
         const sourceValue = sourceInput.value.trim();
 
         try {
-            await app.apiCall(`/api/media/${this.mediaId}`, { 
-                method: 'PATCH', 
-                body: JSON.stringify({ source: sourceValue || null }) 
+            await app.apiCall(`/api/media/${this.mediaId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ source: sourceValue || null })
             });
             app.showNotification('Source updated successfully', 'success');
             location.reload();
-        } catch (e) { 
-            app.showNotification(e.message, 'error', 'Error updating source'); 
+        } catch (e) {
+            app.showNotification(e.message, 'error', 'Error updating source');
         }
     }
 
     async updateRating(rating) {
         try {
-            await app.apiCall(`/api/media/${this.mediaId}`, { 
-                method: 'PATCH', 
-                body: JSON.stringify({ rating }) 
+            await app.apiCall(`/api/media/${this.mediaId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ rating })
             });
-        } catch (e) { 
-            app.showNotification(e.message, 'error', 'Error updating rating'); 
+        } catch (e) {
+            app.showNotification(e.message, 'error', 'Error updating rating');
         }
     }
 
@@ -343,13 +343,13 @@ class MediaViewer extends MediaViewerBase {
         try {
             const res = await app.apiCall(`/api/media/${this.mediaId}/share`, { method: 'POST' });
             this.showShareLink(res.share_url.split('/').pop(), res.share_ai_metadata);
-        } catch (e) { 
-            app.showNotification(e.message, 'error', 'Error creating share link'); 
+        } catch (e) {
+            app.showNotification(e.message, 'error', 'Error creating share link');
         }
     }
 
     copyShareLink() {
-        this.el('share-link-input').select(); 
+        this.el('share-link-input').select();
         document.execCommand('copy');
     }
 
@@ -362,15 +362,15 @@ class MediaViewer extends MediaViewerBase {
             confirmText: 'Yes, Unshare',
             cancelText: 'Cancel',
             confirmId: 'unshare-confirm-yes',
-            cancelId: 'unshare-confirm-no', 
+            cancelId: 'unshare-confirm-no',
             onConfirm: async () => {
                 try {
                     await app.apiCall(`/api/media/${this.mediaId}/share`, { method: 'DELETE' });
                     this.el('share-link-section').style.display = 'none';
                     this.el('share-btn').style.display = 'block';
                     app.showNotification('Media successfully unshared', 'success');
-                } catch (e) { 
-                    app.showNotification(e.message, 'error', 'Error removing share'); 
+                } catch (e) {
+                    app.showNotification(e.message, 'error', 'Error removing share');
                 }
             }
         });
@@ -391,8 +391,8 @@ class MediaViewer extends MediaViewerBase {
                 try {
                     await app.apiCall(`/api/media/${this.mediaId}`, { method: 'DELETE' });
                     window.location.href = '/';
-                } catch (e) { 
-                    app.showNotification(e.message, 'error', 'Error deleting media'); 
+                } catch (e) {
+                    app.showNotification(e.message, 'error', 'Error deleting media');
                 }
             }
         });
@@ -401,7 +401,7 @@ class MediaViewer extends MediaViewerBase {
 
     async updateShareSettings(shareAIMetadata) {
         try {
-            await app.apiCall(`/api/media/${this.mediaId}/share-settings?share_ai_metadata=${shareAIMetadata}`, { 
+            await app.apiCall(`/api/media/${this.mediaId}/share-settings?share_ai_metadata=${shareAIMetadata}`, {
                 method: 'PATCH'
             });
         } catch (err) {
@@ -418,20 +418,20 @@ class MediaViewer extends MediaViewerBase {
                 app.showNotification('Could not load AI metadata', 'error');
                 return;
             }
-        
+
             const metadata = await res.json();
             const aiPrompt = this.extractAIPrompt(metadata);
-        
+
             if (!aiPrompt || typeof aiPrompt !== 'string') {
                 app.showNotification('No AI prompt found in metadata', 'error');
                 return;
             }
-        
+
             const promptTags = aiPrompt
                 .split(',')
                 .map(tag => tag.trim().replace(/\s+/g, '_'))
                 .filter(tag => tag.length > 0);
-        
+
             const validTags = [];
             for (const tag of promptTags) {
                 const validTag = await this.getTagOrAlias(tag);
@@ -439,30 +439,30 @@ class MediaViewer extends MediaViewerBase {
                     validTags.push(validTag);
                 }
             }
-        
+
             if (validTags.length === 0) {
                 app.showNotification('No valid tags found in AI prompt', 'error');
                 return;
             }
-        
+
             const tagsInput = this.el('tags-input');
             const currentText = this.tagInputHelper.getPlainTextFromDiv(tagsInput).trim();
             const currentTags = currentText ? currentText.split(/\s+/) : [];
-        
+
             const existingTagsSet = new Set(currentTags.map(t => t.toLowerCase()));
             const newTags = validTags.filter(tag => !existingTagsSet.has(tag.toLowerCase()));
-        
+
             if (newTags.length === 0) {
                 app.showNotification('All AI tags are already present', 'info');
                 return;
             }
-        
+
             const allTags = [...currentTags, ...newTags];
             tagsInput.textContent = allTags.join(' ');
-        
+
             await this.validateAndStyleTags();
             app.showNotification(`Appended ${newTags.length} tag(s) from AI prompt`, 'success');
-        
+
         } catch (e) {
             console.error('Error appending AI tags:', e);
             app.showNotification('Error processing AI tags: ' + e.message, 'error');
@@ -495,7 +495,7 @@ class MediaViewer extends MediaViewerBase {
 
         // Fallback: if aiData has a prompt nested somewhere
         for (const [key, value] of Object.entries(aiData)) {
-            if (key.toLowerCase().includes('prompt') && 
+            if (key.toLowerCase().includes('prompt') &&
                 !key.toLowerCase().includes('negative') &&
                 typeof value === 'string') {
                 return value;

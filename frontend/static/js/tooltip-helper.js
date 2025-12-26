@@ -6,12 +6,12 @@ class TooltipHelper {
             maxWidth: options.maxWidth || 300,
             ...options
         };
-        
+
         this.tooltipElement = null;
         this.activeElement = null;
         this.hoverTimeouts = new Map();
         this.scrollHandler = null;
-        
+
         this.init();
     }
 
@@ -50,7 +50,7 @@ class TooltipHelper {
 
         // Handle different content types
         let displayText = '';
-        
+
         if (typeof content === 'string') {
             displayText = content;
         } else if (Array.isArray(content)) {
@@ -60,7 +60,7 @@ class TooltipHelper {
                 if (item.name) return item.name;
                 return String(item);
             });
-            
+
             // Sort alphabetically
             items.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
             displayText = items.join(', ');
@@ -114,26 +114,26 @@ class TooltipHelper {
     // Add hover events to an element
     addToElement(element, contentProvider, options = {}) {
         const delay = options.delay || this.options.delay;
-        
+
         element.addEventListener('mouseenter', () => {
             // Clear any existing timeout for this element
             if (this.hoverTimeouts.has(element)) {
                 clearTimeout(this.hoverTimeouts.get(element));
             }
-            
+
             // Set new timeout
             const timeoutId = setTimeout(() => {
-                const content = typeof contentProvider === 'function' 
-                    ? contentProvider(element) 
+                const content = typeof contentProvider === 'function'
+                    ? contentProvider(element)
                     : contentProvider;
-                    
+
                 if (content) {
                     this.show(element, content);
                 }
-                
+
                 this.hoverTimeouts.delete(element);
             }, delay);
-            
+
             this.hoverTimeouts.set(element, timeoutId);
         });
 
@@ -154,7 +154,7 @@ class TooltipHelper {
                 this.position(this.activeElement);
             }
         };
-        
+
         window.addEventListener('scroll', this.scrollHandler, { passive: true });
     }
 
@@ -165,12 +165,12 @@ class TooltipHelper {
             clearTimeout(timeoutId);
         }
         this.hoverTimeouts.clear();
-        
+
         // Remove scroll handler
         if (this.scrollHandler) {
             window.removeEventListener('scroll', this.scrollHandler);
         }
-        
+
         // Remove tooltip element
         if (this.tooltipElement && this.tooltipElement.parentNode) {
             this.tooltipElement.parentNode.removeChild(this.tooltipElement);

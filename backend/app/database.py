@@ -54,3 +54,20 @@ def init_db():
     from . import models
     
     Base.metadata.create_all(bind=engine)
+    
+    check_and_migrate_schema(engine)
+
+def check_and_migrate_schema(engine):
+    """Check for missing columns and add them (simple migration)"""
+    from sqlalchemy import text, inspect
+    
+    inspector = inspect(engine)
+    columns = [c['name'] for c in inspector.get_columns('blombooru_media')]
+    
+    with engine.connect() as conn:
+        # Add created_at if missing
+        if 'created_at' not in columns:
+            print("Migrating: Adding created_at column to blombooru_media")
+            conn.execute(text("ALTER TABLE blombooru_media ADD COLUMN created_at TIMESTAMP WITH TIME ZONE"))
+            conn.execute(text("UPDATE blombooru_media SET created_at = uploaded_at"))
+            conn.commit()

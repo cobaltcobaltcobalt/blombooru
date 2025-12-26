@@ -3,7 +3,7 @@ class SharedViewer extends MediaViewerBase {
         super();
         this.shareUuid = shareUuid;
         this.ageVerificationModal = null;
-        
+
         this.init();
     }
 
@@ -34,11 +34,11 @@ class SharedViewer extends MediaViewerBase {
         try {
             const response = await fetch(`/api/shared/${this.shareUuid}`);
             const data = await response.json();
-            
+
             if (data.type === 'media') {
                 this.currentMedia = data.data;
                 this.renderSharedMedia(this.currentMedia);
-                
+
                 // Check if content is explicit and show age verification
                 if (this.currentMedia.rating === 'explicit') {
                     this.showAgeVerification();
@@ -112,16 +112,16 @@ class SharedViewer extends MediaViewerBase {
                 </div>
             </div>
         `;
-        
+
         // Render the data into the containers
         this.renderInfo(media, { isShared: true });
         this.renderTags(media, { clickable: false });
-        
+
         // Only render AI metadata if sharing is enabled
         if (showAIMetadata) {
             this.renderAIMetadata(media, { showControls: false, isShared: true });
         }
-        
+
         // Add click listener for fullscreen (only for images/GIFs)
         if (media.file_type !== 'video') {
             this.setupImageClickHandler();

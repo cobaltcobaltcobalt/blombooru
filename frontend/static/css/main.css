@@ -20,26 +20,30 @@
     color: var(--primary-text);
     background: var(--primary-color);
 }
+
 ::selection {
     color: var(--primary-text);
     background: var(--primary-color);
 }
 
 ::placeholder {
-  color: var(--text-tertiary);
-  opacity: 1;
-}
-::-ms-input-placeholder {
-  color: var(--text-tertiary);
+    color: var(--text-tertiary);
+    opacity: 1;
 }
 
-input[type="radio"]:checked + span, span.checked {
+::-ms-input-placeholder {
+    color: var(--text-tertiary);
+}
+
+input[type="radio"]:checked+span,
+span.checked {
     border-color: var(--primary-color);
     background-color: var(--primary-color);
     color: var(--primary-text);
 }
 
-input[type="radio"]:checked + span:hover, span.checked:hover {
+input[type="radio"]:checked+span:hover,
+span.checked:hover {
     background-color: var(--primary-hover);
 }
 
@@ -153,11 +157,25 @@ input[type="radio"]:checked + span:hover, span.checked:hover {
     opacity: 0.8;
 }
 
-.tag.artist { background-color: var(--tag-artist); }
-.tag.character { background-color: var(--tag-character); }
-.tag.copyright { background-color: var(--tag-copyright); }
-.tag.general { background-color: var(--tag-general); }
-.tag.meta { background-color: var(--tag-meta); }
+.tag.artist {
+    background-color: var(--tag-artist);
+}
+
+.tag.character {
+    background-color: var(--tag-character);
+}
+
+.tag.copyright {
+    background-color: var(--tag-copyright);
+}
+
+.tag.general {
+    background-color: var(--tag-general);
+}
+
+.tag.meta {
+    background-color: var(--tag-meta);
+}
 
 /* Gallery styling */
 .gallery-item {
@@ -177,7 +195,7 @@ input[type="radio"]:checked + span:hover, span.checked:hover {
 
 .gallery-item a img {
     border-width: 2px;
-    border-style:  solid;
+    border-style: solid;
     border-color: var(--border);
     max-width: 100%;
     max-height: 100%;
@@ -247,7 +265,8 @@ input[type="radio"]:checked + span:hover, span.checked:hover {
 }
 
 .info-row:last-child {
-    border-bottom: 0;;
+    border-bottom: 0;
+    ;
 }
 
 .ai-section {
@@ -445,8 +464,13 @@ input[type="radio"]:checked + span:hover, span.checked:hover {
 
 /* Loading Spinner */
 @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
 }
 
 .spinner {
@@ -561,6 +585,7 @@ input[type="radio"]:checked + span:hover, span.checked:hover {
         transform: translateY(-100px) scale(0.85);
         opacity: 0;
     }
+
     to {
         transform: translateY(0) scale(1);
         opacity: 1;
@@ -571,6 +596,7 @@ input[type="radio"]:checked + span:hover, span.checked:hover {
     from {
         opacity: 1;
     }
+
     to {
         opacity: 0;
     }

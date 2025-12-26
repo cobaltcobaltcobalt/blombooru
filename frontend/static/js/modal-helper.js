@@ -20,7 +20,7 @@ class ModalHelper {
 
         this.modalElement = null;
         this.isVisible = false;
-        
+
         this.init();
     }
 
@@ -108,7 +108,7 @@ class ModalHelper {
         modal.style.display = 'none';
 
         const iconHTML = this.options.showIcon ? this.getIconSVG(this.options.type) : '';
-        
+
         modal.innerHTML = `
             <div class="surface border-2 ${this.getBorderClass(this.options.type)} p-8 max-w-md text-center">
                 ${iconHTML}
