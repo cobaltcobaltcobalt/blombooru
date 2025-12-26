@@ -503,12 +503,11 @@ class BaseGallery {
 
             return `
                 <div class="${isInQuery ? 'popular-tag-item opacity-50' : 'popular-tag-item'}">
-                    <a href="/?${params.toString()}" 
-                       class="popular-tag-name tag ${data.category || 'general'} tag-text" 
+                    <span class="popular-tag-name tag ${data.category || 'general'} tag-text" 
                        ${isInQuery ? 'style="pointer-events: none;"' : ''}>
-                        ${tagName}
-                    </a>
-                    <span class="popular-tag-count">${data.count}</span>
+                        <a href="/?${params.toString()}">${tagName}</a>
+                        <span class="popular-tag-count">${data.count}</span>
+                    </span>
                 </div>
             `;
         }).join('');

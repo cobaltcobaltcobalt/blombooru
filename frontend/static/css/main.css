@@ -219,8 +219,6 @@ span.checked:hover {
 }
 
 .popular-tag-item {
-    display: flex;
-    justify-content: space-between;
     align-items: center;
     padding: 0.4rem 0;
     border-bottom: 1px solid var(--border);
@@ -232,7 +230,8 @@ span.checked:hover {
 }
 
 .popular-tag-name {
-    flex: 1;
+    display: flex;
+    justify-content: space-between;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -243,7 +242,6 @@ span.checked:hover {
 }
 
 .popular-tag-count {
-    color: var(--text-secondary);
     font-weight: bold;
     font-size: 0.7rem;
     flex-shrink: 0;
