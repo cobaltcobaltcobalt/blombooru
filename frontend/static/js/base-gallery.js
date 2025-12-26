@@ -302,12 +302,14 @@ class BaseGallery {
 
     // ==================== Bulk Actions ====================
 
+
     setupBulkActions() {
         const selectAllBtn = document.getElementById('select-all-btn');
         const deselectAllBtn = document.getElementById('deselect-all-btn');
         const bulkDeleteBtn = document.getElementById('bulk-delete-btn');
         const bulkAlbumBtn = document.getElementById('bulk-album-btn');
         const bulkRemoveBtn = document.getElementById('bulk-remove-btn');
+        const bulkAITagsBtn = document.getElementById('bulk-ai-tags-btn');
 
         if (selectAllBtn) {
             selectAllBtn.addEventListener('click', () => this.selectAll());
@@ -323,6 +325,27 @@ class BaseGallery {
         }
         if (bulkRemoveBtn) {
             bulkRemoveBtn.addEventListener('click', () => this.bulkRemove());
+        }
+        if (bulkAITagsBtn) {
+            bulkAITagsBtn.addEventListener('click', () => this.openBulkAITagsModal());
+        }
+
+        // Initialize bulk AI tags modal if the class exists
+        if (typeof BulkAITagsModal !== 'undefined') {
+            this.bulkAITagsModal = new BulkAITagsModal({
+                onSave: () => {
+                    this.clearSelection();
+                    this.loadContent();
+                }
+            });
+        }
+    }
+
+    openBulkAITagsModal() {
+        if (this.selectedItems.size === 0) return;
+
+        if (this.bulkAITagsModal) {
+            this.bulkAITagsModal.show(this.selectedItems);
         }
     }
 
