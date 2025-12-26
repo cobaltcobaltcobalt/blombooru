@@ -1,24 +1,13 @@
-class BulkWDTaggerModal {
+class BulkWDTaggerModal extends BulkTagModalBase {
     constructor(options = {}) {
-        this.options = {
-            id: options.id || 'bulk-wd-tagger-modal',
-            onSave: options.onSave || null,
-            onClose: options.onClose || null,
-            closeOnEscape: options.closeOnEscape !== false,
-            closeOnOutsideClick: options.closeOnOutsideClick !== false,
+        super({
+            id: 'bulk-wd-tagger-modal',
+            title: 'Bulk AI Tag Prediction (WD Tagger)',
+            classPrefix: 'bulk-wd-tagger',
+            emptyMessage: 'No new tags could be predicted for the selected items.',
             ...options
-        };
+        });
 
-        this.modalElement = null;
-        this.isVisible = false;
-        this.selectedItems = new Set();
-        this.bulkTagsData = [];
-
-        // Cancellation support
-        this.abortController = null;
-        this.isCancelled = false;
-
-        // Settings
         this.settings = {
             generalThreshold: 0.35,
             characterThreshold: 0.85,
@@ -27,167 +16,118 @@ class BulkWDTaggerModal {
             modelName: 'wd-eva02-large-tagger-v3'
         };
 
-        // Tag resolution cache
-        this.tagResolutionCache = new Map();
-
-        // Initialize the helper class
-        this.tagInputHelper = typeof TagInputHelper !== 'undefined' ? new TagInputHelper() : null;
-
         this.init();
     }
 
-    init() {
-        this.createModal();
-        this.setupEventListeners();
+    getStates() {
+        return ['loading', 'content', 'empty', 'error', 'cancelled', 'download-confirm', 'downloading'];
     }
 
-    createModal() {
-        if (document.getElementById(this.options.id)) {
-            this.modalElement = document.getElementById(this.options.id);
-            return;
-        }
+    getBodyHTML() {
+        return `
+            ${this.getSettingsHTML()}
+            ${this.getDownloadConfirmHTML()}
+            ${this.getDownloadingHTML()}
+            ${this.getLoadingHTML('Initializing AI Tagger...')}
+            ${this.getContentHTML()}
+            ${this.getEmptyHTML()}
+            ${this.getErrorHTML()}
+            ${this.getCancelledHTML()}
+        `;
+    }
 
-        const modal = document.createElement('div');
-        modal.id = this.options.id;
-        modal.className = 'fixed inset-0 flex items-center justify-center z-50';
-        modal.style.display = 'none';
-        modal.style.background = 'rgba(0, 0, 0, 0.5)';
-
-        modal.innerHTML = `
-            <div class="surface p-6 max-w-4xl w-full mx-4 max-h-[80vh] flex flex-col border">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-lg font-bold">Bulk AI Tag Prediction (WD Tagger)</h2>
-                    <button class="bulk-wd-tagger-close text-secondary hover:text text-2xl leading-none">&times;</button>
-                </div>
-                
-                <!-- Settings -->
-                <div class="bulk-wd-tagger-settings mb-4 p-3 surface-light border text-sm" style="display: none;">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div>
-                            <label class="block text-xs text-secondary mb-1">General Confidence Threshold</label>
-                            <input type="number" class="wd-general-threshold w-full px-2 py-1 border surface text-sm" 
-                                   min="0" max="1" step="0.05" value="0.35">
-                        </div>
-                        <div>
-                            <label class="block text-xs text-secondary mb-1">Character Confidence Threshold</label>
-                            <input type="number" class="wd-character-threshold w-full px-2 py-1 border surface text-sm" 
-                                   min="0" max="1" step="0.05" value="0.85">
-                        </div>
+    getSettingsHTML() {
+        const prefix = this.options.classPrefix;
+        return `
+            <div class="${prefix}-settings mb-4 p-3 surface-light border text-sm" style="display: none;">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-secondary mb-1">General Confidence Threshold</label>
+                        <input type="number" class="wd-general-threshold w-full px-2 py-1 border surface text-sm" 
+                               min="0" max="1" step="0.05" value="${this.settings.generalThreshold}">
                     </div>
-                </div>
-                
-                <!-- Model Download Confirmation -->
-                <div class="bulk-wd-tagger-download-confirm text-center py-8" style="display: none;">
-                    <div class="mb-4">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mx-auto text-warning">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                            <polyline points="7 10 12 15 17 10"></polyline>
-                            <line x1="12" y1="15" x2="12" y2="3"></line>
-                        </svg>
-                    </div>
-                    <p class="text-secondary mb-2">The AI model needs to be downloaded first.</p>
-                    <p class="text-secondary text-sm mb-4">
-                        Model: <strong class="download-model-name">wd-eva02-large-tagger-v3</strong><br>
-                        Size: approximately <strong class="download-model-size">~850 MB</strong>
-                    </p>
-                    <div class="flex justify-center gap-2">
-                        <button class="bulk-wd-tagger-download-cancel px-4 py-2 surface-light text text-sm">
-                            Cancel
-                        </button>
-                        <button class="bulk-wd-tagger-download-confirm-btn px-4 py-2 bg-primary tag-text text-sm">
-                            Download & Continue
-                        </button>
-                    </div>
-                </div>
-                
-                <!-- Model Downloading -->
-                <div class="bulk-wd-tagger-downloading text-center py-8" style="display: none;">
-                    <div class="mb-4">
-                        <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-primary border-t-transparent"></div>
-                    </div>
-                    <p class="text-secondary mb-2">Downloading AI model...</p>
-                    <p class="text-secondary text-sm">This may take a few minutes depending on your connection.</p>
-                    <p class="text-secondary text-xs mt-2">Model files are cached locally for future use.</p>
-                </div>
-                
-                <!-- Loading/Processing state -->
-                <div class="bulk-wd-tagger-loading text-center py-8" style="display: none;">
-                    <p class="text-secondary bulk-wd-tagger-status">Initializing AI Tagger...</p>
-                    <p class="text-secondary text-sm mt-2">
-                        <span class="bulk-wd-tagger-progress">0</span> / <span class="bulk-wd-tagger-total">0</span> <span class="bulk-wd-tagger-phase">items processed</span>
-                    </p>
-                </div>
-                
-                <!-- Content with editable items -->
-                <div class="bulk-wd-tagger-content flex-1 overflow-y-auto" style="display: none;">
-                    <p class="text-secondary mb-4 text-sm">Review predicted tags for each item. Invalid tags are highlighted in red.</p>
-                    <div class="bulk-wd-tagger-items space-y-3"></div>
-                </div>
-                
-                <!-- Empty state -->
-                <div class="bulk-wd-tagger-empty text-center py-8" style="display: none;">
-                    <p class="text-secondary">No new tags could be predicted for the selected items.</p>
-                </div>
-                
-                <!-- Error state -->
-                <div class="bulk-wd-tagger-error text-center py-8" style="display: none;">
-                    <p class="text-danger bulk-wd-tagger-error-message">An error occurred.</p>
-                </div>
-                
-                <!-- Cancelled state -->
-                <div class="bulk-wd-tagger-cancelled text-center py-8" style="display: none;">
-                    <p class="text-secondary">Operation cancelled.</p>
-                </div>
-                
-                <div class="flex justify-between gap-2 mt-4 pt-4 border-t border-color bg-surface z-20">
-                    <button class="bulk-wd-tagger-toggle-settings px-3 py-2 surface-light text text-sm">
-                        Settings
-                    </button>
-                    <div class="flex gap-2">
-                        <button class="bulk-wd-tagger-cancel px-4 py-2 surface-light transition-colors hover:surface-light text text-sm">
-                            Cancel
-                        </button>
-                        <button class="bulk-wd-tagger-save px-4 py-2 bg-primary transition-colors hover:bg-primary tag-text text-sm" style="display: none;">
-                            Save All
-                        </button>
+                    <div>
+                        <label class="block text-xs text-secondary mb-1">Character Confidence Threshold</label>
+                        <input type="number" class="wd-character-threshold w-full px-2 py-1 border surface text-sm" 
+                               min="0" max="1" step="0.05" value="${this.settings.characterThreshold}">
                     </div>
                 </div>
             </div>
         `;
-
-        document.body.appendChild(modal);
-        this.modalElement = modal;
     }
 
-    setupEventListeners() {
-        if (!this.modalElement) return;
+    getDownloadConfirmHTML() {
+        const prefix = this.options.classPrefix;
+        return `
+            <div class="${prefix}-download-confirm text-center py-8" style="display: none;">
+                <div class="mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mx-auto text-warning">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                </div>
+                <p class="text-secondary mb-2">The AI model needs to be downloaded first.</p>
+                <p class="text-secondary text-sm mb-4">
+                    Model: <strong class="download-model-name">${this.settings.modelName}</strong><br>
+                    Size: approximately <strong class="download-model-size">~850 MB</strong>
+                </p>
+                <div class="flex justify-center gap-2">
+                    <button class="${prefix}-download-cancel px-4 py-2 surface-light text text-sm">
+                        Cancel
+                    </button>
+                    <button class="${prefix}-download-confirm-btn px-4 py-2 bg-primary tag-text text-sm">
+                        Download & Continue
+                    </button>
+                </div>
+            </div>
+        `;
+    }
 
-        const closeBtn = this.modalElement.querySelector('.bulk-wd-tagger-close');
-        if (closeBtn) closeBtn.addEventListener('click', () => this.cancel());
+    getDownloadingHTML() {
+        const prefix = this.options.classPrefix;
+        return `
+            <div class="${prefix}-downloading text-center py-8" style="display: none;">
+                <div class="mb-4">
+                    <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-primary border-t-transparent"></div>
+                </div>
+                <p class="text-secondary mb-2">Downloading AI model...</p>
+                <p class="text-secondary text-sm">This may take a few minutes depending on your connection.</p>
+                <p class="text-secondary text-xs mt-2">Model files are cached locally for future use.</p>
+            </div>
+        `;
+    }
 
-        const cancelBtn = this.modalElement.querySelector('.bulk-wd-tagger-cancel');
-        if (cancelBtn) cancelBtn.addEventListener('click', () => this.cancel());
+    getFooterLeftHTML() {
+        const prefix = this.options.classPrefix;
+        return `
+            <button class="${prefix}-toggle-settings px-3 py-2 surface-light text text-sm">
+                Settings
+            </button>
+        `;
+    }
 
-        const saveBtn = this.modalElement.querySelector('.bulk-wd-tagger-save');
-        if (saveBtn) saveBtn.addEventListener('click', () => this.saveAllTags());
+    setupAdditionalEventListeners() {
+        const prefix = this.options.classPrefix;
 
-        const toggleSettings = this.modalElement.querySelector('.bulk-wd-tagger-toggle-settings');
+        // Settings toggle
+        const toggleSettings = this.modalElement.querySelector(`.${prefix}-toggle-settings`);
         if (toggleSettings) {
             toggleSettings.addEventListener('click', () => {
-                const settings = this.modalElement.querySelector('.bulk-wd-tagger-settings');
+                const settings = this.modalElement.querySelector(`.${prefix}-settings`);
                 if (settings) {
                     settings.style.display = settings.style.display === 'none' ? 'block' : 'none';
                 }
             });
         }
 
-        // Download confirmation buttons
-        const downloadCancelBtn = this.modalElement.querySelector('.bulk-wd-tagger-download-cancel');
+        // Download buttons
+        const downloadCancelBtn = this.modalElement.querySelector(`.${prefix}-download-cancel`);
         if (downloadCancelBtn) {
             downloadCancelBtn.addEventListener('click', () => this.cancel());
         }
 
-        const downloadConfirmBtn = this.modalElement.querySelector('.bulk-wd-tagger-download-confirm-btn');
+        const downloadConfirmBtn = this.modalElement.querySelector(`.${prefix}-download-confirm-btn`);
         if (downloadConfirmBtn) {
             downloadConfirmBtn.addEventListener('click', () => this.downloadModelAndContinue());
         }
@@ -206,152 +146,17 @@ class BulkWDTaggerModal {
                 this.settings.characterThreshold = parseFloat(e.target.value);
             });
         }
-
-        // Event delegation for items
-        const itemsContainer = this.modalElement.querySelector('.bulk-wd-tagger-items');
-        if (itemsContainer) {
-            itemsContainer.addEventListener('click', (e) => {
-                const btn = e.target.closest('button');
-                if (!btn) return;
-
-                const index = btn.dataset.index;
-                const input = this.modalElement.querySelector(`.bulk-wd-tag-input[data-index="${index}"]`);
-                if (!input) return;
-
-                if (btn.classList.contains('bulk-wd-tag-clear')) {
-                    input.textContent = '';
-                    this.triggerValidation(input);
-                }
-
-                if (btn.classList.contains('bulk-wd-tag-repredict')) {
-                    this.repredictSingleItem(index, input);
-                }
-            });
-        }
-
-        if (this.options.closeOnEscape) {
-            this._escapeHandler = (e) => {
-                if (e.key === 'Escape' && this.isVisible) this.cancel();
-            };
-            document.addEventListener('keydown', this._escapeHandler);
-        }
-
-        if (this.options.closeOnOutsideClick) {
-            this.modalElement.addEventListener('click', (e) => {
-                if (e.target === this.modalElement) this.cancel();
-            });
-        }
-    }
-
-    triggerValidation(input) {
-        if (this.tagInputHelper) {
-            this.tagInputHelper.validateAndStyleTags(input, {
-                validationCache: this.tagInputHelper.tagValidationCache,
-                checkFunction: (tag) => this.tagInputHelper.checkTagExists(tag)
-            });
-        }
-    }
-
-    show(selectedItems) {
-        if (!this.modalElement) {
-            this.createModal();
-            this.setupEventListeners();
-        }
-
-        this.selectedItems = new Set(selectedItems);
-        this.reset();
-        this.isCancelled = false;
-        this.abortController = new AbortController();
-        this.modalElement.style.display = 'flex';
-        this.isVisible = true;
-
-        // Check model status first
-        this.checkModelAndStart();
-
-        return this;
-    }
-
-    hide() {
-        if (this.modalElement) {
-            this.modalElement.style.display = 'none';
-            this.isVisible = false;
-        }
-
-        return this;
-    }
-
-    cancel() {
-        // Set cancelled flag
-        this.isCancelled = true;
-
-        // Abort all pending fetch requests
-        if (this.abortController) {
-            this.abortController.abort();
-            this.abortController = null;
-        }
-
-        this.hide();
-
-        if (typeof this.options.onClose === 'function') {
-            this.options.onClose();
-        }
     }
 
     reset() {
-        const states = [
-            '.bulk-wd-tagger-loading',
-            '.bulk-wd-tagger-content',
-            '.bulk-wd-tagger-empty',
-            '.bulk-wd-tagger-error',
-            '.bulk-wd-tagger-cancelled',
-            '.bulk-wd-tagger-download-confirm',
-            '.bulk-wd-tagger-downloading'
-        ];
-
-        states.forEach(selector => {
-            const el = this.modalElement.querySelector(selector);
-            if (el) el.style.display = 'none';
-        });
-
-        const saveBtn = this.modalElement.querySelector('.bulk-wd-tagger-save');
-        const itemsContainer = this.modalElement.querySelector('.bulk-wd-tagger-items');
-        const settings = this.modalElement.querySelector('.bulk-wd-tagger-settings');
-
-        if (saveBtn) saveBtn.style.display = 'none';
-        if (itemsContainer) itemsContainer.innerHTML = '';
+        super.reset();
+        const prefix = this.options.classPrefix;
+        const settings = this.modalElement.querySelector(`.${prefix}-settings`);
         if (settings) settings.style.display = 'none';
-
-        this.bulkTagsData = [];
     }
 
-    showState(state) {
-        const states = [
-            'loading', 'content', 'empty', 'error', 'cancelled',
-            'download-confirm', 'downloading'
-        ];
-
-        states.forEach(s => {
-            const el = this.modalElement.querySelector(`.bulk-wd-tagger-${s}`);
-            if (el) el.style.display = s === state ? 'block' : 'none';
-        });
-    }
-
-    updateProgress(current, total, status, phase) {
-        const progress = this.modalElement.querySelector('.bulk-wd-tagger-progress');
-        const totalEl = this.modalElement.querySelector('.bulk-wd-tagger-total');
-        const statusEl = this.modalElement.querySelector('.bulk-wd-tagger-status');
-        const phaseEl = this.modalElement.querySelector('.bulk-wd-tagger-phase');
-
-        if (progress) progress.textContent = current;
-        if (totalEl) totalEl.textContent = total;
-        if (statusEl) statusEl.textContent = status;
-        if (phaseEl) phaseEl.textContent = phase;
-    }
-
-    showError(message) {
-        this.showState('error');
-        const errorMsg = this.modalElement.querySelector('.bulk-wd-tagger-error-message');
-        if (errorMsg) errorMsg.textContent = message;
+    async onShow() {
+        await this.checkModelAndStart();
     }
 
     async checkModelAndStart() {
@@ -359,9 +164,7 @@ class BulkWDTaggerModal {
         this.updateProgress(0, 0, 'Checking AI model status...', '');
 
         try {
-            const response = await fetch(`/api/ai-tagger/model-status/${this.settings.modelName}`, {
-                signal: this.abortController?.signal
-            });
+            const response = await this.fetchWithAbort(`/api/ai-tagger/model-status/${this.settings.modelName}`);
 
             if (this.isCancelled) return;
 
@@ -372,10 +175,8 @@ class BulkWDTaggerModal {
             const status = await response.json();
 
             if (status.is_downloaded || status.is_loaded) {
-                // Model is ready, proceed
-                this.predictAllTags();
+                await this.fetchTags();
             } else {
-                // Need to download - show confirmation
                 const modelNameEl = this.modalElement.querySelector('.download-model-name');
                 const modelSizeEl = this.modalElement.querySelector('.download-model-size');
 
@@ -397,9 +198,8 @@ class BulkWDTaggerModal {
         this.showState('downloading');
 
         try {
-            const response = await fetch(`/api/ai-tagger/download/${this.settings.modelName}`, {
-                method: 'POST',
-                signal: this.abortController?.signal
+            const response = await this.fetchWithAbort(`/api/ai-tagger/download/${this.settings.modelName}`, {
+                method: 'POST'
             });
 
             if (this.isCancelled) return;
@@ -409,8 +209,7 @@ class BulkWDTaggerModal {
                 throw new Error(error.detail || 'Download failed');
             }
 
-            // Model downloaded, now proceed with predictions
-            this.predictAllTags();
+            await this.fetchTags();
         } catch (e) {
             if (e.name === 'AbortError') return;
             console.error('Error downloading model:', e);
@@ -418,26 +217,14 @@ class BulkWDTaggerModal {
         }
     }
 
-    async fetchWithAbort(url, options = {}) {
-        if (this.isCancelled) throw new DOMException('Cancelled', 'AbortError');
-
-        return fetch(url, {
-            ...options,
-            signal: this.abortController?.signal
-        });
-    }
-
-    async predictAllTags() {
+    async fetchTags() {
         if (this.isCancelled) return;
 
         this.showState('loading');
-        const saveBtn = this.modalElement.querySelector('.bulk-wd-tagger-save');
-        const itemsContainer = this.modalElement.querySelector('.bulk-wd-tagger-items');
+        const prefix = this.options.classPrefix;
+        const itemsContainer = this.modalElement.querySelector(`.${prefix}-items`);
 
         const selectedArray = Array.from(this.selectedItems);
-        const CONCURRENCY = 3;
-
-        this.bulkTagsData = [];
 
         // Phase 1: Fetch media info
         const mediaInfoMap = new Map();
@@ -465,11 +252,7 @@ class BulkWDTaggerModal {
         };
 
         try {
-            for (let i = 0; i < selectedArray.length; i += 10) {
-                if (this.isCancelled) return;
-                const chunk = selectedArray.slice(i, i + 10);
-                await Promise.all(chunk.map(id => fetchMediaInfo(id)));
-            }
+            await this.processBatch(selectedArray, fetchMediaInfo, 10);
         } catch (e) {
             if (e.name === 'AbortError') return;
             throw e;
@@ -486,7 +269,7 @@ class BulkWDTaggerModal {
             try {
                 const result = await this.predictMediaTags(mediaId, mediaInfoMap.get(mediaId));
                 if (result) {
-                    this.bulkTagsData.push(result);
+                    this.itemsData.push(result);
                 }
             } catch (e) {
                 if (e.name === 'AbortError') throw e;
@@ -500,11 +283,7 @@ class BulkWDTaggerModal {
         };
 
         try {
-            for (let i = 0; i < selectedArray.length; i += CONCURRENCY) {
-                if (this.isCancelled) return;
-                const chunk = selectedArray.slice(i, i + CONCURRENCY);
-                await Promise.all(chunk.map(id => predictItem(id)));
-            }
+            await this.processBatch(selectedArray, predictItem, 3);
         } catch (e) {
             if (e.name === 'AbortError') return;
             throw e;
@@ -512,30 +291,52 @@ class BulkWDTaggerModal {
 
         if (this.isCancelled) return;
 
-        if (this.bulkTagsData.length === 0) {
+        if (this.itemsData.length === 0) {
             this.showState('empty');
             return;
         }
 
-        // Phase 3: Validate tags (keep loading visible)
-        this.updateProgress(0, 0, 'Validating tags...', '');
-        await this.validatePredictedTags();
+        // Phase 3: Validate tags
+        const allTags = new Set();
+        for (const item of this.itemsData) {
+            item.predictedTags.forEach(tag => allTags.add(tag.toLowerCase()));
+        }
+
+        try {
+            await this.validateTags(Array.from(allTags));
+        } catch (e) {
+            if (e.name === 'AbortError') return;
+            throw e;
+        }
 
         if (this.isCancelled) return;
 
-        // Render items
-        if (itemsContainer) {
-            itemsContainer.innerHTML = this.bulkTagsData.map((item, index) =>
-                this.renderTagItem(item, index)
-            ).join('');
+        // Apply validated tags
+        for (const item of this.itemsData) {
+            item.newTags = item.predictedTags.filter(tag => {
+                const resolved = this.getResolvedTag(tag);
+                return resolved !== null;
+            }).map(tag => {
+                const resolved = this.getResolvedTag(tag);
+                return resolved || tag;
+            });
         }
 
+        // Filter out items with no valid tags
+        this.itemsData = this.itemsData.filter(item => item.newTags.length > 0);
+
+        if (this.itemsData.length === 0) {
+            this.showState('empty');
+            return;
+        }
+
+        this.renderItems();
         await this.initializeInputHelpers(itemsContainer);
 
         if (this.isCancelled) return;
 
         this.showState('content');
-        if (saveBtn) saveBtn.style.display = 'block';
+        this.showSaveButton();
     }
 
     async predictMediaTags(mediaId, mediaData) {
@@ -582,91 +383,8 @@ class BulkWDTaggerModal {
         return null;
     }
 
-    async validatePredictedTags() {
-        if (this.isCancelled) return;
-
-        const allTags = new Set();
-        for (const item of this.bulkTagsData) {
-            item.predictedTags.forEach(tag => allTags.add(tag.toLowerCase()));
-        }
-
-        const tagsToValidate = Array.from(allTags).filter(tag => !this.tagResolutionCache.has(tag));
-
-        if (tagsToValidate.length === 0) {
-            this.applyValidatedTags();
-            return;
-        }
-
-        let validationProgress = 0;
-        const VALIDATION_CONCURRENCY = 20;
-
-        this.updateProgress(0, tagsToValidate.length, 'Validating tags...', 'tags checked');
-
-        const validateTag = async (tag) => {
-            if (this.isCancelled) return;
-            await this.validateAndCacheTag(tag);
-            validationProgress++;
-            if (!this.isCancelled) {
-                this.updateProgress(validationProgress, tagsToValidate.length, 'Validating tags...', 'tags checked');
-            }
-        };
-
-        try {
-            for (let i = 0; i < tagsToValidate.length; i += VALIDATION_CONCURRENCY) {
-                if (this.isCancelled) return;
-                const chunk = tagsToValidate.slice(i, i + VALIDATION_CONCURRENCY);
-                await Promise.all(chunk.map(tag => validateTag(tag)));
-            }
-        } catch (e) {
-            if (e.name === 'AbortError') return;
-            throw e;
-        }
-
-        this.applyValidatedTags();
-    }
-
-    applyValidatedTags() {
-        for (const item of this.bulkTagsData) {
-            item.validTags = item.predictedTags.filter(tag => {
-                const resolved = this.tagResolutionCache.get(tag.toLowerCase());
-                return resolved !== null;
-            }).map(tag => {
-                const resolved = this.tagResolutionCache.get(tag.toLowerCase());
-                return resolved || tag;
-            });
-        }
-    }
-
-    async validateAndCacheTag(tag) {
-        if (this.tagResolutionCache.has(tag)) return;
-        if (this.isCancelled) return;
-
-        try {
-            const response = await this.fetchWithAbort(`/api/tags/autocomplete?q=${encodeURIComponent(tag)}`);
-            let result = null;
-
-            if (response.ok) {
-                const results = await response.json();
-                if (results && results.length > 0) {
-                    const aliasMatch = results.find(t => t.is_alias && t.alias_name === tag);
-                    if (aliasMatch) {
-                        result = aliasMatch.name;
-                    } else {
-                        const exactMatch = results.find(t => t.name === tag);
-                        if (exactMatch) result = exactMatch.name;
-                    }
-                }
-            }
-
-            this.tagResolutionCache.set(tag, result);
-        } catch (e) {
-            if (e.name === 'AbortError') throw e;
-            this.tagResolutionCache.set(tag, null);
-        }
-    }
-
-    async repredictSingleItem(index, inputElement) {
-        const item = this.bulkTagsData[index];
+    async refreshSingleItem(index, inputElement) {
+        const item = this.itemsData[index];
         if (!item || this.isCancelled) return;
 
         inputElement.style.opacity = '0.5';
@@ -678,6 +396,7 @@ class BulkWDTaggerModal {
             const result = await this.predictMediaTags(item.mediaId, mediaData);
 
             if (result && result.predictedTags.length > 0) {
+                // Validate new tags
                 for (const tag of result.predictedTags) {
                     if (!this.tagResolutionCache.has(tag.toLowerCase())) {
                         await this.validateAndCacheTag(tag.toLowerCase());
@@ -685,10 +404,10 @@ class BulkWDTaggerModal {
                 }
 
                 const validTags = result.predictedTags.filter(tag => {
-                    const resolved = this.tagResolutionCache.get(tag.toLowerCase());
+                    const resolved = this.getResolvedTag(tag);
                     return resolved !== null;
                 }).map(tag => {
-                    const resolved = this.tagResolutionCache.get(tag.toLowerCase());
+                    const resolved = this.getResolvedTag(tag);
                     return resolved || tag;
                 });
 
@@ -720,176 +439,6 @@ class BulkWDTaggerModal {
         } finally {
             inputElement.style.opacity = '1';
         }
-    }
-
-    flashButton(index, color) {
-        const btn = this.modalElement.querySelector(`.bulk-wd-tag-repredict[data-index="${index}"]`);
-        if (btn) {
-            const originalColor = btn.style.color;
-            btn.style.color = color;
-            setTimeout(() => btn.style.color = originalColor, 500);
-        }
-    }
-
-    async initializeInputHelpers(container) {
-        if (!this.tagInputHelper || this.isCancelled) return;
-
-        const inputs = container.querySelectorAll('.bulk-wd-tag-input');
-        for (const input of inputs) {
-            if (this.isCancelled) return;
-
-            if (typeof TagAutocomplete !== 'undefined') {
-                new TagAutocomplete(input, {
-                    multipleValues: true,
-                    containerClasses: 'surface border border-color shadow-lg z-50',
-                    onSelect: () => this.triggerValidation(input)
-                });
-            }
-
-            this.tagInputHelper.setupTagInput(input, `bulk-wd-tag-${input.dataset.index}`, {
-                onValidate: () => { },
-                validationCache: this.tagInputHelper.tagValidationCache,
-                checkFunction: (tag) => this.tagInputHelper.checkTagExists(tag)
-            });
-
-            await new Promise(r => setTimeout(r, 0));
-            this.triggerValidation(input);
-        }
-    }
-
-    renderTagItem(item, index) {
-        const currentTagsDisplay = item.currentTags.length > 0
-            ? item.currentTags.slice(0, 5).join(', ') + (item.currentTags.length > 5 ? ` (+${item.currentTags.length - 5} more)` : '')
-            : 'No tags';
-
-        const tagsToShow = item.validTags || item.predictedTags || [];
-
-        return `
-            <div class="bulk-wd-tag-item surface-light p-3 border" data-index="${index}">
-                <div class="flex gap-3">
-                    <img src="/api/media/${item.mediaId}/thumbnail" 
-                         alt="" 
-                         class="w-24 object-cover flex-shrink-0"
-                         onerror="this.src='/static/images/no-thumbnail.png'">
-                    <div class="flex-1 min-w-0">
-                        <p class="text-sm truncate mb-1" title="${item.filename}">${item.filename}</p>
-                        <p class="text-xs text-secondary mb-2">Current: ${currentTagsDisplay}</p>
-                        
-                        <div class="flex gap-2 items-start">
-                            <div class="relative flex-1">
-                                <div class="bulk-wd-tag-input w-full bg px-2 py-1 border text-sm focus:outline-none focus:border-primary" 
-                                     contenteditable="true"
-                                     data-index="${index}"
-                                     style="white-space: pre-wrap; overflow-wrap: break-word;">${tagsToShow.join(' ')}</div>
-                            </div>
-                            
-                            <div class="flex flex-row gap-1">
-                                <button type="button" 
-                                        class="bulk-wd-tag-repredict px-2 py-1 surface text-secondary hover:surface-light hover:text-white h-[1.8rem] w-[2rem] flex items-center justify-center transition-colors"
-                                        data-index="${index}"
-                                        title="Re-predict tags">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                        <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
-                                    </svg>
-                                </button>
-                                <button type="button" 
-                                        class="bulk-wd-tag-clear px-2 py-1 bg-danger tag-text hover:bg-danger h-[1.8rem] w-[2rem] flex items-center justify-center transition-colors"
-                                        data-index="${index}"
-                                        title="Clear tags">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                        <polyline points="3 6 5 6 21 6"></polyline>
-                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                                    </svg>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    async saveAllTags() {
-        const saveBtn = this.modalElement.querySelector('.bulk-wd-tagger-save');
-        if (saveBtn) {
-            saveBtn.disabled = true;
-            saveBtn.textContent = 'Saving...';
-        }
-
-        let successCount = 0;
-        let errorCount = 0;
-
-        const SAVE_CONCURRENCY = 5;
-
-        const saveItem = async (index) => {
-            const item = this.bulkTagsData[index];
-            const input = this.modalElement.querySelector(`.bulk-wd-tag-input[data-index="${index}"]`);
-
-            if (!input) return;
-
-            let newTags = [];
-            if (this.tagInputHelper) {
-                newTags = this.tagInputHelper.getValidTagsFromInput(input);
-            } else {
-                newTags = input.innerText.trim().split(/\s+/).filter(t => t.length > 0);
-            }
-
-            if (newTags.length === 0) return;
-
-            const existingSet = new Set(item.currentTags.map(t => t.toLowerCase()));
-            const uniqueNewTags = newTags.filter(t => !existingSet.has(t.toLowerCase()));
-
-            if (uniqueNewTags.length === 0) return;
-
-            const allTags = [...item.currentTags, ...uniqueNewTags];
-
-            try {
-                const response = await fetch(`/api/media/${item.mediaId}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ tags: allTags })
-                });
-
-                if (response.ok) successCount++;
-                else errorCount++;
-            } catch (e) {
-                console.error(`Error saving tags for media ${item.mediaId}:`, e);
-                errorCount++;
-            }
-        };
-
-        const indices = this.bulkTagsData.map((_, i) => i);
-        for (let i = 0; i < indices.length; i += SAVE_CONCURRENCY) {
-            const chunk = indices.slice(i, i + SAVE_CONCURRENCY);
-            await Promise.all(chunk.map(idx => saveItem(idx)));
-        }
-
-        if (saveBtn) {
-            saveBtn.disabled = false;
-            saveBtn.textContent = 'Save All';
-        }
-
-        this.hide();
-
-        if (typeof this.options.onSave === 'function') {
-            this.options.onSave({ successCount, errorCount });
-        }
-
-        if (typeof app !== 'undefined' && app.showNotification) {
-            if (successCount > 0) app.showNotification(`Successfully updated ${successCount} item(s)`, 'success');
-            if (errorCount > 0) app.showNotification(`Failed to update ${errorCount} item(s)`, 'error');
-        }
-    }
-
-    destroy() {
-        this.cancel();
-        if (this._escapeHandler) {
-            document.removeEventListener('keydown', this._escapeHandler);
-        }
-        if (this.modalElement && this.modalElement.parentNode) {
-            this.modalElement.parentNode.removeChild(this.modalElement);
-        }
-        this.modalElement = null;
     }
 }
 

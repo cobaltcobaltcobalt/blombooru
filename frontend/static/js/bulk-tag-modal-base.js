@@ -1,0 +1,589 @@
+class BulkTagModalBase {
+    constructor(options = {}) {
+        this.options = {
+            id: options.id || 'bulk-tag-modal',
+            title: options.title || 'Bulk Tags',
+            classPrefix: options.classPrefix || 'bulk-tag',
+            emptyMessage: options.emptyMessage || 'No tags found for the selected items.',
+            onSave: options.onSave || null,
+            onClose: options.onClose || null,
+            closeOnEscape: options.closeOnEscape !== false,
+            closeOnOutsideClick: options.closeOnOutsideClick !== false,
+            ...options
+        };
+
+        this.modalElement = null;
+        this.isVisible = false;
+        this.selectedItems = new Set();
+        this.itemsData = [];
+
+        // Cancellation support
+        this.abortController = null;
+        this.isCancelled = false;
+
+        // Tag resolution cache - persists across modal opens
+        this.tagResolutionCache = new Map();
+
+        // Initialize the helper class
+        this.tagInputHelper = typeof TagInputHelper !== 'undefined' ? new TagInputHelper() : null;
+    }
+
+    // ==================== Abstract Methods ====================
+
+    getStates() {
+        return ['loading', 'content', 'empty', 'cancelled'];
+    }
+
+    getBodyHTML() {
+        throw new Error('getBodyHTML must be implemented by subclass');
+    }
+
+    getFooterLeftHTML() {
+        return '';
+    }
+
+    async fetchTags() {
+        throw new Error('fetchTags must be implemented by subclass');
+    }
+
+    async refreshSingleItem(index, inputElement) {
+        // Override in subclass
+    }
+
+    async onShow() {
+        await this.fetchTags();
+    }
+
+    setupAdditionalEventListeners() {
+        // Override in subclass
+    }
+
+    // ==================== Initialization ====================
+
+    init() {
+        this.createModal();
+        this.setupEventListeners();
+    }
+
+    createModal() {
+        if (document.getElementById(this.options.id)) {
+            this.modalElement = document.getElementById(this.options.id);
+            return;
+        }
+
+        const modal = document.createElement('div');
+        modal.id = this.options.id;
+        modal.className = 'fixed inset-0 flex items-center justify-center z-50';
+        modal.style.display = 'none';
+        modal.style.background = 'rgba(0, 0, 0, 0.5)';
+
+        const prefix = this.options.classPrefix;
+        const footerLeft = this.getFooterLeftHTML();
+
+        modal.innerHTML = `
+            <div class="surface p-6 max-w-4xl w-full mx-4 max-h-[80vh] flex flex-col border">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-bold">${this.options.title}</h2>
+                    <button class="${prefix}-close text-secondary hover:text text-2xl leading-none">&times;</button>
+                </div>
+                
+                ${this.getBodyHTML()}
+                
+                <div class="flex justify-between gap-2 mt-4 pt-4 border-t border-color bg-surface z-20">
+                    ${footerLeft}
+                    <div class="flex gap-2 ${footerLeft ? '' : 'ml-auto'}">
+                        <button class="${prefix}-cancel px-4 py-2 surface-light transition-colors hover:surface-light text text-sm">
+                            Cancel
+                        </button>
+                        <button class="${prefix}-save px-4 py-2 bg-primary transition-colors hover:bg-primary tag-text text-sm" style="display: none;">
+                            Save All
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+        this.modalElement = modal;
+    }
+
+    // ==================== HTML Helpers ====================
+
+    getLoadingHTML(statusText = 'Processing...') {
+        const prefix = this.options.classPrefix;
+        return `
+            <div class="${prefix}-loading text-center py-8" style="display: none;">
+                <p class="text-secondary ${prefix}-status">${statusText}</p>
+                <p class="text-secondary text-sm mt-2">
+                    <span class="${prefix}-progress">0</span> / <span class="${prefix}-total">0</span> <span class="${prefix}-phase">items processed</span>
+                </p>
+            </div>
+        `;
+    }
+
+    getContentHTML() {
+        const prefix = this.options.classPrefix;
+        return `
+            <div class="${prefix}-content flex-1 overflow-y-auto" style="display: none;">
+                <p class="text-secondary mb-4 text-sm">Review and edit tags for each item. Invalid tags are highlighted in red.</p>
+                <div class="${prefix}-items space-y-3"></div>
+            </div>
+        `;
+    }
+
+    getEmptyHTML() {
+        const prefix = this.options.classPrefix;
+        return `
+            <div class="${prefix}-empty text-center py-8" style="display: none;">
+                <p class="text-secondary">${this.options.emptyMessage}</p>
+            </div>
+        `;
+    }
+
+    getCancelledHTML() {
+        const prefix = this.options.classPrefix;
+        return `
+            <div class="${prefix}-cancelled text-center py-8" style="display: none;">
+                <p class="text-secondary">Operation cancelled.</p>
+            </div>
+        `;
+    }
+
+    getErrorHTML() {
+        const prefix = this.options.classPrefix;
+        return `
+            <div class="${prefix}-error text-center py-8" style="display: none;">
+                <p class="text-danger ${prefix}-error-message">An error occurred.</p>
+            </div>
+        `;
+    }
+
+    // ==================== Event Listeners ====================
+
+    setupEventListeners() {
+        if (!this.modalElement) return;
+
+        const prefix = this.options.classPrefix;
+
+        const closeBtn = this.modalElement.querySelector(`.${prefix}-close`);
+        if (closeBtn) closeBtn.addEventListener('click', () => this.cancel());
+
+        const cancelBtn = this.modalElement.querySelector(`.${prefix}-cancel`);
+        if (cancelBtn) cancelBtn.addEventListener('click', () => this.cancel());
+
+        const saveBtn = this.modalElement.querySelector(`.${prefix}-save`);
+        if (saveBtn) saveBtn.addEventListener('click', () => this.saveTags());
+
+        // Item action buttons (delegation)
+        const itemsContainer = this.modalElement.querySelector(`.${prefix}-items`);
+        if (itemsContainer) {
+            itemsContainer.addEventListener('click', (e) => {
+                const btn = e.target.closest('button');
+                if (!btn) return;
+
+                const index = parseInt(btn.dataset.index);
+                const input = this.modalElement.querySelector(`.${prefix}-input[data-index="${index}"]`);
+                if (!input) return;
+
+                if (btn.classList.contains(`${prefix}-clear`)) {
+                    input.textContent = '';
+                    this.triggerValidation(input);
+                }
+
+                if (btn.classList.contains(`${prefix}-refresh`)) {
+                    this.refreshSingleItem(index, input);
+                }
+            });
+        }
+
+        if (this.options.closeOnEscape) {
+            this._escapeHandler = (e) => {
+                if (e.key === 'Escape' && this.isVisible) this.cancel();
+            };
+            document.addEventListener('keydown', this._escapeHandler);
+        }
+
+        if (this.options.closeOnOutsideClick) {
+            this.modalElement.addEventListener('click', (e) => {
+                if (e.target === this.modalElement) this.cancel();
+            });
+        }
+
+        this.setupAdditionalEventListeners();
+    }
+
+    // ==================== Visibility Management ====================
+
+    show(selectedItems) {
+        if (!this.modalElement) {
+            this.init();
+        }
+
+        this.selectedItems = new Set(selectedItems);
+        this.reset();
+        this.isCancelled = false;
+        this.abortController = new AbortController();
+        this.modalElement.style.display = 'flex';
+        this.isVisible = true;
+
+        this.onShow();
+
+        return this;
+    }
+
+    hide() {
+        if (this.modalElement) {
+            this.modalElement.style.display = 'none';
+            this.isVisible = false;
+        }
+        return this;
+    }
+
+    cancel() {
+        this.isCancelled = true;
+
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = null;
+        }
+
+        this.hide();
+
+        if (typeof this.options.onClose === 'function') {
+            this.options.onClose();
+        }
+    }
+
+    reset() {
+        const prefix = this.options.classPrefix;
+
+        this.getStates().forEach(state => {
+            const el = this.modalElement.querySelector(`.${prefix}-${state}`);
+            if (el) el.style.display = 'none';
+        });
+
+        const saveBtn = this.modalElement.querySelector(`.${prefix}-save`);
+        const itemsContainer = this.modalElement.querySelector(`.${prefix}-items`);
+
+        if (saveBtn) saveBtn.style.display = 'none';
+        if (itemsContainer) itemsContainer.innerHTML = '';
+
+        this.itemsData = [];
+    }
+
+    showState(state) {
+        const prefix = this.options.classPrefix;
+
+        this.getStates().forEach(s => {
+            const el = this.modalElement.querySelector(`.${prefix}-${s}`);
+            if (el) el.style.display = s === state ? 'block' : 'none';
+        });
+    }
+
+    showError(message) {
+        this.showState('error');
+        const prefix = this.options.classPrefix;
+        const errorMsg = this.modalElement.querySelector(`.${prefix}-error-message`);
+        if (errorMsg) errorMsg.textContent = message;
+    }
+
+    showSaveButton() {
+        const prefix = this.options.classPrefix;
+        const saveBtn = this.modalElement.querySelector(`.${prefix}-save`);
+        if (saveBtn) saveBtn.style.display = 'block';
+    }
+
+    // ==================== Progress Tracking ====================
+
+    updateProgress(current, total, status, phase) {
+        const prefix = this.options.classPrefix;
+
+        const progress = this.modalElement.querySelector(`.${prefix}-progress`);
+        const totalEl = this.modalElement.querySelector(`.${prefix}-total`);
+        const statusEl = this.modalElement.querySelector(`.${prefix}-status`);
+        const phaseEl = this.modalElement.querySelector(`.${prefix}-phase`);
+
+        if (progress) progress.textContent = current;
+        if (totalEl) totalEl.textContent = total;
+        if (statusEl) statusEl.textContent = status;
+        if (phaseEl) phaseEl.textContent = phase;
+    }
+
+    // ==================== Fetch Utilities ====================
+
+    async fetchWithAbort(url, options = {}) {
+        if (this.isCancelled) throw new DOMException('Cancelled', 'AbortError');
+
+        return fetch(url, {
+            ...options,
+            signal: this.abortController?.signal
+        });
+    }
+
+    async processBatch(items, processor, concurrency = 10) {
+        for (let i = 0; i < items.length; i += concurrency) {
+            if (this.isCancelled) return;
+            const chunk = items.slice(i, i + concurrency);
+            await Promise.all(chunk.map(item => processor(item)));
+        }
+    }
+
+    // ==================== Tag Validation ====================
+
+    async validateAndCacheTag(tag) {
+        if (this.tagResolutionCache.has(tag)) return;
+        if (this.isCancelled) return;
+
+        try {
+            const response = await this.fetchWithAbort(`/api/tags/autocomplete?q=${encodeURIComponent(tag)}`);
+            let result = null;
+
+            if (response.ok) {
+                const results = await response.json();
+                if (results && results.length > 0) {
+                    const aliasMatch = results.find(t => t.is_alias && t.alias_name === tag);
+                    if (aliasMatch) {
+                        result = aliasMatch.name;
+                    } else {
+                        const exactMatch = results.find(t => t.name === tag);
+                        if (exactMatch) result = exactMatch.name;
+                    }
+                }
+            }
+
+            this.tagResolutionCache.set(tag, result);
+        } catch (e) {
+            if (e.name === 'AbortError') throw e;
+            this.tagResolutionCache.set(tag, null);
+        }
+    }
+
+    async validateTags(tags, concurrency = 20) {
+        const tagsToValidate = tags.filter(tag => !this.tagResolutionCache.has(tag));
+
+        if (tagsToValidate.length === 0) return;
+
+        let progress = 0;
+        this.updateProgress(0, tagsToValidate.length, 'Validating tags...', 'tags checked');
+
+        const validateTag = async (tag) => {
+            if (this.isCancelled) return;
+            await this.validateAndCacheTag(tag);
+            progress++;
+            if (!this.isCancelled) {
+                this.updateProgress(progress, tagsToValidate.length, 'Validating tags...', 'tags checked');
+            }
+        };
+
+        await this.processBatch(tagsToValidate, validateTag, concurrency);
+    }
+
+    getResolvedTag(tag) {
+        return this.tagResolutionCache.get(tag.toLowerCase());
+    }
+
+    triggerValidation(input) {
+        if (this.tagInputHelper) {
+            this.tagInputHelper.validateAndStyleTags(input, {
+                validationCache: this.tagInputHelper.tagValidationCache,
+                checkFunction: (tag) => this.tagInputHelper.checkTagExists(tag)
+            });
+        }
+    }
+
+    // ==================== Input Helpers ====================
+
+    async initializeInputHelpers(container) {
+        if (!this.tagInputHelper || this.isCancelled) return;
+
+        const prefix = this.options.classPrefix;
+        const inputs = container.querySelectorAll(`.${prefix}-input`);
+
+        for (const input of inputs) {
+            if (this.isCancelled) return;
+
+            if (typeof TagAutocomplete !== 'undefined') {
+                new TagAutocomplete(input, {
+                    multipleValues: true,
+                    containerClasses: 'surface border border-color shadow-lg z-50',
+                    onSelect: () => this.triggerValidation(input)
+                });
+            }
+
+            this.tagInputHelper.setupTagInput(input, `${prefix}-${input.dataset.index}`, {
+                onValidate: () => { },
+                validationCache: this.tagInputHelper.tagValidationCache,
+                checkFunction: (tag) => this.tagInputHelper.checkTagExists(tag)
+            });
+
+            await new Promise(r => setTimeout(r, 0));
+            this.triggerValidation(input);
+        }
+    }
+
+    // ==================== Rendering ====================
+
+    renderItem(item, index) {
+        const prefix = this.options.classPrefix;
+        const currentTagsDisplay = item.currentTags.length > 0
+            ? item.currentTags.slice(0, 5).join(', ') + (item.currentTags.length > 5 ? ` (+${item.currentTags.length - 5} more)` : '')
+            : 'No tags';
+
+        const tagsToShow = item.newTags || [];
+
+        return `
+            <div class="${prefix}-item surface-light p-3 border" data-index="${index}">
+                <div class="flex gap-3">
+                    <img src="/api/media/${item.mediaId}/thumbnail" 
+                         alt="" 
+                         class="w-24 object-cover flex-shrink-0"
+                         onerror="this.src='/static/images/no-thumbnail.png'">
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm truncate mb-1" title="${item.filename}">${item.filename}</p>
+                        <p class="text-xs text-secondary mb-2">Current: ${currentTagsDisplay}</p>
+                        
+                        <div class="flex gap-2 items-start">
+                            <div class="relative flex-1">
+                                <div class="${prefix}-input w-full bg px-2 py-1 border text-sm focus:outline-none focus:border-primary" 
+                                     contenteditable="true"
+                                     data-index="${index}"
+                                     style="white-space: pre-wrap; overflow-wrap: break-word;">${tagsToShow.join(' ')}</div>
+                            </div>
+                            
+                            <div class="flex flex-row gap-1">
+                                <button type="button" 
+                                        class="${prefix}-refresh px-2 py-1 surface text-secondary hover:surface-light hover:text-white h-[1.8rem] w-[2rem] flex items-center justify-center transition-colors"
+                                        data-index="${index}"
+                                        title="Refresh tags">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+                                    </svg>
+                                </button>
+                                <button type="button" 
+                                        class="${prefix}-clear px-2 py-1 bg-danger tag-text hover:bg-danger h-[1.8rem] w-[2rem] flex items-center justify-center transition-colors"
+                                        data-index="${index}"
+                                        title="Clear tags">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="3 6 5 6 21 6"></polyline>
+                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    renderItems() {
+        const prefix = this.options.classPrefix;
+        const itemsContainer = this.modalElement.querySelector(`.${prefix}-items`);
+
+        if (itemsContainer) {
+            itemsContainer.innerHTML = this.itemsData.map((item, index) =>
+                this.renderItem(item, index)
+            ).join('');
+        }
+    }
+
+    // ==================== Button Feedback ====================
+
+    flashButton(index, color, buttonType = 'refresh') {
+        const prefix = this.options.classPrefix;
+        const btn = this.modalElement.querySelector(`.${prefix}-${buttonType}[data-index="${index}"]`);
+        if (btn) {
+            const originalColor = btn.style.color;
+            btn.style.color = color;
+            setTimeout(() => btn.style.color = originalColor, 500);
+        }
+    }
+
+    // ==================== Save ====================
+
+    async saveTags() {
+        const prefix = this.options.classPrefix;
+        const saveBtn = this.modalElement.querySelector(`.${prefix}-save`);
+
+        if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+        }
+
+        let successCount = 0;
+        let errorCount = 0;
+
+        const saveItem = async (index) => {
+            const item = this.itemsData[index];
+            const input = this.modalElement.querySelector(`.${prefix}-input[data-index="${index}"]`);
+
+            if (!input) return;
+
+            let newTags = [];
+            if (this.tagInputHelper) {
+                newTags = this.tagInputHelper.getValidTagsFromInput(input);
+            } else {
+                newTags = input.innerText.trim().split(/\s+/).filter(t => t.length > 0);
+            }
+
+            if (newTags.length === 0) return;
+
+            const existingSet = new Set(item.currentTags.map(t => t.toLowerCase()));
+            const uniqueNewTags = newTags.filter(t => !existingSet.has(t.toLowerCase()));
+
+            if (uniqueNewTags.length === 0) return;
+
+            const allTags = [...item.currentTags, ...uniqueNewTags];
+
+            try {
+                const response = await fetch(`/api/media/${item.mediaId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tags: allTags })
+                });
+
+                if (response.ok) successCount++;
+                else errorCount++;
+            } catch (e) {
+                console.error(`Error saving tags for media ${item.mediaId}:`, e);
+                errorCount++;
+            }
+        };
+
+        const indices = this.itemsData.map((_, i) => i);
+        await this.processBatch(indices, saveItem, 5);
+
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Save All';
+        }
+
+        this.hide();
+
+        if (typeof this.options.onSave === 'function') {
+            this.options.onSave({ successCount, errorCount });
+        }
+
+        if (typeof app !== 'undefined' && app.showNotification) {
+            if (successCount > 0) app.showNotification(`Successfully updated ${successCount} item(s)`, 'success');
+            if (errorCount > 0) app.showNotification(`Failed to update ${errorCount} item(s)`, 'error');
+        }
+    }
+
+    // ==================== Cleanup ====================
+
+    destroy() {
+        this.cancel();
+        if (this._escapeHandler) {
+            document.removeEventListener('keydown', this._escapeHandler);
+        }
+        if (this.modalElement && this.modalElement.parentNode) {
+            this.modalElement.parentNode.removeChild(this.modalElement);
+        }
+        this.modalElement = null;
+    }
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = BulkTagModalBase;
+}
