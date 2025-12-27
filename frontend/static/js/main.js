@@ -169,7 +169,7 @@ class Blombooru {
         const notificationTitle = title || defaultTitles[type] || 'Info';
         const notification = document.createElement('div');
 
-        const baseClasses = 'fixed top-20 left-1/2 -translate-x-1/2 px-6 py-4 shadow-lg border-2 z-[1000] min-w-[320px] max-w-md';
+        const baseClasses = 'fixed top-20 left-1/2 -translate-x-1/2 px-6 py-4 shadow-lg border-2 z-[1000] min-w-[320px] max-w-md cursor-pointer';
 
         if (type === 'success') {
             notification.className = `${baseClasses} bg-success tag-text`;
@@ -195,16 +195,25 @@ class Blombooru {
         notification.appendChild(titleEl);
         notification.appendChild(messageEl);
 
-        // Animation
         notification.style.animation = 'slideIn 0.3s ease-out';
+
+        const dismiss = () => {
+            if (notification.classList.contains('removing')) return;
+            notification.classList.add('removing');
+
+            notification.style.animation = 'slideOut 0.3s ease-out forwards';
+            setTimeout(() => {
+                if (notification.parentNode) notification.remove();
+            }, 300);
+        };
+
+        // Click to dismiss
+        notification.addEventListener('click', dismiss);
 
         document.body.appendChild(notification);
 
         // Remove after 5 seconds
-        setTimeout(() => {
-            notification.style.animation = 'slideOut 0.3s ease-out';
-            setTimeout(() => notification.remove(), 300);
-        }, 5000);
+        setTimeout(dismiss, 5000);
     }
 
     setRatingFilter(rating) {
