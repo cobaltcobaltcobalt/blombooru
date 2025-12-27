@@ -86,9 +86,10 @@ class AlbumViewer extends BaseGallery {
 
             const data = await response.json();
 
-            // Update pagination info from response
-            this.totalPages = data.pages || 1;
-            this.currentPage = data.page || 1;
+            // Check if page adjustment is needed
+            if (this.adjustPageIfNeeded(data.pages)) {
+                return this.loadContent();
+            }
 
             // Filter out empty albums for logic checks
             const allAlbums = data.albums || [];
@@ -134,17 +135,14 @@ class AlbumViewer extends BaseGallery {
     }
 
     onRatingChange() {
-        this.currentPage = 1;  // Reset to page 1 on filter change
-        this.updateUrlParams({ page: 1 });
         this.loadContent();
         this.loadPopularTagsFromAPI();
     }
 
     onSortChange() {
-        this.currentPage = 1;  // Reset to page 1 on sort change
         this.currentSort = this.getSortValue();
         this.currentOrder = this.getOrderValue();
-        this.updateUrlParams({ sort: this.currentSort, order: this.currentOrder, page: 1 });
+        this.updateUrlParams({ sort: this.currentSort, order: this.currentOrder });
         this.loadContent();
     }
 
