@@ -277,18 +277,40 @@ class BaseGallery {
             }
         }
 
-        return pages.join(' <span class="text-secondary">|</span> ');
+        return `
+            <div class="flex flex-wrap justify-center items-center gap-1.5 select-none">
+                ${pages.join('')}
+            </div>
+        `;
     }
 
     createPageButton(pageNum, isActive) {
+        const baseClass = "min-w-[2rem] h-8 px-2 flex items-center justify-center text-xs font-medium transition-all duration-200 border";
+
         if (isActive) {
-            return `<span class="px-2 py-1 font-bold text-primary">${pageNum}</span>`;
+            return `
+                <span class="${baseClass} bg-primary border-primary primary-text shadow-sm pointer-events-none cursor-default">
+                    ${pageNum}
+                </span>`;
         }
-        return `<a href="#" class="px-2 py-1 hover:text-primary page-link" data-page="${pageNum}">${pageNum}</a>`;
+
+        return `
+            <a href="#" class="page-link ${baseClass} surface border hover:border-primary hover:text-primary hover:bg-primary/10 text-secondary" 
+               data-page="${pageNum}">
+               ${pageNum}
+            </a>`;
     }
 
     createEllipsis() {
-        return `<a href="#" class="px-2 py-1 hover:text-primary page-ellipsis">...</a>`;
+        return `
+            <a href="#" class="page-ellipsis min-w-[2rem] h-8 px-2 flex items-center justify-center transition-all duration-200 bg-transparent border hover:border-primary hover:text-primary hover:bg-primary/10 text-secondary" 
+               title="Jump to page...">
+               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                   <circle cx="12" cy="12" r="1"></circle>
+                   <circle cx="19" cy="12" r="1"></circle>
+                   <circle cx="5" cy="12" r="1"></circle>
+               </svg>
+            </a>`;
     }
 
     setupPaginationHandlers() {
