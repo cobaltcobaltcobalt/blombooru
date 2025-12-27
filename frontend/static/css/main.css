@@ -191,6 +191,9 @@ span.checked:hover {
     display: flex;
     align-items: center;
     justify-content: center;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
 }
 
 .gallery-item a img {
@@ -200,6 +203,12 @@ span.checked:hover {
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
+    transition: border-color 0.15s ease, opacity 0.15s ease;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-user-drag: none;
+    -webkit-touch-callout: none;
+    pointer-events: none;
 }
 
 .gallery-item.video a img {
@@ -218,6 +227,96 @@ span.checked:hover {
     border-color: var(--primary-color);
 }
 
+.gallery-grid.selection-mode .gallery-item:not(.selected) a img {
+    opacity: 0.7;
+}
+
+.gallery-grid.selection-mode .gallery-item:not(.selected):hover a img {
+    opacity: 1;
+}
+
+.gallery-item .select-checkbox {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+    width: 0;
+    height: 0;
+}
+
+.gallery-item .select-indicator {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--background) 70%, transparent);
+    border: 2px solid color-mix(in srgb, var(--primary-color) 70%, transparent);
+    cursor: pointer;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.gallery-item .select-indicator svg {
+    width: 14px;
+    height: 14px;
+    stroke: var(--primary-text);
+    stroke-width: 3;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.gallery-item:hover .select-indicator {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.gallery-item.selected .select-indicator {
+    opacity: 1;
+    pointer-events: auto;
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.gallery-item.selected .select-indicator svg {
+    opacity: 1;
+}
+
+.gallery-item .select-indicator:hover {
+    background: var(--background);
+    border-color: var(--primary-color);
+}
+
+.gallery-item.selected .select-indicator:hover {
+    background: var(--primary-color);
+}
+
+.gallery-grid.selection-mode .gallery-item .select-indicator {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+@keyframes longPressRing {
+    0% {
+        box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary-color) 40%, transparent);
+    }
+
+    100% {
+        box-shadow: 0 0 0 8px color-mix(in srgb, var(--primary-color) 0%, transparent);
+    }
+}
+
+.gallery-item.long-pressing .select-indicator {
+    opacity: 1;
+    transform: scale(1);
+}
+
+/* Popular tag styling */
 .popular-tag-item {
     align-items: center;
     padding: 0.4rem 0;
@@ -460,22 +559,6 @@ span.checked:hover {
     font-size: 0.65rem;
     font-weight: 600;
     z-index: 5;
-}
-
-/* Admin mode & panel styling */
-.gallery-item .checkbox {
-    position: absolute;
-    top: 0.25rem;
-    left: 0.25rem;
-    width: 1.2rem;
-    height: 1.2rem;
-    cursor: pointer;
-    z-index: 5;
-    display: none;
-}
-
-.admin-mode .gallery-item .checkbox {
-    display: block !important;
 }
 
 /* Loading Spinner */

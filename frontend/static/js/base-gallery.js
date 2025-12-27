@@ -530,17 +530,19 @@ class BaseGallery {
         if (count) {
             count.textContent = this.selectedItems.size;
         }
+
+        this.updateSelectionModeClass();
     }
 
     selectAll() {
         document.querySelectorAll('.gallery-item').forEach(item => {
             const id = parseInt(item.dataset.id);
-            const checkbox = item.querySelector('.checkbox, .album-item-checkbox');
+            const checkbox = item.querySelector('.select-checkbox');
 
-            if (checkbox && !checkbox.checked) {
-                checkbox.checked = true;
+            if (!this.selectedItems.has(id)) {
                 this.selectedItems.add(id);
                 item.classList.add('selected');
+                if (checkbox) checkbox.checked = true;
             }
         });
         this.updateBulkActionsUI();
@@ -550,7 +552,7 @@ class BaseGallery {
         this.selectedItems.clear();
         document.querySelectorAll('.gallery-item').forEach(item => {
             item.classList.remove('selected');
-            const checkbox = item.querySelector('.checkbox, .album-item-checkbox');
+            const checkbox = item.querySelector('.select-checkbox');
             if (checkbox) checkbox.checked = false;
         });
         this.updateBulkActionsUI();
@@ -721,6 +723,37 @@ class BaseGallery {
         }
     }
 
+    // ==================== Selection Mode Helpers ====================
+
+    get isSelectionMode() {
+        return this.selectedItems.size > 0;
+    }
+
+    updateSelectionModeClass() {
+        // Add/remove class on the grid container for CSS styling
+        if (this.elements.grid) {
+            this.elements.grid.classList.toggle('selection-mode', this.isSelectionMode);
+        }
+    }
+
+    toggleItemSelection(item, mediaId) {
+        const indicator = item.querySelector('.select-indicator');
+        const checkbox = item.querySelector('.select-checkbox');
+
+        if (this.selectedItems.has(mediaId)) {
+            this.selectedItems.delete(mediaId);
+            item.classList.remove('selected');
+            if (checkbox) checkbox.checked = false;
+        } else {
+            this.selectedItems.add(mediaId);
+            item.classList.add('selected');
+            if (checkbox) checkbox.checked = true;
+        }
+
+        this.updateBulkActionsUI();
+        this.updateSelectionModeClass();
+    }
+
     // ==================== Gallery Item Creation ====================
 
     createGalleryItem(media, options = {}) {
@@ -734,26 +767,31 @@ class BaseGallery {
         item.dataset.id = media.id;
         item.dataset.rating = media.rating;
 
-        // Checkbox
+        // Hidden checkbox
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
-        checkbox.className = checkboxClass;
+        checkbox.className = `select-checkbox ${checkboxClass}`;
         checkbox.dataset.id = media.id;
+        checkbox.tabIndex = -1; // Not focusable
+
+        // Custom visual indicator (the clickable circle)
+        const indicator = document.createElement('div');
+        indicator.className = 'select-indicator';
+        indicator.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+        `;
 
         if (this.selectedItems.has(media.id)) {
             checkbox.checked = true;
             item.classList.add('selected');
         }
 
-        checkbox.addEventListener('change', (e) => {
-            if (e.target.checked) {
-                this.selectedItems.add(media.id);
-                item.classList.add('selected');
-            } else {
-                this.selectedItems.delete(media.id);
-                item.classList.remove('selected');
-            }
-            this.updateBulkActionsUI();
+        indicator.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.toggleItemSelection(item, media.id);
         });
 
         // Image
@@ -762,6 +800,7 @@ class BaseGallery {
         img.alt = media.filename;
         img.loading = 'lazy';
         img.className = 'transition-colors';
+        img.draggable = false;
         img.onerror = () => {
             img.src = '/static/images/no-thumbnail.png';
         };
@@ -777,12 +816,73 @@ class BaseGallery {
         }
         link.appendChild(img);
 
+        link.addEventListener('click', (e) => {
+            if (this.isSelectionMode) {
+                e.preventDefault();
+                this.toggleItemSelection(item, media.id);
+            }
+        });
+
+        // ==================== Long Press for Mobile ====================
+        let longPressTimer = null;
+        let longPressTriggered = false;
+        const LONG_PRESS_DURATION = 350; // ms
+
+        const startLongPress = (e) => {
+            longPressTriggered = false;
+            item.classList.add('long-pressing');
+
+            longPressTimer = setTimeout(() => {
+                longPressTriggered = true;
+                item.classList.remove('long-pressing');
+                this.toggleItemSelection(item, media.id);
+
+                if (navigator.vibrate) {
+                    navigator.vibrate(50);
+                }
+            }, LONG_PRESS_DURATION);
+        };
+
+        const cancelLongPress = () => {
+            if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
+            item.classList.remove('long-pressing');
+        };
+
+        const endLongPress = (e) => {
+            cancelLongPress();
+
+            if (longPressTriggered) {
+                e.preventDefault();
+                e.stopPropagation();
+                longPressTriggered = false;
+            }
+        };
+
+        item.addEventListener('touchstart', startLongPress, { passive: true });
+        item.addEventListener('touchend', endLongPress);
+        item.addEventListener('touchcancel', cancelLongPress);
+        item.addEventListener('touchmove', cancelLongPress, { passive: true });
+
+        item.addEventListener('contextmenu', (e) => {
+            if (longPressTriggered) {
+                e.preventDefault();
+            }
+        });
+
         // Tooltip
         if (this.tooltipHelper && media.tags && media.tags.length > 0) {
-            this.tooltipHelper.addToElement(item, media.tags);
+            const isPrimaryTouch = window.matchMedia('(pointer: coarse)').matches;
+
+            if (!isPrimaryTouch) {
+                this.tooltipHelper.addToElement(item, media.tags);
+            }
         }
 
         item.appendChild(checkbox);
+        item.appendChild(indicator);
         item.appendChild(link);
 
         // Share indicator
