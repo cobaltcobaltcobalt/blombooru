@@ -14,15 +14,24 @@ class MediaViewerBase {
 
     // Common rendering methods
     setupAIMetadataToggle() {
-        const toggle = document.getElementById('ai-metadata-toggle');
-        const content = document.getElementById('ai-metadata-content');
-        const chevron = document.getElementById('ai-metadata-chevron');
+        const toggle = this.el('ai-metadata-toggle');
 
-        if (toggle && content && chevron) {
-            toggle.addEventListener('click', () => {
-                const isHidden = content.style.display === 'none';
-                content.style.display = isHidden ? 'block' : 'none';
-                chevron.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+        if (toggle) {
+            const newToggle = toggle.cloneNode(true);
+            toggle.parentNode.replaceChild(newToggle, toggle);
+
+            newToggle.addEventListener('click', (e) => {
+                const content = this.el('ai-metadata-content');
+                const chevron = this.el('ai-metadata-chevron');
+
+                if (content) {
+                    const isHidden = content.style.display === 'none';
+                    content.style.display = isHidden ? 'block' : 'none';
+
+                    if (chevron) {
+                        chevron.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+                    }
+                }
             });
         }
     }
@@ -119,19 +128,15 @@ class MediaViewerBase {
                 return;
             }
 
-            // Show controls if specified
             if (showControls) {
-                if (aiMetadataShareToggle) {
-                    aiMetadataShareToggle.style.display = 'block';
-                }
-                if (appendBtn && aiData) {
-                    appendBtn.style.display = 'block';
-                }
+                if (aiMetadataShareToggle) aiMetadataShareToggle.style.display = 'block';
+                if (appendBtn && aiData) appendBtn.style.display = 'block';
             }
 
-            content.innerHTML = this.generateAIMetadataHTML(aiData);
+            const generatedHTML = this.generateAIMetadataHTML(aiData);
+            content.innerHTML = generatedHTML;
             section.style.display = 'block';
-            this.setupExpandableListeners();
+            this.setupAIMetadataEvents();
         } catch (e) {
             console.error('Error rendering AI metadata:', e);
             this.hideAIMetadata(section, appendBtn, aiMetadataShareToggle);
@@ -517,24 +522,32 @@ class MediaViewerBase {
         return html;
     }
 
-    setupExpandableListeners() {
-        document.querySelectorAll('.expandable-text').forEach(container => {
-            const newContainer = container.cloneNode(true);
-            container.parentNode.replaceChild(newContainer, container);
+    setupAIMetadataEvents() {
+        const content = this.el('ai-metadata-content');
+        if (!content) return;
 
-            newContainer.addEventListener('click', function (e) {
-                const selection = window.getSelection();
-                if (selection && selection.toString().length > 0) {
-                    return;
+        const newContent = content.cloneNode(true);
+        content.parentNode.replaceChild(newContent, content);
+
+        newContent.addEventListener('click', (e) => {
+            if (e.target.classList.contains('ai-toggle-btn')) {
+                const btn = e.target;
+                const textDiv = btn.previousElementSibling;
+
+                if (textDiv && textDiv.classList.contains('ai-text-content')) {
+                    const isCollapsed = textDiv.classList.contains('is-collapsed');
+
+                    if (isCollapsed) {
+                        textDiv.classList.remove('is-collapsed');
+                        btn.classList.add('is-expanded');
+                        btn.firstChild.textContent = 'Show less ';
+                    } else {
+                        textDiv.classList.add('is-collapsed');
+                        btn.classList.remove('is-expanded');
+                        btn.firstChild.textContent = 'Show more ';
+                    }
                 }
-
-                const id = this.id.replace('-container', '');
-                window.toggleExpand(id);
-            });
-
-            newContainer.addEventListener('dblclick', function (e) {
-                e.stopPropagation();
-            });
+            }
         });
     }
 
@@ -557,31 +570,55 @@ class MediaViewerBase {
             .replace(/Loras/g, 'LoRAs');
     }
 
+    escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
     formatValue(value, isExpandable = true) {
-        if (typeof value === 'boolean') {
-            return value ? 'Yes' : 'No';
+        if (value === null || value === undefined) {
+            return '<span class="text-secondary text-xs italic">Empty</span>';
         }
 
-        if (typeof value === 'string') {
-            const escaped = value.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-            if (isExpandable && escaped.length > 100) {
-                const id = 'expand-' + Math.random().toString(36).substr(2, 9);
-                return `
-                    <div class="expandable-text" id="${id}-container" style="cursor: pointer; user-select: text;">
-                        <span class="text-truncated" id="${id}-truncated">${escaped.substring(0, 100)}...<br><span class="expand-indicator" style="user-select: none;">[click to expand]</span></span>
-                        <span class="text-full" id="${id}-full" style="display: none;">${escaped}<br><span class="expand-indicator" style="user-select: none;">[click to collapse]</span></span>
-                    </div>
-                `;
-            }
-            return escaped;
+        if (typeof value === 'boolean') {
+            return value
+                ? '<span class="text text-xs">Yes</span>'
+                : '<span class="text text-xs">No</span>';
         }
 
         if (Array.isArray(value)) {
-            return value.join(', ');
+            if (value.length === 0) return '<span class="text-secondary text-xs italic">None</span>';
+            return value.map(v => this.escapeHtml(String(v))).join(', ');
         }
 
-        return String(value);
+        if (typeof value === 'object') {
+            try {
+                return `<code class="block bg-surface-dark p-2 rounded text-xs overflow-x-auto">${this.escapeHtml(JSON.stringify(value, null, 2))}</code>`;
+            } catch (e) {
+                return '[Complex Object]';
+            }
+        }
+
+        const str = String(value);
+        const escaped = this.escapeHtml(str);
+
+        const needsExpansion = isExpandable && (str.length > 200 || (str.match(/\n/g) || []).length > 4);
+
+        if (needsExpansion) {
+            return `
+                <div class="ai-expandable-wrapper group">
+                    <div class="ai-text-content is-collapsed">${escaped}</div>
+                    <button type="button" class="ai-toggle-btn">Show more</button>
+                </div>
+            `;
+        }
+
+        return `<div class="ai-text-content">${escaped}</div>`;
     }
 
     formatFileSize(bytes) {
