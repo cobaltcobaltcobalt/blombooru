@@ -461,9 +461,16 @@ class AdminPanel {
             // Fetch and add each file to the uploader
             let loadedCount = 0;
             let skippedCount = 0;
+            let duplicateCount = 0;
 
             for (const filePath of result.files) {
                 try {
+                    // Check if file is already in the upload queue
+                    if (uploader.isFileQueued(filePath)) {
+                        duplicateCount++;
+                        continue;
+                    }
+
                     scanBtn.textContent = `Loading ${loadedCount + 1}/${result.new_files}...`;
 
                     // Fetch the file from the server
@@ -490,14 +497,22 @@ class AdminPanel {
             }
 
             // Show results
-            let message = `Loaded ${loadedCount} file(s) into the editor.`;
+            let message = '';
+            if (loadedCount > 0) {
+                message = `Loaded ${loadedCount} file(s) into the editor.`;
+            }
+            if (duplicateCount > 0) {
+                message += `${message ? '\n' : ''}${duplicateCount} file(s) already in queue.`;
+            }
             if (skippedCount > 0) {
-                message += `\n${skippedCount} file(s) skipped due to errors.`;
+                message += `${message ? '\n' : ''}${skippedCount} file(s) skipped due to errors.`;
             }
             if (loadedCount > 0) {
                 message += '\n\nYou can now edit tags and ratings before submitting.';
             }
-            app.showNotification(message, 'success');
+
+            const notificationType = loadedCount > 0 ? 'success' : (duplicateCount > 0 ? 'info' : 'warning');
+            app.showNotification(message, notificationType);
 
         } catch (error) {
             console.error('Scan error:', error);

@@ -777,6 +777,15 @@ class Uploader {
             }
         }
     }
+
+    isFileQueued(filePath) {
+        if (this.uploadedFiles.some(f => f.scannedPath === filePath)) {
+            return true;
+        }
+
+        const filename = filePath.split('/').pop().split('\\').pop();
+        return this.uploadedFiles.some(f => f.file.name === filename);
+    }
 }
 
 // Initialize uploader if upload area exists and expose globally
