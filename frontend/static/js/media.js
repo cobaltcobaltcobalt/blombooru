@@ -243,34 +243,60 @@ class MediaViewer extends MediaViewerBase {
             return;
         }
 
-        let generalTags = this.currentMedia.tags.filter(t => t.category === 'general');
+        const generalTags = this.currentMedia.tags.filter(t => t.category === 'general');
 
         if (!generalTags.length) {
             this.hideRelatedMedia();
             return;
         }
 
-        // Shuffle tags
-        for (let i = generalTags.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [generalTags[i], generalTags[j]] = [generalTags[j], generalTags[i]];
-        }
+        const currentMediaId = parseInt(this.mediaId);
+        const minTags = Math.min(3, generalTags.length);
 
-        const numTags = Math.min(2, Math.max(1, Math.floor(Math.random() * generalTags.length) + 1));
-        const tagQuery = generalTags.slice(0, numTags).map(t => t.name).join(' ');
-
-        try {
-            const res = await fetch(`/api/search?q=${encodeURIComponent(tagQuery)}&limit=12`);
-            const data = await res.json();
-            const currentMediaId = parseInt(this.mediaId);
-            const items = (data.items || []).filter(i => i.id !== currentMediaId);
-
-            if (items.length === 0) {
-                this.hideRelatedMedia();
-                return;
+        const searchOnce = async (numTags) => {
+            const shuffled = [...generalTags];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
             }
 
-            this.renderRelatedMedia(items);
+            const actualNumTags = Math.min(numTags, shuffled.length);
+            const tagQuery = shuffled.slice(0, actualNumTags).map(t => t.name).join(' ');
+
+            const res = await fetch(`/api/search?q=${encodeURIComponent(tagQuery)}&limit=12`);
+            const data = await res.json();
+            return (data.items || []).filter(i => i.id !== currentMediaId);
+        };
+
+        try {
+            const maxStartingTags = Math.min(6, generalTags.length);
+
+            for (let numTags = maxStartingTags; numTags >= minTags; numTags--) {
+                let bestItems = [];
+
+                for (let i = 0; i < 3; i++) {
+                    const items = await searchOnce(numTags);
+                    if (items.length > bestItems.length) {
+                        bestItems = items;
+                    }
+                    if (bestItems.length >= 3) break;
+                }
+
+                if (bestItems.length >= 1) {
+                    this.renderRelatedMedia(bestItems);
+                    return;
+                }
+
+                for (let i = 0; i < 3; i++) {
+                    const items = await searchOnce(numTags);
+                    if (items.length > 0) {
+                        this.renderRelatedMedia(items);
+                        return;
+                    }
+                }
+            }
+
+            this.hideRelatedMedia();
         } catch (e) {
             console.error('related error', e);
             this.hideRelatedMedia();
