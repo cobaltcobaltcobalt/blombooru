@@ -1357,7 +1357,7 @@ class MediaViewer extends MediaViewerBase {
 
     createRelationGalleryItem(media) {
         const item = document.createElement('div');
-        item.className = 'gallery-item relative cursor-pointer group';
+        item.className = 'gallery-item relative cursor-pointer border border-2 group';
         item.dataset.id = media.id;
 
         const isSelected = this.relationModal.selectedItems.has(media.id);
@@ -1373,7 +1373,7 @@ class MediaViewer extends MediaViewerBase {
         img.src = `/api/media/${media.id}/thumbnail`;
         img.alt = media.filename || `Media ${media.id}`;
         img.loading = 'lazy';
-        img.className = 'w-full aspect-square object-cover border transition-all';
+        img.className = 'w-full aspect-square object-cover transition-all';
         img.draggable = false;
         img.onerror = () => {
             img.src = '/static/images/no-thumbnail.png';
@@ -1419,10 +1419,12 @@ class MediaViewer extends MediaViewerBase {
         if (this.relationModal.selectedItems.has(mediaId)) {
             this.relationModal.selectedItems.delete(mediaId);
             itemElement.classList.remove('selected');
+            itemElement.classList.remove('border-primary');
             if (overlay) overlay.classList.remove('opacity-100');
         } else {
             this.relationModal.selectedItems.add(mediaId);
             itemElement.classList.add('selected');
+            itemElement.classList.add('border-primary');
             if (overlay) overlay.classList.add('opacity-100');
         }
 
