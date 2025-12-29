@@ -58,13 +58,47 @@ def init_db():
     check_and_migrate_schema(engine)
 
 def check_and_migrate_schema(engine):
-    """Check for missing columns and add them (simple migration)"""
+    """Run schema migrations"""
     from sqlalchemy import text, inspect
     
     inspector = inspect(engine)
-    
-    # Check if album tables exist, if not they'll be created by create_all
     tables = inspector.get_table_names()
-    if 'blombooru_albums' not in tables:
-        print("Creating album tables...")
+    
+    if 'blombooru_media' not in tables:
+        return
+    
+    migrations = [
+        migrate_add_parent_id,
+    ]
+    
+    for migration in migrations:
+        migration(engine, inspector)
 
+
+def migrate_add_parent_id(engine, inspector):
+    """Add parent_id column and index to media table"""
+    from sqlalchemy import text
+    
+    columns = [c['name'] for c in inspector.get_columns('blombooru_media')]
+    
+    if 'parent_id' in columns:
+        return
+    
+    print("Adding parent_id column to blombooru_media...")
+    is_sqlite = engine.dialect.name == 'sqlite'
+    
+    with engine.connect() as conn:
+        if is_sqlite:
+            conn.execute(text(
+                "ALTER TABLE blombooru_media ADD COLUMN parent_id INTEGER"
+            ))
+        else:
+            conn.execute(text(
+                "ALTER TABLE blombooru_media ADD COLUMN parent_id INTEGER "
+                "REFERENCES blombooru_media(id) ON DELETE SET NULL"
+            ))
+        
+        conn.execute(text(
+            "CREATE INDEX ix_blombooru_media_parent_id ON blombooru_media(parent_id)"
+        ))
+        conn.commit()
