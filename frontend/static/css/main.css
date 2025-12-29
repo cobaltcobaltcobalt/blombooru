@@ -9,7 +9,10 @@
     --danger-hover: color-mix(in srgb, var(--danger) 70%, var(--background));
 
     --video-outline: var(--red);
-    --gif-outline: var(--green);
+    --gif-outline: var(--orange);
+
+    --parent-outline: var(--blue);
+    --child-outline: var(--green);
 
     --rating-safe: var(--green);
     --rating-questionable: var(--orange);
@@ -211,12 +214,48 @@ span.checked:hover {
     pointer-events: none;
 }
 
+.gallery-item.parent-item a img {
+    border-color: var(--parent-outline);
+}
+
+.gallery-item.child-item a img {
+    border-color: var(--child-outline);
+}
+
 .gallery-item.video a img {
     border-color: var(--video-outline);
 }
 
+.gallery-item.video.parent-item a img {
+    border-left-color: var(--video-outline);
+    border-top-color: var(--video-outline);
+    border-right-color: var(--parent-outline);
+    border-bottom-color: var(--parent-outline);
+}
+
+.gallery-item.video.child-item a img {
+    border-left-color: var(--video-outline);
+    border-top-color: var(--video-outline);
+    border-right-color: var(--child-outline);
+    border-bottom-color: var(--child-outline);
+}
+
 .gallery-item.gif a img {
     border-color: var(--gif-outline);
+}
+
+.gallery-item.gif.parent-item a img {
+    border-left-color: var(--gif-outline);
+    border-top-color: var(--gif-outline);
+    border-right-color: var(--parent-outline);
+    border-bottom-color: var(--parent-outline);
+}
+
+.gallery-item.gif.child-item a img {
+    border-left-color: var(--gif-outline);
+    border-top-color: var(--gif-outline);
+    border-right-color: var(--child-outline);
+    border-bottom-color: var(--child-outline);
 }
 
 .gallery-item.selected a img {
