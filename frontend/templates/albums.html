@@ -9,12 +9,12 @@ loading_indicator, page_navigation, sidebar_start, sidebar_end %}
     <div class="grid grid-cols-1 xl:grid-cols-5 lg:grid-cols-4 gap-4">
         <!-- Albums Grid -->
         <div class="xl:col-span-4 lg:col-span-3">
-            {{ page_navigation() }}
 
             <div id="albums-grid"
                 class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 2xl:grid-cols-8 gap-2">
             </div>
 
+            {{ page_navigation() }}
             {{ loading_indicator() }}
         </div>
 
