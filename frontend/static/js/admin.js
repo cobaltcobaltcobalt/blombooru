@@ -870,7 +870,8 @@ class AdminPanel {
                 try {
                     await app.apiCall(`/api/admin/tags/${tagId}`, { method: 'DELETE' });
                     app.showNotification('Tag deleted', 'success');
-                    location.reload();
+                    await this.searchTags();
+                    await this.loadTagStats();
                 } catch (e) {
                     app.showNotification(e.message, 'error', 'Error deleting tag');
                 }
