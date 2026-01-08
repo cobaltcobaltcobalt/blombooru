@@ -49,7 +49,7 @@ loading_indicator, page_navigation, popular_tags_section, sidebar_start, sidebar
         <div id="album-details" class="text-xs mb-4"></div>
 
         {{ rating_filter('desktop') }}
-        {{ sorting_options() }}
+        {{ sorting_options(default_sort=default_sort, default_order=default_order) }}
         {{ popular_tags_section() }}
         {{ sidebar_end() }}
     </div>

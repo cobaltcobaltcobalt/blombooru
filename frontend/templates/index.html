@@ -22,7 +22,7 @@ loading_indicator, page_navigation, popular_tags_section, sidebar_start, sidebar
         <!-- Sidebar -->
         {{ sidebar_start() }}
         {{ rating_filter('desktop') }}
-        {{ sorting_options() }}
+        {{ sorting_options(default_sort=default_sort, default_order=default_order) }}
         {{ popular_tags_section() }}
         {{ sidebar_end() }}
     </div>

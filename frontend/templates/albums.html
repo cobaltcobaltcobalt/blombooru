@@ -21,7 +21,7 @@ loading_indicator, page_navigation, sidebar_start, sidebar_end %}
         <!-- Sidebar -->
         {{ sidebar_start() }}
         {{ rating_filter('desktop') }}
-        {{ sorting_options() }}
+        {{ sorting_options(default_sort=default_sort, default_order=default_order) }}
 
         <h3 class="text-sm font-bold mb-2 pb-1 border-b">Popular Tags</h3>
         <div id="popular-tags" class="text-xs">
