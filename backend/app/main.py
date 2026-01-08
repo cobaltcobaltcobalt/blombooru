@@ -51,7 +51,9 @@ async def index(request: Request):
     
     return templates.TemplateResponse("index.html", {
         "request": request,
-        "app_name": settings.APP_NAME
+        "app_name": settings.APP_NAME,
+        "default_sort": settings.get_default_sort(),
+        "default_order": settings.get_default_order()
     })
 
 @app.get("/admin", response_class=HTMLResponse)
@@ -85,7 +87,9 @@ async def albums_page(request: Request):
     """Albums overview page"""
     return templates.TemplateResponse("albums.html", {
         "request": request,
-        "app_name": settings.APP_NAME
+        "app_name": settings.APP_NAME,
+        "default_sort": settings.get_default_sort(),
+        "default_order": settings.get_default_order()
     })
 
 @app.get("/album/{album_id}", response_class=HTMLResponse)
@@ -94,6 +98,8 @@ async def album_detail_page(request: Request, album_id: int):
     return templates.TemplateResponse("album.html", {
         "request": request,
         "app_name": settings.APP_NAME,
-        "album_id": album_id
+        "album_id": album_id,
+        "default_sort": settings.get_default_sort(),
+        "default_order": settings.get_default_order()
     })
 
