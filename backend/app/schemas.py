@@ -69,6 +69,9 @@ class MediaResponse(MediaBase):
     
     model_config = ConfigDict(from_attributes=True)
 
+class SharedTagResponse(TagBase):
+    model_config = ConfigDict(from_attributes=True)
+
 class SharedMediaResponse(MediaBase):
     filename: str
     file_type: FileTypeEnum
@@ -81,7 +84,7 @@ class SharedMediaResponse(MediaBase):
     is_shared: bool
     share_uuid: Optional[str]
     share_ai_metadata: bool
-    tags: List[TagResponse] = []
+    tags: List[SharedTagResponse] = []
     
     model_config = ConfigDict(from_attributes=True)
 
