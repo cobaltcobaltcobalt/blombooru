@@ -48,7 +48,7 @@ async def get_shared_file(share_uuid: str, request: Request, db: Session = Depen
     file_path = settings.BASE_DIR / media.path
     strip_metadata = not media.share_ai_metadata
     
-    return serve_media_file(file_path, media.mime_type, strip_metadata=strip_metadata)
+    return await serve_media_file(file_path, media.mime_type, strip_metadata=strip_metadata)
 
 @router.get("/{share_uuid}/thumbnail")
 async def get_shared_thumbnail(share_uuid: str, request: Request, db: Session = Depends(get_db)):
@@ -63,7 +63,7 @@ async def get_shared_thumbnail(share_uuid: str, request: Request, db: Session = 
         raise HTTPException(status_code=404, detail="Thumbnail not found")
     
     thumb_path = settings.BASE_DIR / media.thumbnail_path
-    return serve_media_file(thumb_path, "image/jpeg", "Thumbnail file not found")
+    return await serve_media_file(thumb_path, "image/jpeg", "Thumbnail file not found")
 
 @router.get("/{share_uuid}/metadata")
 async def get_shared_metadata(share_uuid: str, request: Request, db: Session = Depends(get_db)):
