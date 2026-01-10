@@ -77,5 +77,9 @@ class Settings:
     @property
     def IS_FIRST_RUN(self) -> bool:
         return self.settings.get("first_run", True)
+        
+    @property
+    def EXTERNAL_SHARE_URL(self) -> Optional[str]:
+        return self.settings.get("external_share_url")
 
 settings = Settings()
