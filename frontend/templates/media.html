@@ -184,41 +184,52 @@
             <!-- Tags -->
             <div class="surface p-3 border mb-4">
                 <h3 class="text-sm font-bold mb-3 pb-2 border-b">Tags</h3>
-                <div id="tags-container"></div>
+                <div id="tags-container" class="mb-2"></div>
 
                 <!-- Edit Tags (Admin Mode Only) -->
-                <div id="edit-tags-section" style="display: none;" class="pt-3 border-t">
-                    <form id="edit-tags-form">
-                        <label class="block text-xs font-bold mb-2">Edit Tags</label>
-                        <div class="mb-2" style="position: relative;">
-                            <div id="tags-input" contenteditable="true" data-placeholder="original highres cat_ears"
-                                class="w-full bg px-2 py-1 border text-xs focus:outline-none hover:border-primary transition-colors focus:border-primary"
-                                style="min-height: 1.5rem; white-space: pre-wrap; overflow-wrap: break-word;"></div>
-                        </div>
-                        <div class="flex gap-2 mb-2">
-                            <button type="button" id="append-ai-tags-btn"
-                                class="flex-1 px-3 py-1 surface-light transition-colors hover:surface-light text text-xs"
-                                style="display: none;">
-                                <span class="btn-text">Append AI Tags</span>
+                <div id="edit-tags-section" style="display: none;" class="pt-2 border-t">
+                    <button type="button" id="edit-tags-toggle"
+                        class="w-full flex justify-between items-center text-left py-2 hover:text-primary transition-colors cursor-pointer">
+                        <span class="text-xs font-bold">Edit Tags</span>
+                        <svg id="edit-tags-chevron" xmlns="http://www.w3.org/2000/svg" width="14" height="14"
+                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round" class="transition-transform duration-200">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </button>
+
+                    <div id="edit-tags-content" style="display: none;" class="mt-2">
+                        <form id="edit-tags-form">
+                            <div class="mb-2" style="position: relative;">
+                                <div id="tags-input" contenteditable="true" data-placeholder="original highres cat_ears"
+                                    class="w-full bg px-2 py-1 border text-xs focus:outline-none hover:border-primary transition-colors focus:border-primary"
+                                    style="min-height: 1.5rem; white-space: pre-wrap; overflow-wrap: break-word;"></div>
+                            </div>
+                            <div class="flex gap-2 mb-2">
+                                <button type="button" id="append-ai-tags-btn"
+                                    class="flex-1 px-3 py-1 surface-light transition-colors hover:surface-light text text-xs"
+                                    style="display: none;">
+                                    <span class="btn-text">Append AI Tags</span>
+                                </button>
+                                <button type="button" id="predict-wd-tags-btn"
+                                    class="flex-1 px-3 py-1 surface-light transition-colors hover:surface-light text text-xs"
+                                    style="display: none;">
+                                    <span class="btn-text">Predict Tags (AI)</span>
+                                </button>
+                            </div>
+                            <button type="submit"
+                                class="w-full px-3 py-1 bg-primary primary-text transition-colors hover:bg-primary text-xs">
+                                Save Tags
                             </button>
-                            <button type="button" id="predict-wd-tags-btn"
-                                class="flex-1 px-3 py-1 surface-light transition-colors hover:surface-light text text-xs"
-                                style="display: none;">
-                                <span class="btn-text">Predict Tags (AI)</span>
-                            </button>
-                        </div>
-                        <button type="submit"
-                            class="w-full px-3 py-1 bg-primary primary-text transition-colors hover:bg-primary text-xs">
-                            Save Tags
-                        </button>
-                    </form>
+                        </form>
+                    </div>
                 </div>
             </div>
 
             <!-- AI Metadata (if present) -->
             <div id="ai-metadata-section" style="display: none;" class="surface border mb-4">
                 <button type="button" id="ai-metadata-toggle"
-                    class="w-full p-3 flex justify-between items-center text-left hover:surface-light transition-colors">
+                    class="w-full p-3 flex justify-between items-center text-left hover:text-primary transition-colors cursor-pointer">
                     <h3 class="text-sm font-bold">AI Generation Data</h3>
                     <svg id="ai-metadata-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                         viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -233,90 +244,101 @@
             <div class="surface p-3 border mb-4">
                 <h3 class="text-sm font-bold mb-3 pb-2 border-b">Actions</h3>
 
-                <div class="space-y-3">
+                <div class="flex flex-col gap-3">
+                    <!-- Primary Action -->
                     <a id="download-btn" href="#" download
-                        class="block w-full px-3 py-1 surface-light transition-colors hover:surface-light text text-center text-xs">Download</a>
+                        class="flex items-center justify-center gap-2 w-full px-4 py-2 bg-primary primary-text transition-colors hover:bg-primary text-sm font-medium">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        Download
+                    </a>
 
                     <!-- Admin Actions -->
-                    <div id="admin-actions" style="display: none;" class="space-y-2 pt-2 border-t">
-                        <label class="block text-xs font-bold mb-1">Admin Actions</label>
-                        <div id="rating-select" class="custom-select mb-2" data-value="safe">
-                            <button
-                                class="custom-select-trigger w-full flex items-center justify-between gap-3 px-3 py-2 bg border text-xs cursor-pointer hover:border-primary transition-colors focus:outline-none focus:border-primary"
-                                type="button">
-                                <span class="custom-select-value text-secondary">Safe</span>
-                                <svg class="custom-select-arrow flex-shrink-0 transition-transform duration-200 text-secondary"
-                                    width="12" height="12" viewBox="0 0 12 12">
-                                    <path fill="currentColor" d="M6 9L1 4h10z" />
+                    <div id="admin-actions" style="display: none;" class="flex flex-col gap-3">
+
+                        <!-- Meta Actions Row -->
+                        <div class="grid grid-cols-2 gap-2">
+                            <div id="rating-select" class="custom-select" data-value="safe">
+                                <button
+                                    class="custom-select-trigger w-full flex items-center justify-between gap-2 px-3 py-1.5 bg border text-xs cursor-pointer hover:border-primary transition-colors focus:outline-none focus:border-primary"
+                                    type="button">
+                                    <span class="custom-select-value text-secondary truncate">Safe</span>
+                                    <svg class="custom-select-arrow flex-shrink-0 transition-transform duration-200 text-secondary"
+                                        width="12" height="12" viewBox="0 0 12 12">
+                                        <path fill="currentColor" d="M6 9L1 4h10z" />
+                                    </svg>
+                                </button>
+                                <div
+                                    class="custom-select-dropdown bg border border-primary max-h-60 overflow-y-auto shadow-lg z-20">
+                                    <div class="custom-select-option px-3 py-2 cursor-pointer hover:surface text text-xs selected"
+                                        data-value="safe">Safe</div>
+                                    <div class="custom-select-option px-3 py-2 cursor-pointer hover:surface text text-xs"
+                                        data-value="questionable">Questionable</div>
+                                    <div class="custom-select-option px-3 py-2 cursor-pointer hover:surface text text-xs"
+                                        data-value="explicit">Explicit</div>
+                                </div>
+                            </div>
+
+                            <button id="share-btn"
+                                class="flex items-center justify-center gap-1 w-full px-3 py-1.5 surface-light border transition-colors hover:surface-light text-xs">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round">
+                                    <circle cx="18" cy="5" r="3"></circle>
+                                    <circle cx="6" cy="12" r="3"></circle>
+                                    <circle cx="18" cy="19" r="3"></circle>
+                                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
                                 </svg>
+                                <span id="share-btn-text">Share</span>
                             </button>
-                            <div
-                                class="custom-select-dropdown bg border border-primary max-h-60 overflow-y-auto shadow-lg">
-                                <div class="custom-select-option px-3 py-2 cursor-pointer hover:surface text text-xs selected"
-                                    data-value="safe">Safe</div>
-                                <div class="custom-select-option px-3 py-2 cursor-pointer hover:surface text text-xs"
-                                    data-value="questionable">Questionable</div>
-                                <div class="custom-select-option px-3 py-2 cursor-pointer hover:surface text text-xs"
-                                    data-value="explicit">Explicit</div>
-                            </div>
                         </div>
 
-                        <button id="share-btn"
-                            class="w-full px-3 py-1 bg-primary transition-colors primary-text hover:bg-primary text-xs">Share</button>
-
-                        <!-- Album Management -->
-                        <div id="albums-section" class="border-t pt-2 mt-2">
-                            <label class="block text-xs font-bold mb-2">Albums</label>
-                            <div id="current-albums" class="mb-2 max-h-32 overflow-y-auto">
-                                <p class="text-xs text-secondary">Loading...</p>
-                            </div>
+                        <!-- Management Actions Row -->
+                        <div class="grid grid-cols-2 gap-2">
                             <button id="add-to-albums-btn"
-                                class="w-full px-3 py-1 surface-light transition-colors hover:surface-light text text-xs mb-1">
-                                Add to Albums
+                                class="w-full px-3 py-1.5 surface-light transition-colors hover:surface-light text text-xs">
+                                Albums
                             </button>
-                        </div>
-
-                        <button id="delete-btn"
-                            class="w-full px-3 py-1 bg-danger transition-colors hover:bg-danger tag-text text-xs">Delete</button>
-
-                        <!-- Relation Manager -->
-                        <div id="relation-manager-section" class="border-t pt-2 mt-2">
-                            <label class="block text-xs font-bold mb-2">Relations</label>
-                            <div id="relation-status-display" class="mb-2">
-                                <p class="text-xs text-secondary">No relations</p>
-                            </div>
                             <button id="manage-relations-btn"
-                                class="w-full px-3 py-1 surface-light transition-colors hover:surface-light text text-xs">
-                                Manage Relations
+                                class="w-full px-3 py-1.5 surface-light transition-colors hover:surface-light text text-xs">
+                                Relations
                             </button>
                         </div>
+
+                        <!-- Danger Chain -->
+                        <button id="delete-btn"
+                            class="w-full px-3 py-1.5 text-danger border border-danger transition-colors hover:bg-danger hover:text-white text-xs mt-1">
+                            Delete Media
+                        </button>
                     </div>
                 </div>
             </div>
 
             <!-- Share Link Display -->
-            <div id="share-link-section" style="display: none;"
-                class="bg-primary primary-text p-3 border border-primary mb-4">
-                <h4 class="text-sm font-bold mb-2 primary-text">Share Actions</h4>
-                <div id="ai-metadata-share-toggle" class="mb-2 p-2 surface border" style="display: none;">
+            <div id="share-link-section" style="display: none;" class="surface p-3 border mb-4">
+                <h4 class="text-sm font-bold mb-3 pb-2 border-b">Share Actions</h4>
+                <div id="ai-metadata-share-toggle" class="mb-2 p-2 bg border" style="display: none;">
                     <label class="flex items-center justify-between cursor-pointer">
                         <span class="text-xs text font-medium">Include AI metadata</span>
                         <div class="relative">
                             <input type="checkbox" id="share-ai-metadata-toggle" class="sr-only peer">
                             <div
-                                class="w-9 h-5 surface-light peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-[var(--primary-color)] rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-[var(--primary-text)] after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-[var(--text)] after:border-[var(--surface-light)] after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[var(--primary-color)] peer-checked:after:bg-[var(--primary-text)]">
+                                class="w-9 h-5 surface-light transition-colors peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-[var(--primary-text)] after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-[var(--text)] after:border-[var(--surface-light)] after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[var(--primary-color)] peer-checked:after:bg-[var(--primary-text)]">
                             </div>
                         </div>
                     </label>
                 </div>
                 <input type="text" id="share-link-input" readonly
-                    class="w-full surface px-2 py-1 border focus:outline-none focus:border-primary text-xs text mb-2">
+                    class="w-full bg px-2 py-1 border focus:outline-none hover:border-primary transition-colors focus:border-primary text-xs text mb-2">
                 <div class="space-y-1">
                     <button id="copy-share-link-btn"
-                        class="w-full px-3 py-1 surface transition-colors hover:surface text text-xs">Copy Link</button>
-                    <button id="unshare-btn"
-                        class="w-full px-3 py-1 surface-light transition-colors hover:surface-light text text-xs"
-                        style="display: none;">Remove Share</button>
+                        class="w-full px-3 py-1 surface-light transition-colors hover:surface-light text text-xs">Copy
+                        Link</button>
                 </div>
             </div>
         </div>

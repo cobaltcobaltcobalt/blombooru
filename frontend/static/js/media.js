@@ -81,9 +81,9 @@ class MediaViewer extends MediaViewerBase {
     setupAdminMode() {
         this.el('edit-tags-section').style.display = 'block';
         this.el('edit-source-section').style.display = 'block';
-        this.el('admin-actions').style.display = 'block';
-        this.el('unshare-btn').style.display = 'block';
+        this.el('admin-actions').style.display = 'flex';
         this.setupTagInput();
+        this.setupEditTagsToggle();
 
         // Set source input value
         const sourceInput = this.el('source-input');
@@ -122,11 +122,34 @@ class MediaViewer extends MediaViewerBase {
         }
 
         // Load albums
-        this.loadAlbums();
         this.checkAlbumsExistence();
 
         // Setup relation manager
         this.setupRelationManager();
+    }
+
+    setupEditTagsToggle() {
+        const toggle = this.el('edit-tags-toggle');
+        const content = this.el('edit-tags-content');
+
+        if (!toggle || !content) return;
+
+        // Ensure initial state
+        content.style.display = 'none';
+
+        // Remove any existing listeners by cloning
+        const newToggle = toggle.cloneNode(true);
+        toggle.parentNode.replaceChild(newToggle, toggle);
+
+        newToggle.addEventListener('click', () => {
+            const isHidden = content.style.display === 'none';
+            content.style.display = isHidden ? 'block' : 'none';
+
+            const activeChevron = newToggle.querySelector('#edit-tags-chevron');
+            if (activeChevron) {
+                activeChevron.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+            }
+        });
     }
 
     async checkAlbumsExistence() {
@@ -390,15 +413,22 @@ class MediaViewer extends MediaViewerBase {
         }
 
         this.el('share-btn')?.addEventListener('click', async () => {
-            await this.shareMedia();
+            const btn = this.el('share-btn');
+            if (btn.classList.contains('unshare-mode')) {
+                await this.unshareMedia();
+            } else {
+                await this.shareMedia();
+            }
         });
 
         this.el('copy-share-link-btn')?.addEventListener('click', () => {
             this.copyShareLink();
         });
 
-        this.el('unshare-btn')?.addEventListener('click', async () => {
-            await this.unshareMedia();
+        this.el('share-link-input')?.addEventListener('click', function () {
+            if (this.selectionStart === this.selectionEnd) {
+                this.select();
+            }
         });
 
         this.el('delete-btn')?.addEventListener('click', async () => {
@@ -571,47 +601,6 @@ class MediaViewer extends MediaViewerBase {
 
     // ==================== Album Methods ====================
 
-    async loadAlbums() {
-        try {
-            const res = await fetch(`/api/media/${this.mediaId}/albums`);
-            if (!res.ok) throw new Error('Failed to load albums');
-
-            const data = await res.json();
-            this.renderAlbumsList(data.albums || []);
-        } catch (e) {
-            console.error('Error loading albums:', e);
-            const container = this.el('current-albums');
-            if (container) {
-                container.innerHTML = '<p class="text-xs text-danger">Error loading albums</p>';
-            }
-        }
-    }
-
-    renderAlbumsList(albums) {
-        const container = this.el('current-albums');
-        if (!container) return;
-
-        if (albums.length === 0) {
-            container.innerHTML = '<p class="text-xs text-secondary">Not in any albums</p>';
-            return;
-        }
-
-        container.innerHTML = albums.map(album => `
-            <div class="flex justify-between items-center py-1 border-b last:border-0">
-                <a href="/album/${album.id}" class="text-xs hover:text-primary truncate flex-1" title="${album.name}">${album.name}</a>
-                <button class="remove-from-album-btn text-xs text-secondary hover:text-danger ml-2" data-album-id="${album.id}" title="Remove from album">&times;</button>
-            </div>
-        `).join('');
-
-        // Add event listeners for remove buttons
-        container.querySelectorAll('.remove-from-album-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.preventDefault();
-                const albumId = btn.dataset.albumId;
-                this.removeFromAlbum(albumId);
-            });
-        });
-    }
 
     async addToAlbums() {
         try {
@@ -653,7 +642,6 @@ class MediaViewer extends MediaViewerBase {
                 }
 
                 app.showNotification('Albums updated successfully', 'success');
-                this.loadAlbums();
             } catch (error) {
                 app.showNotification(error.message, 'error', 'Error updating albums');
             }
@@ -671,7 +659,6 @@ class MediaViewer extends MediaViewerBase {
             });
 
             app.showNotification('Removed from album', 'success');
-            this.loadAlbums();
         } catch (error) {
             app.showNotification(error.message, 'error', 'Error removing from album');
         }
@@ -752,7 +739,17 @@ class MediaViewer extends MediaViewerBase {
                 try {
                     await app.apiCall(`/api/media/${this.mediaId}/share`, { method: 'DELETE' });
                     this.el('share-link-section').style.display = 'none';
-                    this.el('share-btn').style.display = 'block';
+
+                    // Reset share button
+                    const btn = this.el('share-btn');
+                    const btnText = this.el('share-btn-text');
+                    if (btn) {
+                        btn.style.removeProperty('display');
+                        btn.classList.remove('unshare-mode', 'border-danger', 'text-danger', 'hover:bg-danger', 'hover:text-white');
+                        btn.classList.add('surface-light', 'hover:surface-light');
+                        btnText.innerHTML = `Share`;
+                    }
+
                     app.showNotification('Media successfully unshared', 'success');
                 } catch (e) {
                     app.showNotification(e.message, 'error', 'Error removing share');
@@ -1687,7 +1684,16 @@ class MediaViewer extends MediaViewerBase {
 
         this.el('share-link-input').value = `${cleanBaseUrl}/shared/${uuid}`;
         this.el('share-link-section').style.display = 'block';
-        this.el('share-btn').style.display = 'none';
+
+        // Update share button to unshare mode
+        const btn = this.el('share-btn');
+        const btnText = this.el('share-btn-text');
+        if (btn) {
+            btn.style.removeProperty('display');
+            btn.classList.add('unshare-mode', 'border-danger', 'text-danger', 'hover:bg-danger', 'hover:text-white');
+            btn.classList.remove('surface-light', 'hover:surface-light');
+            btnText.innerHTML = `Unshare`;
+        }
 
         const aiMetadataToggle = this.el('share-ai-metadata-toggle');
         if (aiMetadataToggle) {
