@@ -16,7 +16,7 @@ from ..schemas import MediaResponse, MediaUpdate, MediaCreate, RatingEnum
 from ..config import settings
 from ..utils.media_processor import process_media_file, calculate_file_hash
 from ..utils.thumbnail_generator import generate_thumbnail
-from ..utils.media_helpers import extract_image_metadata, serve_media_file, sanitize_filename, get_unique_filename
+from ..utils.media_helpers import extract_image_metadata, serve_media_file, sanitize_filename, get_unique_filename, delete_media_cache
 from ..utils.album_utils import get_random_thumbnails, get_album_rating, get_media_count
 from ..models import Media, Tag, User, blombooru_media_tags, Album, blombooru_album_media
 from ..schemas import MediaResponse, MediaUpdate, MediaCreate, RatingEnum, AlbumListResponse
@@ -152,7 +152,7 @@ async def get_media_file(media_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Media not found")
     
     file_path = settings.BASE_DIR / media.path
-    return serve_media_file(file_path, media.mime_type)
+    return await serve_media_file(file_path, media.mime_type)
 
 @router.get("/{media_id}/thumbnail")
 async def get_media_thumbnail(media_id: int, db: Session = Depends(get_db)):
@@ -162,7 +162,7 @@ async def get_media_thumbnail(media_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Thumbnail not found")
     
     thumb_path = settings.BASE_DIR / media.thumbnail_path
-    return serve_media_file(thumb_path, "image/jpeg", "Thumbnail file not found")
+    return await serve_media_file(thumb_path, "image/jpeg", "Thumbnail file not found")
 
 @router.get("/{media_id}/metadata")
 async def get_media_metadata(
@@ -442,6 +442,13 @@ async def unshare_media(
     media.is_shared = False
     media.share_uuid = None
     db.commit()
+    
+    # Cleanup cache
+    try:
+        file_path = settings.BASE_DIR / media.path
+        delete_media_cache(file_path)
+    except Exception as e:
+        print(f"Failed to cleanup cache for unshared media: {e}")
     
     return {"message": "Share removed"}
 
