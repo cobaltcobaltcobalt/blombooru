@@ -199,6 +199,42 @@ async def serve_media_file(file_path: Path, mime_type: str, error_message: str =
             def process_image():
                 import io
                 with Image.open(file_path) as img:
+                    # Check if image is animated
+                    is_animated = getattr(img, 'is_animated', False)
+                    n_frames = getattr(img, 'n_frames', 1)
+                    
+                    # Extract frame durations for animated images
+                    frame_durations = []
+                    if is_animated and n_frames > 1:
+                        try:
+                            if img.format == 'WEBP':                                
+                                # Try different metadata fields
+                                timestamp = img.info.get('timestamp', None)
+                                duration_info = img.info.get('duration', None)
+                                
+                                if timestamp:
+                                    # Calculate average frame duration from total timestamp
+                                    avg_duration = int(timestamp / n_frames) if n_frames > 0 else 100
+                                    frame_durations = [avg_duration] * n_frames
+                                else:
+                                    # Fallback: iterate through frames and collect durations
+                                    for frame_idx in range(n_frames):
+                                        img.seek(frame_idx)
+                                        duration = img.info.get('duration', 100)
+                                        frame_durations.append(duration)
+                                    img.seek(0)
+                            else:
+                                # For GIF and other formats, standard extraction
+                                for frame_idx in range(n_frames):
+                                    img.seek(frame_idx)
+                                    duration = img.info.get('duration', 100)
+                                    frame_durations.append(duration)
+                                img.seek(0)
+                            
+                        except Exception as e:
+                            print(f"Error extracting frame durations: {e}")
+                            frame_durations = [100] * n_frames  # Fallback to 100ms per frame
+                    
                     # Convert RGBA to RGB if necessary (for JPEG output)
                     if mime_type == 'image/jpeg' and img.mode in ('RGBA', 'LA', 'P'):
                         background = Image.new('RGB', img.size, (255, 255, 255))
@@ -235,6 +271,30 @@ async def serve_media_file(file_path: Path, mime_type: str, error_message: str =
                     elif save_format == 'WEBP':
                         save_kwargs['quality'] = 95
                         save_kwargs['exif'] = b''
+                        
+                        # Preserve animation for WebP
+                        if is_animated and n_frames > 1:
+                            save_kwargs['save_all'] = True
+                            # Use the extracted frame durations
+                            if frame_durations:
+                                save_kwargs['duration'] = frame_durations
+                            else:
+                                save_kwargs['duration'] = 100
+                    elif save_format == 'GIF':
+                        # Preserve animation for GIF
+                        if is_animated and n_frames > 1:
+                            save_kwargs['save_all'] = True
+                            # Use the extracted frame durations
+                            if frame_durations:
+                                save_kwargs['duration'] = frame_durations
+                            else:
+                                save_kwargs['duration'] = 100
+                            # Preserve loop count
+                            try:
+                                loop = img.info.get('loop', 0)
+                                save_kwargs['loop'] = loop
+                            except:
+                                save_kwargs['loop'] = 0
                     
                     img.save(cache_path, **save_kwargs)
             
