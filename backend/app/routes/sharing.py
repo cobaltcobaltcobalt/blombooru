@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session, joinedload
 from PIL import Image
@@ -6,21 +6,24 @@ import json
 from ..database import get_db
 from ..models import Media
 from ..config import settings
-from ..schemas import MediaResponse
+from ..schemas import SharedMediaResponse
 from ..utils.media_helpers import extract_media_metadata, serve_media_file
+from ..utils.rate_limiter import shared_limiter
 
 router = APIRouter(prefix="/api/shared", tags=["sharing"])
 
 @router.get("/{share_uuid}")
-async def get_shared_content(share_uuid: str, db: Session = Depends(get_db)):
+async def get_shared_content(share_uuid: str, request: Request, db: Session = Depends(get_db)):
     """Get shared media"""
+    shared_limiter.check(request)
+    
     media = db.query(Media).options(joinedload(Media.tags)).filter(
         Media.share_uuid == share_uuid,
         Media.is_shared == True
     ).first()
     
     if media:
-        media_dict = MediaResponse.model_validate(media).model_dump()
+        media_dict = SharedMediaResponse.model_validate(media).model_dump()
         media_dict['share_ai_metadata'] = media.share_ai_metadata
         
         return {
@@ -31,8 +34,9 @@ async def get_shared_content(share_uuid: str, db: Session = Depends(get_db)):
     raise HTTPException(status_code=404, detail="Shared content not found")
 
 @router.get("/{share_uuid}/file")
-async def get_shared_file(share_uuid: str, db: Session = Depends(get_db)):
+async def get_shared_file(share_uuid: str, request: Request, db: Session = Depends(get_db)):
     """Serve shared media file with metadata stripped if AI metadata not shared"""
+    shared_limiter.check(request)
     media = db.query(Media).filter(
         Media.share_uuid == share_uuid,
         Media.is_shared == True
@@ -47,8 +51,9 @@ async def get_shared_file(share_uuid: str, db: Session = Depends(get_db)):
     return serve_media_file(file_path, media.mime_type, strip_metadata=strip_metadata)
 
 @router.get("/{share_uuid}/thumbnail")
-async def get_shared_thumbnail(share_uuid: str, db: Session = Depends(get_db)):
+async def get_shared_thumbnail(share_uuid: str, request: Request, db: Session = Depends(get_db)):
     """Serve shared media thumbnail"""
+    shared_limiter.check(request)
     media = db.query(Media).filter(
         Media.share_uuid == share_uuid,
         Media.is_shared == True
@@ -61,8 +66,9 @@ async def get_shared_thumbnail(share_uuid: str, db: Session = Depends(get_db)):
     return serve_media_file(thumb_path, "image/jpeg", "Thumbnail file not found")
 
 @router.get("/{share_uuid}/metadata")
-async def get_shared_metadata(share_uuid: str, db: Session = Depends(get_db)):
+async def get_shared_metadata(share_uuid: str, request: Request, db: Session = Depends(get_db)):
     """Get metadata for shared media (only if enabled)"""
+    shared_limiter.check(request)
     media = db.query(Media).filter(
         Media.share_uuid == share_uuid,
         Media.is_shared == True
