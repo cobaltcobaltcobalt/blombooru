@@ -114,7 +114,15 @@ class MediaViewerBase {
         const aiMetadataShareToggle = this.el('ai-metadata-share-toggle');
 
         try {
-            const res = await fetch(`/api/media/${media.id}/metadata`);
+            let url = `/api/media/${media.id}/metadata`;
+            if (options.isShared && media.share_uuid) {
+                url = `/api/shared/${media.share_uuid}/metadata`;
+            } else if (options.isShared && this.shareUuid) {
+                // Fallback if media object doesn't have share_uuid but the viewer does
+                url = `/api/shared/${this.shareUuid}/metadata`;
+            }
+
+            const res = await fetch(url);
             if (!res.ok) {
                 this.hideAIMetadata(section, appendBtn, aiMetadataShareToggle);
                 return;
