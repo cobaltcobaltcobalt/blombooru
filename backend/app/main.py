@@ -72,7 +72,8 @@ async def media_page(request: Request, media_id: int):
     return templates.TemplateResponse("media.html", {
         "request": request,
         "app_name": settings.APP_NAME,
-        "media_id": media_id
+        "media_id": media_id,
+        "external_share_url": settings.EXTERNAL_SHARE_URL
     })
 
 @app.get("/shared/{share_uuid}", response_class=HTMLResponse)

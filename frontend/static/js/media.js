@@ -1,7 +1,8 @@
 class MediaViewer extends MediaViewerBase {
-    constructor(mediaId) {
+    constructor(mediaId, externalShareUrl = null) {
         super();
         this.mediaId = mediaId;
+        this.externalShareUrl = externalShareUrl;
         this.tagInputHelper = new TagInputHelper();
         this.validationTimeout = null;
         this.tooltipHelper = null;
@@ -1680,7 +1681,11 @@ class MediaViewer extends MediaViewerBase {
     }
 
     showShareLink(uuid, shareAIMetadata) {
-        this.el('share-link-input').value = `${window.location.origin}/shared/${uuid}`;
+        const baseUrl = this.externalShareUrl || window.location.origin;
+        // Remove trailing slash if present to avoid double slashes
+        const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+
+        this.el('share-link-input').value = `${cleanBaseUrl}/shared/${uuid}`;
         this.el('share-link-section').style.display = 'block';
         this.el('share-btn').style.display = 'none';
 

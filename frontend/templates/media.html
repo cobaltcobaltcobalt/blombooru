@@ -336,7 +336,8 @@
 <script>
     document.addEventListener('DOMContentLoaded', () => {
         const mediaId = "{{ media_id }}";
-        new MediaViewer(mediaId);
+        const externalShareUrl = "{{ external_share_url }}" === "None" ? null : "{{ external_share_url }}";
+        new MediaViewer(mediaId, externalShareUrl);
     });
 </script>
 {% endblock %}
