@@ -807,17 +807,14 @@ class MediaViewer extends MediaViewerBase {
             }
 
             const metadata = await res.json();
-            const aiPrompt = this.extractAIPrompt(metadata);
+            const aiPrompt = AITagUtils.extractAIPrompt(metadata);
 
             if (!aiPrompt || typeof aiPrompt !== 'string') {
                 app.showNotification('No AI prompt found in metadata', 'error');
                 return;
             }
 
-            const promptTags = aiPrompt
-                .split(',')
-                .map(tag => tag.trim().replace(/\s+/g, '_'))
-                .filter(tag => tag.length > 0);
+            const promptTags = AITagUtils.parsePromptTags(aiPrompt);
 
             const validTags = [];
             for (const tag of promptTags) {
@@ -858,41 +855,7 @@ class MediaViewer extends MediaViewerBase {
         }
     }
 
-    extractAIPrompt(metadata) {
-        // Use the same extraction logic as renderAIMetadata
-        const aiData = this.extractAIData(metadata);
 
-        if (!aiData) {
-            return null;
-        }
-
-        // Extract the positive prompt from the parsed AI data
-        // Check various possible keys for the prompt
-        const promptLocations = [
-            aiData.prompt,
-            aiData.Prompt,
-            aiData.positive_prompt,
-            aiData.positive,
-            aiData.sui_image_params?.prompt
-        ];
-
-        for (const location of promptLocations) {
-            if (location && typeof location === 'string') {
-                return location;
-            }
-        }
-
-        // Fallback: if aiData has a prompt nested somewhere
-        for (const [key, value] of Object.entries(aiData)) {
-            if (key.toLowerCase().includes('prompt') &&
-                !key.toLowerCase().includes('negative') &&
-                typeof value === 'string') {
-                return value;
-            }
-        }
-
-        return null;
-    }
 
     // ==================== Hierarchy Methods ====================
     renderHierarchy(items) {

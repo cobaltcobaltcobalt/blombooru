@@ -74,13 +74,10 @@ class BulkAITagsModal extends BulkTagModalBase {
         for (const { mediaId, metadata, mediaData } of rawData) {
             if (!metadata) continue;
 
-            const aiPrompt = this.extractAIPromptFromMetadata(metadata);
+            const aiPrompt = AITagUtils.extractAIPrompt(metadata);
             if (!aiPrompt) continue;
 
-            const promptTags = aiPrompt
-                .split(',')
-                .map(tag => tag.trim().replace(/\s+/g, '_').toLowerCase())
-                .filter(tag => tag.length > 0);
+            const promptTags = AITagUtils.parsePromptTags(aiPrompt);
 
             if (promptTags.length === 0) continue;
 
@@ -151,41 +148,6 @@ class BulkAITagsModal extends BulkTagModalBase {
         this.showSaveButton();
     }
 
-    extractAIPromptFromMetadata(metadata) {
-        const aiDataSources = [
-            metadata.parameters,
-            metadata.prompt,
-            metadata.Comment,
-            metadata.UserComment,
-            metadata.sui_image_params,
-            metadata.comfy_workflow
-        ];
-
-        for (const source of aiDataSources) {
-            if (!source) continue;
-
-            let parsed = source;
-            if (typeof source === 'string') {
-                try {
-                    parsed = JSON.parse(source);
-                } catch {
-                    if (source.includes(',') && !source.includes('{')) return source;
-                    const match = source.match(/^(.+?)(?:\nNegative prompt:|$)/s);
-                    if (match) return match[1].trim();
-                }
-            }
-
-            if (typeof parsed === 'object' && parsed !== null) {
-                const promptKeys = ['prompt', 'Prompt', 'positive_prompt', 'positive'];
-                for (const key of promptKeys) {
-                    if (parsed[key] && typeof parsed[key] === 'string') return parsed[key];
-                }
-                if (parsed.sui_image_params?.prompt) return parsed.sui_image_params.prompt;
-            }
-        }
-        return null;
-    }
-
     async processMediaItem(mediaId) {
         if (this.isCancelled) return null;
 
@@ -198,15 +160,12 @@ class BulkAITagsModal extends BulkTagModalBase {
             if (!metaRes.ok) return null;
 
             const metadata = await metaRes.json();
-            const aiPrompt = this.extractAIPromptFromMetadata(metadata);
+            const aiPrompt = AITagUtils.extractAIPrompt(metadata);
             if (!aiPrompt) return null;
 
             const mediaData = mediaRes.ok ? await mediaRes.json() : { tags: [] };
 
-            const promptTags = aiPrompt
-                .split(',')
-                .map(tag => tag.trim().replace(/\s+/g, '_').toLowerCase())
-                .filter(tag => tag.length > 0);
+            const promptTags = AITagUtils.parsePromptTags(aiPrompt);
 
             const currentTags = (mediaData.tags || []).map(t => t.name || t);
             const currentTagsSet = new Set(currentTags.map(t => t.toLowerCase()));
