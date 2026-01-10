@@ -3,7 +3,18 @@
 {% set show_header = false %}
 {% set show_footer = false %}
 
-{% block title %}Shared - {{ app_name }}{% endblock %}
+{% block title %}{% if media %}{{ media.filename }} - {% endif %}Shared - {{ app_name }}{% endblock %}
+
+{% block head_extra %}
+    {% if media %}
+    <meta property="og:title" content="{{ media.filename }}">
+    <meta property="og:description" content="View this shared media on {{ app_name }}">
+    <meta property="og:type" content="{% if media.file_type == 'video' %}video.other{% else %}website{% endif %}">
+    <meta property="og:image" content="{{ request.base_url }}{{ og_image|trim('/') }}">
+    <meta property="og:url" content="{{ request.url }}">
+    <meta name="twitter:card" content="summary_large_image">
+    {% endif %}
+{% endblock %}
 
 {% block content %}
 <!-- Fullscreen Image Overlay -->
