@@ -17,17 +17,42 @@ class FullscreenMediaViewer {
 
     init() {
         this.overlay = document.getElementById('fullscreen-overlay');
+
+        if (!this.overlay) {
+            this.createOverlayElements();
+            this.overlay = document.getElementById('fullscreen-overlay');
+        }
+
         this.image = document.getElementById('fullscreen-image');
         this.wrapper = document.getElementById('fullscreen-image-wrapper');
 
-        this.image.addEventListener('dragstart', (e) => {
-            e.preventDefault();
-            return false;
-        });
+        // Check if video element exists, if not create it
+        this.video = document.getElementById('fullscreen-video');
+        if (!this.video && this.wrapper) {
+            this.video = document.createElement('video');
+            this.video.id = 'fullscreen-video';
+            this.video.controls = true;
+            this.video.loop = true;
+            this.video.style.display = 'none';
+            this.video.style.width = '100%';
+            this.video.style.height = '100%';
+            this.video.style.objectFit = 'contain';
+            this.wrapper.appendChild(this.video);
+        }
 
-        this.image.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            return false;
+        this.activeElement = this.image; // Tracks whether currently showing image or video
+
+        // Prevent default drag behaviors
+        [this.image, this.video].forEach(el => {
+            if (!el) return;
+            el.addEventListener('dragstart', (e) => {
+                e.preventDefault();
+                return false;
+            });
+            el.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                return false;
+            });
         });
 
         document.addEventListener('keydown', (e) => {
@@ -59,12 +84,32 @@ class FullscreenMediaViewer {
         this.setupTouchEvents();
     }
 
+    createOverlayElements() {
+        const overlay = document.createElement('div');
+        overlay.id = 'fullscreen-overlay';
+        overlay.innerHTML = `
+            <div id="fullscreen-image-wrapper">
+                <img id="fullscreen-image" src="" alt="" style="display: none;">
+                <video id="fullscreen-video" src="" controls loop style="display: none; width: 100%; height: 100%; object-fit: contain;"></video>
+            </div>
+            <div class="fullscreen-close-hint">Press ESC or click outside the media to close</div>
+        `;
+        document.body.appendChild(overlay);
+    }
+
     setupMouseEvents() {
-        this.image.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            if (this.scale > 1) {
-                this.startDrag(e.clientX, e.clientY);
-            }
+        // We attach listeners to both, but logic will use activeElement
+        [this.image, this.video].forEach(el => {
+            if (!el) return;
+            el.addEventListener('mousedown', (e) => {
+                // Don't interfere with video controls
+                if (this.activeElement === this.video && e.offsetY > this.video.clientHeight - 50) return;
+
+                e.preventDefault();
+                if (this.scale > 1) {
+                    this.startDrag(e.clientX, e.clientY);
+                }
+            });
         });
 
         document.addEventListener('mousemove', (e) => {
@@ -81,7 +126,7 @@ class FullscreenMediaViewer {
     setupTouchEvents() {
         let touchDistance = 0;
 
-        this.image.addEventListener('touchstart', (e) => {
+        const handleTouchStart = (e) => {
             if (e.touches.length === 1) {
                 if (this.scale > 1) {
                     this.startDrag(e.touches[0].clientX, e.touches[0].clientY);
@@ -92,9 +137,9 @@ class FullscreenMediaViewer {
                 const dy = e.touches[0].clientY - e.touches[1].clientY;
                 touchDistance = Math.sqrt(dx * dx + dy * dy);
             }
-        }, { passive: false });
+        };
 
-        this.image.addEventListener('touchmove', (e) => {
+        const handleTouchMove = (e) => {
             if (e.touches.length === 1 && this.isDragging) {
                 e.preventDefault();
                 this.drag(e.touches[0].clientX, e.touches[0].clientY);
@@ -113,24 +158,60 @@ class FullscreenMediaViewer {
 
                 touchDistance = newDistance;
             }
-        }, { passive: false });
+        };
 
-        this.image.addEventListener('touchend', (e) => {
+        const handleTouchEnd = (e) => {
             if (e.touches.length === 0) {
                 this.stopDrag();
                 touchDistance = 0;
             }
+        };
+
+        [this.image, this.video].forEach(el => {
+            if (!el) return;
+            el.addEventListener('touchstart', handleTouchStart, { passive: false });
+            el.addEventListener('touchmove', handleTouchMove, { passive: false });
+            el.addEventListener('touchend', handleTouchEnd);
         });
     }
 
-    open(imageSrc) {
-        this.image.src = imageSrc;
+    open(source, isVideo = false) {
         this.overlay.classList.add('active');
         this.reset();
 
-        this.image.onload = () => {
-            this.sizeImageToViewport();
-        };
+        if (isVideo && this.video) {
+            this.image.style.display = 'none';
+            this.video.style.display = 'block';
+            this.video.src = source;
+            this.activeElement = this.video;
+            this.image.src = ''; // Clear image source
+
+            // Auto play video
+            this.video.play().catch(e => console.log('Auto-play failed:', e));
+        } else {
+            if (this.video) {
+                this.video.style.display = 'none';
+                this.video.pause();
+                this.video.src = ''; // Clear video source
+            }
+            this.image.style.display = 'block';
+            this.image.src = source;
+            this.activeElement = this.image;
+        }
+
+        // Wait for load to size
+        const loadEvent = isVideo ? 'loadedmetadata' : 'onload';
+        if (isVideo) {
+            if (this.video) {
+                this.video.onloadedmetadata = () => {
+                    this.sizeImageToViewport();
+                };
+            }
+        } else {
+            this.image.onload = () => {
+                this.sizeImageToViewport();
+            };
+        }
 
         document.body.style.overflow = 'hidden';
     }
@@ -138,21 +219,40 @@ class FullscreenMediaViewer {
     sizeImageToViewport() {
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
-        const imageRatio = this.image.naturalWidth / this.image.naturalHeight;
+
+        let naturalWidth, naturalHeight;
+
+        if (this.activeElement === this.video) {
+            naturalWidth = this.video.videoWidth;
+            naturalHeight = this.video.videoHeight;
+        } else {
+            naturalWidth = this.image.naturalWidth;
+            naturalHeight = this.image.naturalHeight;
+        }
+
+        const imageRatio = naturalWidth / naturalHeight;
         const viewportRatio = viewportWidth / viewportHeight;
 
         if (viewportRatio > imageRatio) {
-            this.image.style.width = 'auto';
-            this.image.style.height = '98vh';
+            this.activeElement.style.width = 'auto';
+            this.activeElement.style.height = '98vh';
         } else {
-            this.image.style.width = '98vw';
-            this.image.style.height = 'auto';
+            this.activeElement.style.width = '98vw';
+            this.activeElement.style.height = 'auto';
         }
     }
 
     close() {
         this.overlay.classList.remove('active');
         this.reset();
+
+        // Cleanup sources
+        if (this.video) {
+            this.video.pause();
+            this.video.src = '';
+        }
+        this.image.src = '';
+
         document.body.style.overflow = '';
     }
 
@@ -171,8 +271,9 @@ class FullscreenMediaViewer {
         if (this.scale === 1) {
             this.translateX = 0;
             this.translateY = 0;
+            this.translateY = 0;
         } else {
-            const rect = this.image.getBoundingClientRect();
+            const rect = this.activeElement.getBoundingClientRect();
             const x = centerX - rect.left - rect.width / 2;
             const y = centerY - rect.top - rect.height / 2;
 
@@ -193,7 +294,7 @@ class FullscreenMediaViewer {
         this.startY = y - this.translateY;
         this.lastX = x;
         this.lastY = y;
-        this.image.classList.add('dragging');
+        this.activeElement.classList.add('dragging');
     }
 
     drag(x, y) {
@@ -209,27 +310,37 @@ class FullscreenMediaViewer {
     stopDrag() {
         this.isDragging = false;
         this.image.classList.remove('dragging');
+        if (this.video) {
+            this.video.classList.remove('dragging');
+        }
     }
 
     constrainPosition() {
-        const rect = this.image.getBoundingClientRect();
-        const maxX = (rect.width * this.scale - rect.width) / 2;
-        const maxY = (rect.height * this.scale - rect.height) / 2;
+        const rect = this.activeElement.getBoundingClientRect();
+        // Use natural dimensions * scale to prevent drift if rect changes
+        // For video/img this can be tricky, relying on bounding client rect is safer if transform is applied
+
+        // Actually we need the element's current dimensions relative to viewport
+        const width = rect.width / this.scale; // unscaled width
+        const height = rect.height / this.scale; // unscaled height
+
+        const maxX = (width * this.scale - width) / 2;
+        const maxY = (height * this.scale - height) / 2;
 
         this.translateX = Math.max(-maxX, Math.min(maxX, this.translateX));
         this.translateY = Math.max(-maxY, Math.min(maxY, this.translateY));
     }
 
     updateTransform() {
-        this.image.style.transform = `translate(${this.translateX}px, ${this.translateY}px) scale(${this.scale})`;
+        this.activeElement.style.transform = `translate(${this.translateX}px, ${this.translateY}px) scale(${this.scale})`;
     }
 
     updateCursor() {
         if (this.scale > 1) {
-            this.image.classList.add('zoomed');
+            this.activeElement.classList.add('zoomed');
             this.overlay.style.cursor = 'default';
         } else {
-            this.image.classList.remove('zoomed');
+            this.activeElement.classList.remove('zoomed');
             this.overlay.style.cursor = 'zoom-out';
         }
     }
