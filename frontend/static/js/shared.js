@@ -36,13 +36,21 @@ class SharedViewer extends MediaViewerBase {
             const response = await fetch(`/api/shared/${this.shareUuid}`);
             const data = await response.json();
 
-            if (data.type === 'media') {
-                this.currentMedia = data.data;
-                this.renderSharedMedia(this.currentMedia);
+            if (response.ok) {
+                if (data.type === 'media') {
+                    this.currentMedia = data.data;
+                    this.renderSharedMedia(this.currentMedia);
 
-                // Check if content is explicit and show age verification
-                if (this.currentMedia.rating === 'explicit') {
-                    this.showAgeVerification();
+                    // Check if content is explicit and show age verification
+                    if (this.currentMedia.rating === 'explicit') {
+                        this.showAgeVerification();
+                    }
+                }
+            } else {
+                if (data.detail === "Shared content not found" || data.detail === "Not Found") {
+                    this.showErrorMessage("The media you attempted to view has either been unshared, deleted, or never existed.");
+                } else {
+                    this.showErrorMessage();
                 }
             }
         } catch (error) {
@@ -51,12 +59,12 @@ class SharedViewer extends MediaViewerBase {
         }
     }
 
-    showErrorMessage() {
+    showErrorMessage(message = "This shared link is invalid or has been removed.") {
         const container = this.el('shared-content');
         container.innerHTML = `
             <div class="text-center py-16">
                 <h2 class="text-lg font-bold mb-2">Content Not Found</h2>
-                <p class="text-xs text-secondary">This shared link is invalid or has been removed.</p>
+                <p class="text-xs text-secondary">${message}</p>
             </div>
         `;
     }
