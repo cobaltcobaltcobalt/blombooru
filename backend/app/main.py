@@ -10,7 +10,7 @@ from .database import get_db, init_db, init_engine
 from .routes import admin, media, tags, search, sharing, albums, ai_tagger
 from datetime import datetime
 
-app = FastAPI(title="Blombooru", version="1.20.1")
+app = FastAPI(title="Blombooru", version="1.21.0")
 
 static_path = Path(__file__).parent.parent.parent / "frontend" / "static"
 templates_path = Path(__file__).parent.parent.parent / "frontend" / "templates"
