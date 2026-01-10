@@ -69,6 +69,22 @@ class MediaResponse(MediaBase):
     
     model_config = ConfigDict(from_attributes=True)
 
+class SharedMediaResponse(MediaBase):
+    filename: str
+    file_type: FileTypeEnum
+    mime_type: Optional[str]
+    file_size: int
+    width: Optional[int]
+    height: Optional[int]
+    duration: Optional[float]
+    uploaded_at: datetime
+    is_shared: bool
+    share_uuid: Optional[str]
+    share_ai_metadata: bool
+    tags: List[TagResponse] = []
+    
+    model_config = ConfigDict(from_attributes=True)
+
 class UserCreate(BaseModel):
     username: str
     password: str
