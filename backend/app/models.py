@@ -59,7 +59,7 @@ class Media(Base):
     parent_id = Column(Integer, ForeignKey('blombooru_media.id', ondelete='SET NULL'), nullable=True, index=True)
     
     tags = relationship('Tag', secondary=blombooru_media_tags, back_populates='media')
-    children = relationship('Media', backref='parent', remote_side=[id])
+    parent = relationship('Media', remote_side=[id], backref='children')
 
     @property
     def has_children(self) -> bool:
