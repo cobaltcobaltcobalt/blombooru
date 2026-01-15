@@ -276,7 +276,6 @@ async def get_posts_json(
     base_url = get_base_url(request)
     return [format_media_response(m, base_url) for m in media_list]
 
-# Single Post Details
 @router.get("/posts/{post_id}.json")
 @router.get("/posts/{post_id}")
 async def get_post_json(
@@ -388,6 +387,171 @@ async def get_tags_json(
             "words": TAG_WORD_SPLIT_PATTERN.split(tag.name)
         })
 
+    return results
+
+@router.get("/related_tag.json")
+async def get_related_tag_json(
+    query: Optional[str] = Query(None, alias="search[query]"),
+    category: Optional[str] = Query(None, alias="search[category]"),
+    limit: int = Query(25, ge=1, le=1000),
+    db: Session = Depends(get_db)
+):
+    """
+    Danbooru v2 compatible related tags API.
+    Finds tags that frequently co-occur with the query tag and calculates
+    similarity metrics (cosine, jaccard, overlap coefficient, frequency).
+    """
+    
+    if not query or not query.strip():
+        return {"query": "", "post_count": 0, "tag": None, "related_tags": []}
+    
+    query_lower = query.lower().strip()
+    
+    # Find the query tag with only necessary columns
+    query_tag = db.query(Tag).options(
+        load_only(Tag.id, Tag.name, Tag.post_count, Tag.category, Tag.created_at)
+    ).filter(Tag.name == query_lower).first()
+    
+    if not query_tag:
+        return {"query": query, "post_count": 0, "tag": None, "related_tags": []}
+    
+    query_post_count = query_tag.post_count
+    
+    # Helper to format tag into Danbooru-compatible object
+    def format_tag_object(tag: Tag) -> dict:
+        c_val = tag.category.value if hasattr(tag.category, 'value') else str(tag.category)
+        category_id = CATEGORY_MAP.get(c_val.lower(), 0)
+        created_at = tag.created_at.isoformat(timespec='milliseconds') if tag.created_at else None
+        return {
+            "id": tag.id,
+            "name": tag.name,
+            "post_count": tag.post_count,
+            "category": category_id,
+            "created_at": created_at,
+            "updated_at": created_at,
+            "is_deprecated": False,
+            "words": TAG_WORD_SPLIT_PATTERN.split(tag.name)
+        }
+    
+    tag_object = format_tag_object(query_tag)
+    
+    if query_post_count == 0:
+        return {
+            "query": query,
+            "post_count": 0,
+            "tag": tag_object,
+            "related_tags": []
+        }
+    
+    # Use table aliases for efficient self-join query
+    # This avoids an IN subquery which can be slower on large datasets
+    t1 = blombooru_media_tags.alias('t1')
+    t2 = blombooru_media_tags.alias('t2')
+    
+    # Count co-occurrences using self-join:
+    # Find all tags (t2) that appear on the same media as the query tag (t1)
+    co_occurrence_counts = db.query(
+        t2.c.tag_id,
+        func.count().label('co_count')
+    ).select_from(t1).join(
+        t2, t1.c.media_id == t2.c.media_id
+    ).filter(
+        t1.c.tag_id == query_tag.id
+    ).group_by(
+        t2.c.tag_id
+    ).subquery()
+    
+    # Join with Tag table to get full tag details
+    related_query = db.query(
+        Tag, co_occurrence_counts.c.co_count
+    ).join(
+        co_occurrence_counts, Tag.id == co_occurrence_counts.c.tag_id
+    ).options(
+        load_only(Tag.id, Tag.name, Tag.post_count, Tag.category, Tag.created_at)
+    )
+    
+    # Optional category filter
+    if category:
+        try:
+            cat_enum = TagCategoryEnum(category.lower())
+            related_query = related_query.filter(Tag.category == cat_enum)
+        except ValueError:
+            pass  # Invalid category, ignore filter
+    
+    # Order by co-occurrence count (descending) and limit results
+    related_data = related_query.order_by(
+        desc(co_occurrence_counts.c.co_count)
+    ).limit(limit).all()
+    
+    # Calculate similarity metrics and build response
+    related_tags = []
+    for tag, co_count in related_data:
+        tag_post_count = tag.post_count
+        intersection = float(co_count)
+        q_count = float(query_post_count)
+        t_count = float(tag_post_count)
+        
+        # Frequency: proportion of query tag's posts that also have this tag
+        frequency = intersection / q_count
+        
+        # Overlap coefficient: intersection / min(|A|, |B|)
+        min_count = min(q_count, t_count)
+        overlap_coefficient = intersection / min_count if min_count > 0 else 0.0
+        
+        # Jaccard similarity: intersection / union = intersection / (|A| + |B| - intersection)
+        union = q_count + t_count - intersection
+        jaccard_similarity = intersection / union if union > 0 else 0.0
+        
+        # Cosine similarity: intersection / sqrt(|A| * |B|)
+        product = q_count * t_count
+        cosine_similarity = intersection / (product ** 0.5) if product > 0 else 0.0
+        
+        related_tags.append({
+            "tag": format_tag_object(tag),
+            "cosine_similarity": cosine_similarity,
+            "jaccard_similarity": jaccard_similarity,
+            "overlap_coefficient": overlap_coefficient,
+            "frequency": frequency
+        })
+    
+    return {
+        "query": query,
+        "post_count": query_post_count,
+        "tag": tag_object,
+        "related_tags": related_tags
+    }
+
+@router.get("/autocomplete.json")
+async def get_autocomplete_json(
+    query: Optional[str] = Query(None, alias="search[query]"),
+    type: Optional[str] = Query(None, alias="search[type]"),
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db)
+):
+    if not query:
+        return []
+
+    tags = db.query(Tag).options(
+        load_only(Tag.id, Tag.name, Tag.post_count, Tag.category)
+    ).filter(
+        Tag.name.ilike(f"%{query}%")
+    ).order_by(
+        case((Tag.name.ilike(f"{query}%"), 1), else_=2),
+        desc(Tag.post_count)
+    ).limit(limit).all()
+
+    response_type = type or "tag_query"
+    results = []
+    for tag in tags:
+        c_val = tag.category.value if hasattr(tag.category, 'value') else str(tag.category)
+        category_id = CATEGORY_MAP.get(c_val.lower(), 0)
+        results.append({
+            "type": response_type,
+            "label": f"{tag.name} ({tag.post_count})",
+            "value": tag.name,
+            "category": category_id,
+            "post_count": tag.post_count
+        })
     return results
 
 @router.get("/artists.json")
@@ -569,43 +733,6 @@ async def get_single_pool_json(
         "category": "collection",
         "post_count": len(media_ids)
     }
-
-@router.get("/autocomplete.json")
-async def get_autocomplete_json(
-    query: Optional[str] = Query(None, alias="search[query]"),
-    type: Optional[str] = Query(None, alias="search[type]"),
-    limit: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db)
-):
-    if not query:
-        return []
-
-    tags = db.query(Tag).options(
-        load_only(Tag.id, Tag.name, Tag.post_count, Tag.category)
-    ).filter(
-        Tag.name.ilike(f"%{query}%")
-    ).order_by(
-        case((Tag.name.ilike(f"{query}%"), 1), else_=2),
-        desc(Tag.post_count)
-    ).limit(limit).all()
-
-    response_type = type or "tag_query"
-    results = []
-    for tag in tags:
-        c_val = tag.category.value if hasattr(tag.category, 'value') else str(tag.category)
-        category_id = CATEGORY_MAP.get(c_val.lower(), 0)
-        results.append({
-            "type": response_type,
-            "label": f"{tag.name} ({tag.post_count})",
-            "value": tag.name,
-            "category": category_id,
-            "post_count": tag.post_count
-        })
-    return results
-
-@router.get("/related_tag.json")
-async def get_related_tag_json(query: Optional[str] = Query(None, alias="search[query]")):
-    return {"query": query or "", "tags": []}
 
 @router.get("/counts/posts.json")
 async def get_counts_posts_json(db: Session = Depends(get_db)):
