@@ -15,7 +15,6 @@ router = APIRouter(tags=["danbooru"])
 def format_media_response(media: Media, base_url: str) -> dict:
     """
     Formats a Media object into a Danbooru v2 compatible JSON dictionary.
-    Used by both /posts.json and /posts/{id}.json to ensure consistency.
     """
     
     rating_map = {
@@ -27,10 +26,13 @@ def format_media_response(media: Media, base_url: str) -> dict:
     r_val = media.rating.value if hasattr(media.rating, 'value') else str(media.rating)
     rating = rating_map.get(r_val, "q")
 
-    # 2. GENERATE URLS
+    # 2. Generate URLs
     file_url = f"{base_url}/api/media/{media.id}/file"
     preview_url = f"{base_url}/api/media/{media.id}/thumbnail" if media.thumbnail_path else file_url
+    
+    file_ext = Path(media.filename).suffix.lstrip('.') if media.filename else "jpg"
 
+    # 3. Categorize Tags (Counts AND Strings)
     # Map internal categories to Danbooru IDs:
     # 0=General, 1=Artist, 3=Copyright, 4=Character, 5=Meta
     
@@ -45,12 +47,52 @@ def format_media_response(media: Media, base_url: str) -> dict:
         c_id = cat_map.get(c_val.lower(), 0) # Default to 0 (General)
         tags_by_cat[c_id].append(tag.name)
 
-    tag_string = " ".join([t.name for t in media.tags])
-    file_ext = Path(media.filename).suffix.lstrip('.') if media.filename else "jpg"
+    # 4. Construct Media Asset
+    media_asset = {
+        "id": media.id,
+        "created_at": media.uploaded_at.isoformat(timespec='milliseconds') if media.uploaded_at else None,
+        "updated_at": media.uploaded_at.isoformat(timespec='milliseconds') if media.uploaded_at else None,
+        "md5": media.hash,
+        "file_ext": file_ext,
+        "file_size": media.file_size,
+        "image_width": media.width,
+        "image_height": media.height,
+        "duration": media.duration,
+        "status": "active",
+        "file_key": media.hash,
+        "is_public": True,
+        "pixel_hash": media.hash,
+        "variants": [
+            {
+                "type": "original",
+                "url": file_url,
+                "width": media.width,
+                "height": media.height,
+                "file_ext": file_ext
+            },
+            {
+                "type": "sample",
+                "url": file_url, 
+                "width": media.width,
+                "height": media.height,
+                "file_ext": file_ext
+            }
+        ]
+    }
+
+    # Add thumbnail variant
+    if media.thumbnail_path:
+        media_asset["variants"].insert(0, {
+            "type": "180x180", # Standard thumb identifier
+            "url": preview_url,
+            "width": 180, # Approximate
+            "height": 180,
+            "file_ext": "jpg"
+        })
 
     return {
         "id": media.id,
-        "created_at": media.uploaded_at.isoformat() if media.uploaded_at else None,
+        "created_at": media.uploaded_at.isoformat(timespec='milliseconds') if media.uploaded_at else None,
         "uploader_id": 1,
         "score": 0,
         "source": media.source or "",
@@ -59,12 +101,12 @@ def format_media_response(media: Media, base_url: str) -> dict:
         "rating": rating,
         "image_width": media.width,
         "image_height": media.height,
-        "tag_string": tag_string,
+        "tag_string": " ".join([t.name for t in media.tags]),
         "fav_count": 0,
         "file_ext": file_ext,
         "last_noted_at": None,
         "parent_id": media.parent_id,
-        "has_children": False,
+        "has_children": media.has_children, 
         "approver_id": None,
         "tag_count_general": len(tags_by_cat[0]),
         "tag_count_artist": len(tags_by_cat[1]),
@@ -72,6 +114,11 @@ def format_media_response(media: Media, base_url: str) -> dict:
         "tag_count_character": len(tags_by_cat[4]),
         "tag_count_meta": len(tags_by_cat[5]),
         "tag_count": len(media.tags),
+        "tag_string_general": " ".join(tags_by_cat[0]),
+        "tag_string_artist": " ".join(tags_by_cat[1]),
+        "tag_string_copyright": " ".join(tags_by_cat[3]),
+        "tag_string_character": " ".join(tags_by_cat[4]),
+        "tag_string_meta": " ".join(tags_by_cat[5]),
         "file_size": media.file_size,
         "up_score": 0,
         "down_score": 0,
@@ -79,7 +126,7 @@ def format_media_response(media: Media, base_url: str) -> dict:
         "is_flagged": False,
         "is_deleted": False,
         "tag_count_upload_tag": 0,
-        "updated_at": media.uploaded_at.isoformat() if media.uploaded_at else None,
+        "updated_at": media.uploaded_at.isoformat(timespec='milliseconds') if media.uploaded_at else None,
         "is_banned": False,
         "pixiv_id": None,
         "last_commented_at": None,
@@ -89,7 +136,8 @@ def format_media_response(media: Media, base_url: str) -> dict:
         "has_visible_children": False,
         "file_url": file_url,
         "large_file_url": file_url,
-        "preview_file_url": preview_url
+        "preview_file_url": preview_url,
+        "media_asset": media_asset
     }
 
 # --- ENDPOINTS ---
@@ -206,7 +254,7 @@ async def get_users_json(db: Session = Depends(get_db)):
         "is_banned": False,
         "can_upload_free": True,
         "level_string": "Admin",
-        "created_at": user.created_at.isoformat() if user.created_at else "2023-01-01T00:00:00.000-00:00"
+        "created_at": user.created_at.isoformat(timespec='milliseconds') if user.created_at else "2023-01-01T00:00:00.000-00:00"
     }]
 
 @router.get("/artist_commentaries.json")
@@ -266,7 +314,6 @@ async def get_pools_json(
     else:
         query = query.order_by(desc(Album.updated_at))
 
-    # Pagination
     offset = (page - 1) * limit
     albums = query.offset(offset).limit(limit).all()
     
@@ -282,8 +329,8 @@ async def get_pools_json(
         results.append({
             "id": album.id,
             "name": album.name,
-            "created_at": album.created_at.isoformat() if album.created_at else None,
-            "updated_at": album.updated_at.isoformat() if album.updated_at else None,
+            "created_at": album.created_at.isoformat(timespec='milliseconds') if album.created_at else None,
+            "updated_at": album.updated_at.isoformat(timespec='milliseconds') if album.updated_at else None,
             "description": "",
             "is_active": True,
             "is_deleted": False,
@@ -313,8 +360,8 @@ async def get_single_pool_json(
     return {
         "id": album.id,
         "name": album.name,
-        "created_at": album.created_at.isoformat() if album.created_at else None,
-        "updated_at": album.updated_at.isoformat() if album.updated_at else None,
+        "created_at": album.created_at.isoformat(timespec='milliseconds') if album.created_at else None,
+        "updated_at": album.updated_at.isoformat(timespec='milliseconds') if album.updated_at else None,
         "description": "",
         "is_active": True,
         "is_deleted": False,
@@ -373,4 +420,12 @@ async def get_post_votes_json():
 
 @router.get("/posts/{post_id}/favorites.json")
 async def get_post_favorites_json(post_id: int):
+    return []
+
+@router.get("/forum_topics.json")
+async def get_forum_topics_json():
+    return []
+
+@router.get("/artists.json")
+async def get_artists_json():
     return []
