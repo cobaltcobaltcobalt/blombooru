@@ -6,11 +6,43 @@ from pathlib import Path
 import re
 
 from ..database import get_db
-from ..models import Media, Tag, User, Album, blombooru_album_media, blombooru_media_tags
+from ..models import Media, Tag, User, Album, blombooru_album_media, blombooru_media_tags, blombooru_album_hierarchy
 from ..config import settings
 from .search import parse_search_query, wildcard_to_sql
 
 router = APIRouter(tags=["danbooru"])
+
+# --- HELPER: Recursive Media Lookup ---
+def get_flattened_media_ids(db: Session, root_album_id: int) -> List[int]:
+    """
+    Recursively fetches media IDs for an album and all its descendants (children, grandchildren, etc.).
+    Returns a distinct list of media IDs.
+    """
+    # 1. Collect all Album IDs in the hierarchy
+    all_album_ids = {root_album_id}
+    queue = [root_album_id]
+    
+    while queue:
+        current_id = queue.pop(0)
+        children = db.query(blombooru_album_hierarchy.c.child_album_id).filter(
+            blombooru_album_hierarchy.c.parent_album_id == current_id
+        ).all()
+        
+        for child in children:
+            cid = child[0]
+            if cid not in all_album_ids:
+                all_album_ids.add(cid)
+                queue.append(cid)
+
+    # Fetch all media IDs belonging to this set of albums
+    results = db.query(blombooru_album_media.c.media_id).filter(
+        blombooru_album_media.c.album_id.in_(all_album_ids)
+    ).all()
+    
+    raw_ids = [r[0] for r in results]
+    unique_ids = sorted(list(set(raw_ids)))
+    
+    return unique_ids
 
 # --- HELPER: Standardize Media Response ---
 def format_media_response(media: Media, base_url: str) -> dict:
@@ -408,9 +440,7 @@ async def get_pools_json(
 
     results = []
     for album in albums:
-        media_ids = [m[0] for m in db.query(blombooru_album_media.c.media_id).filter(
-            blombooru_album_media.c.album_id == album.id
-        ).order_by(asc(blombooru_album_media.c.added_at)).all()]
+        media_ids = get_flattened_media_ids(db, album.id)
 
         results.append({
             "id": album.id,
@@ -439,9 +469,7 @@ async def get_single_pool_json(
     if not album:
         raise HTTPException(status_code=404, detail="Pool not found")
 
-    media_ids = [m[0] for m in db.query(blombooru_album_media.c.media_id).filter(
-        blombooru_album_media.c.album_id == album.id
-    ).order_by(asc(blombooru_album_media.c.added_at)).all()]
+    media_ids = get_flattened_media_ids(db, album.id)
 
     return {
         "id": album.id,
