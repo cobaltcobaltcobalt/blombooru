@@ -1,16 +1,34 @@
 from fastapi import APIRouter, Depends, Query, Request, HTTPException
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc, asc, case, exists, and_, func
+from sqlalchemy import desc, asc, case, exists, and_, or_, func
 from typing import List, Optional, Union
 from pathlib import Path
 import re
 
 from ..database import get_db
-from ..models import Media, Tag, User, Album, blombooru_album_media, blombooru_media_tags, blombooru_album_hierarchy
+from ..models import Media, Tag, TagAlias, User, Album, TagCategoryEnum, blombooru_album_media, blombooru_media_tags, blombooru_album_hierarchy
 from ..config import settings
 from .search import parse_search_query, wildcard_to_sql
 
 router = APIRouter(tags=["danbooru"])
+
+# --- HELPER: Standardize Artist Response ---
+def format_artist_response(tag: Tag) -> dict:
+    """Formats a Tag (Artist) into a Danbooru Artist JSON object"""
+    # Extract aliases
+    other_names = [a.alias_name for a in tag.aliases]
+
+    return {
+        "id": tag.id,
+        "created_at": tag.created_at.isoformat(timespec='milliseconds') if tag.created_at else None,
+        "name": tag.name,
+        # Fallback to created_at since Tag doesn't have updated_at
+        "updated_at": tag.created_at.isoformat(timespec='milliseconds') if tag.created_at else None, 
+        "is_deleted": False,
+        "group_name": "",
+        "is_banned": False,
+        "other_names": other_names
+    }
 
 # --- HELPER: Recursive Media Lookup ---
 def get_flattened_media_ids(db: Session, root_album_id: int) -> List[int]:
@@ -375,6 +393,80 @@ async def get_tags_json(
 
     return results
 
+@router.get("/artists.json")
+async def get_artists_json(
+    page: int = Query(1, ge=1),
+    limit: int = Query(25, ge=1),
+    search_any_name_matches: Optional[str] = Query(None, alias="search[any_name_matches]"),
+    search_name: Optional[str] = Query(None, alias="search[name]"),
+    search_order: Optional[str] = Query(None, alias="search[order]"),
+    search_is_deleted: Optional[str] = Query(None, alias="search[is_deleted]"),
+    search_has_tag: Optional[str] = Query(None, alias="search[has_tag]"),
+    db: Session = Depends(get_db)
+):
+    """Danbooru v2 compatible Artists API (Mapped from Tags)"""
+    
+    # Clamp limit
+    limit = min(limit, 1000)
+    
+    # Pre-load aliases
+    query = db.query(Tag).options(joinedload(Tag.aliases)).filter(
+        Tag.category == TagCategoryEnum.artist
+    )
+
+    # Search Logic
+    if search_any_name_matches:
+        pattern = f"%{search_any_name_matches}%"
+        query = query.outerjoin(Tag.aliases).filter(
+            or_(
+                Tag.name.ilike(pattern),
+                TagAlias.alias_name.ilike(pattern)
+            )
+        )
+    elif search_name:
+        # Exact/Partial match on name only
+        query = query.filter(Tag.name.ilike(f"%{search_name}%"))
+
+    # Sorting Logic
+    if search_order == "name":
+        query = query.order_by(asc(Tag.name))
+    elif search_order == "created_at":
+        query = query.order_by(desc(Tag.created_at))
+    elif search_order == "updated_at":
+        query = query.order_by(desc(Tag.created_at))
+    else:
+        # Default sort
+        query = query.order_by(desc(Tag.created_at))
+
+    offset = (page - 1) * limit
+    # distinct() is required because joining aliases might return the same artist row multiple times
+    artists = query.distinct().offset(offset).limit(limit).all()
+
+    return [format_artist_response(tag) for tag in artists]
+
+@router.get("/artists/{artist_id}.json")
+@router.get("/artists/{artist_id}")
+async def get_artist_json(
+    artist_id: Union[int, str],
+    db: Session = Depends(get_db)
+):
+    """Danbooru v2 compatible Single Artist API"""
+    
+    # Clean ID if it contains .json
+    if isinstance(artist_id, str) and ".json" in artist_id:
+        artist_id = int(artist_id.replace(".json", ""))
+    
+    # Find tag by ID, ensure it is an artist category, and load aliases
+    tag = db.query(Tag).options(joinedload(Tag.aliases)).filter(
+        Tag.id == artist_id,
+        Tag.category == TagCategoryEnum.artist
+    ).first()
+
+    if not tag:
+        raise HTTPException(status_code=404, detail="Artist not found")
+
+    return format_artist_response(tag)
+
 @router.get("/artist_commentaries.json")
 async def get_artist_commentaries_json():
     return []
@@ -538,8 +630,4 @@ async def get_post_favorites_json(post_id: int):
 
 @router.get("/forum_topics.json")
 async def get_forum_topics_json():
-    return []
-
-@router.get("/artists.json")
-async def get_artists_json():
     return []
