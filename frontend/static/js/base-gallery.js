@@ -26,6 +26,14 @@ class BaseGallery {
         this.sortBySelect = null;
         this.sortOrderSelect = null;
 
+        // Selection state
+        this.lastSelectedId = null;
+        this.isDragging = false;
+        this.dragStartItem = null;
+        this.selectionSnapshot = null;
+        this.dragTargetState = null;
+        this.suppressClick = false;
+
         // Cache DOM elements
         this.elements = {
             grid: document.querySelector(this.options.gridSelector),
@@ -59,6 +67,24 @@ class BaseGallery {
             this.initTooltip();
         }
         this.setupBulkActions();
+        this.setupDragSelectionGlobalListeners();
+    }
+
+    setupDragSelectionGlobalListeners() {
+        // Global mouseup to end drag even if not over an item
+        document.addEventListener('mouseup', () => {
+            this.dragStartItem = null;
+            if (this.isDragging) {
+                this.handleDragEnd();
+            }
+        });
+
+        // Prevent text selection while dragging
+        document.addEventListener('selectstart', (e) => {
+            if (this.isDragging) {
+                e.preventDefault();
+            }
+        });
     }
 
     // ==================== Rating Filter ====================
@@ -587,6 +613,129 @@ class BaseGallery {
         modal.show();
     }
 
+    // ==================== Drag & Shift Selection ====================
+
+    handleMouseDown(item, id) {
+        if (!this.isSelectionMode) return;
+        this.dragStartItem = item;
+        this.selectionSnapshot = new Set(this.selectedItems);
+        this.isDragging = false;
+        this.suppressClick = false;
+    }
+
+    startDrag() {
+        this.isDragging = true;
+        this.suppressClick = true;
+
+        // Calculate target state based on start item
+        const id = parseInt(this.dragStartItem.dataset.id);
+        const wasSelected = this.selectionSnapshot.has(id);
+        this.dragTargetState = !wasSelected;
+        this.lastSelectedId = id;
+
+        // Immediately apply to start item
+        this.applySelectionState(id, this.dragTargetState);
+        this.updateBulkActionsUI();
+    }
+
+    handleDragEnter(item, id) {
+        if (!this.dragStartItem) return;
+
+        if (!this.isDragging) {
+            this.startDrag();
+        }
+
+        const rangeIds = this.getRange(this.dragStartItem, item);
+
+        this.selectedItems.clear();
+        this.selectionSnapshot.forEach(snapshotId => this.selectedItems.add(snapshotId));
+
+        // Apply target state to everything in the current range
+        rangeIds.forEach(rangeId => {
+            if (this.dragTargetState) {
+                this.selectedItems.add(rangeId);
+            } else {
+                this.selectedItems.delete(rangeId);
+            }
+        });
+
+        this.updateVisibleSelectionState();
+        this.updateBulkActionsUI();
+
+        this.lastSelectedId = id;
+    }
+
+    handleDragEnd() {
+        this.isDragging = false;
+        this.dragStartItem = null;
+        this.selectionSnapshot = null;
+        this.dragTargetState = null;
+        this.updateSelectionModeClass();
+
+        setTimeout(() => {
+            this.suppressClick = false;
+        }, 50);
+    }
+
+    updateVisibleSelectionState() {
+        document.querySelectorAll('.gallery-item').forEach(item => {
+            const id = parseInt(item.dataset.id);
+            const checkbox = item.querySelector('.select-checkbox');
+
+            if (this.selectedItems.has(id)) {
+                item.classList.add('selected');
+                if (checkbox) checkbox.checked = true;
+            } else {
+                item.classList.remove('selected');
+                if (checkbox) checkbox.checked = false;
+            }
+        });
+    }
+
+    applySelectionState(id, isSelected) {
+        const item = document.querySelector(`.gallery-item[data-id="${id}"]`);
+
+        if (isSelected) {
+            this.selectedItems.add(id);
+            if (item) item.classList.add('selected');
+            if (item) {
+                const cb = item.querySelector('.select-checkbox');
+                if (cb) cb.checked = true;
+            }
+        } else {
+            this.selectedItems.delete(id);
+            if (item) item.classList.remove('selected');
+            if (item) {
+                const cb = item.querySelector('.select-checkbox');
+                if (cb) cb.checked = false;
+            }
+        }
+    }
+
+    getRange(itemA, itemB) {
+        const allItems = Array.from(document.querySelectorAll('.gallery-item'));
+        const indexA = allItems.indexOf(itemA);
+        const indexB = allItems.indexOf(itemB);
+
+        if (indexA === -1 || indexB === -1) return [];
+
+        const start = Math.min(indexA, indexB);
+        const end = Math.max(indexA, indexB);
+
+        return allItems.slice(start, end + 1).map(el => parseInt(el.dataset.id));
+    }
+
+    getRangeFromLast(currentId) {
+        if (!this.lastSelectedId) return [currentId];
+
+        const itemA = document.querySelector(`.gallery-item[data-id="${this.lastSelectedId}"]`);
+        const itemB = document.querySelector(`.gallery-item[data-id="${currentId}"]`);
+
+        if (!itemA || !itemB) return [currentId];
+
+        return this.getRange(itemA, itemB);
+    }
+
     async bulkAddToAlbums() {
         const itemCount = this.selectedItems.size;
         if (itemCount === 0) return;
@@ -736,18 +885,30 @@ class BaseGallery {
         }
     }
 
-    toggleItemSelection(item, mediaId) {
-        const indicator = item.querySelector('.select-indicator');
+    toggleItemSelection(item, mediaId, event = null) {
+        if (this.suppressClick) return;
+
         const checkbox = item.querySelector('.select-checkbox');
 
-        if (this.selectedItems.has(mediaId)) {
-            this.selectedItems.delete(mediaId);
-            item.classList.remove('selected');
-            if (checkbox) checkbox.checked = false;
+        // Handle Shift-Click Range Selection
+        if (event && event.shiftKey && this.lastSelectedId) {
+            const rangeIds = this.getRangeFromLast(mediaId);
+            const allSelected = rangeIds.every(id => this.selectedItems.has(id));
+            const targetState = !allSelected;
+
+            rangeIds.forEach(id => {
+                this.applySelectionState(id, targetState);
+            });
+
+            this.lastSelectedId = mediaId;
         } else {
-            this.selectedItems.add(mediaId);
-            item.classList.add('selected');
-            if (checkbox) checkbox.checked = true;
+            // Normal Toggle
+            if (this.selectedItems.has(mediaId)) {
+                this.applySelectionState(mediaId, false);
+            } else {
+                this.applySelectionState(mediaId, true);
+                this.lastSelectedId = mediaId;
+            }
         }
 
         this.updateBulkActionsUI();
@@ -793,7 +954,26 @@ class BaseGallery {
         indicator.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            this.toggleItemSelection(item, media.id);
+            this.toggleItemSelection(item, media.id, e);
+        });
+
+        // ==================== Drag Selection Events ====================
+
+        // Start drag on mousedown
+        item.addEventListener('mousedown', (e) => {
+            if (e.button === 0) {
+                if (this.isSelectionMode) {
+                    e.preventDefault();
+                    this.handleMouseDown(item, media.id);
+                }
+            }
+        });
+
+        // Continue drag on mouseenter
+        item.addEventListener('mouseenter', (e) => {
+            if (this.dragStartItem) {
+                this.handleDragEnter(item, media.id);
+            }
         });
 
         // Image
@@ -821,7 +1001,7 @@ class BaseGallery {
         link.addEventListener('click', (e) => {
             if (this.isSelectionMode) {
                 e.preventDefault();
-                this.toggleItemSelection(item, media.id);
+                this.toggleItemSelection(item, media.id, e);
             }
         });
 
