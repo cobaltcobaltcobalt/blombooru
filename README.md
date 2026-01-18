@@ -30,6 +30,8 @@ It is designed for individuals who want a powerful, simple to use, and modern so
 
 - **Modern & Responsive UI:** Built with Tailwind CSS for a beautiful and consistent experience on both desktop and mobile devices.
 
+- **Secure Mode:** When enabled, users must log in to interact with Blombooru. Public routes such as share links and static files remain public. Perfect for private collections that you don't want anyone else in the house to see!
+
 - **Dedicated Admin Mode:** Safely browse your collection without fear of accidental edits. All management actions (uploading, editing, deleting) require you to be in the explicit "Admin Mode".
 
 - **Highly Customizable Theming:** Tailor the look and feel using simple CSS variables. Drop new `.css` files into the `themes` folder, register the themes in `themes.py`, and restart.
@@ -40,7 +42,7 @@ It is designed for individuals who want a powerful, simple to use, and modern so
 
 - **Automatic Tagging:** Fast-track tagging with the WDv3 Auto Tagger integration, which analyzes images and suggests accurate tags with a single click.
 
-- **Albums:** Organize your media into albums, which can hold both files and other sub-albums for limitless nesting and organization.
+- **Albums:** Organize your media into albums, which can hold both media items and other sub-albums for limitless nesting and organization.
 
 - **Media Relations:** Organize your collection by linking related media using parent-child relationships. Group image variations, multi-page comics, etc., keeping related content easily accessible.
 

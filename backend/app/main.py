@@ -8,9 +8,11 @@ from pathlib import Path
 from .config import settings
 from .database import get_db, init_db, init_engine
 from .routes import admin, media, tags, search, sharing, albums, ai_tagger, danbooru
+from .auth_middleware import AuthMiddleware
 from datetime import datetime
 
-app = FastAPI(title="Blombooru", version="1.22.0")
+app = FastAPI(title="Blombooru", version="1.23.1")
+app.add_middleware(AuthMiddleware)
 static_path = Path(__file__).parent.parent.parent / "frontend" / "static"
 templates_path = Path(__file__).parent.parent.parent / "frontend" / "templates"
 
@@ -63,6 +65,16 @@ async def admin_panel(request: Request):
     return templates.TemplateResponse("admin.html", {
         "request": request,
         "app_name": settings.APP_NAME
+    })
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    """Login page"""
+    return_url = request.query_params.get("return", "/")
+    return templates.TemplateResponse("login.html", {
+        "request": request,
+        "app_name": settings.APP_NAME,
+        "return_url": return_url
     })
 
 @app.get("/media/{media_id}", response_class=HTMLResponse)

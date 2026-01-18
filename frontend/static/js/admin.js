@@ -59,7 +59,6 @@ class AdminPanel {
         try {
             const response = await fetch('/api/admin/settings');
             if (response.ok) {
-                document.getElementById('login-section').style.display = 'none';
                 document.getElementById('settings-section').style.display = 'block';
 
                 app.updateAuthStatus(true);
@@ -67,16 +66,12 @@ class AdminPanel {
 
                 return true;
             } else {
-                document.getElementById('login-section').style.display = 'block';
-                document.getElementById('settings-section').style.display = 'none';
-                app.updateAuthStatus(false);
+                window.location.href = '/login?return=/admin';
                 return false;
             }
         } catch (error) {
             console.error('Error checking auth:', error);
-            document.getElementById('login-section').style.display = 'block';
-            document.getElementById('settings-section').style.display = 'none';
-            app.updateAuthStatus(false);
+            window.location.href = '/login?return=/admin';
             return false;
         }
     }
@@ -110,15 +105,6 @@ class AdminPanel {
         const scanBtn = document.getElementById('scan-media-btn');
         if (scanBtn) {
             scanBtn.addEventListener('click', () => this.scanMedia());
-        }
-
-        // Login form
-        const loginForm = document.getElementById('login-form');
-        if (loginForm) {
-            loginForm.addEventListener('submit', (e) => {
-                e.preventDefault();
-                this.login();
-            });
         }
 
         // Add tags form
@@ -388,6 +374,11 @@ class AdminPanel {
                 this.defaultOrderSelect.setValue(settings.default_order);
             }
 
+            if (settings.require_auth !== undefined) {
+                const requireAuthCheckbox = document.getElementById('require-auth');
+                if (requireAuthCheckbox) requireAuthCheckbox.checked = settings.require_auth;
+            }
+
         } catch (error) {
             console.error('Error loading settings:', error);
         }
@@ -413,6 +404,7 @@ class AdminPanel {
 
         const defaultSort = this.defaultSortSelect ? this.defaultSortSelect.getValue() : null;
         const defaultOrder = this.defaultOrderSelect ? this.defaultOrderSelect.getValue() : null;
+        const requireAuth = document.getElementById('require-auth')?.checked || false;
 
         const settings = {
             app_name: appName,
@@ -420,7 +412,8 @@ class AdminPanel {
             items_per_page: itemsPerPageNum,
             default_sort: defaultSort,
             default_order: defaultOrder,
-            external_share_url: externalShareUrl || null
+            external_share_url: externalShareUrl || null,
+            require_auth: requireAuth
         };
 
         try {
@@ -527,46 +520,6 @@ class AdminPanel {
         } finally {
             scanBtn.disabled = false;
             scanBtn.textContent = originalText;
-        }
-    }
-
-    async login() {
-        const username = document.getElementById('username').value;
-        const password = document.getElementById('password').value;
-        const errorDiv = document.getElementById('login-error');
-        const submitBtn = document.querySelector('#login-form button[type="submit"]');
-
-        // Clear previous error
-        errorDiv.style.display = 'none';
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'Logging in...';
-
-        try {
-            const response = await fetch('/api/admin/login', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ username, password })
-            });
-
-            if (response.ok) {
-                console.log('Login successful, redirecting...');
-                window.location.href = '/admin';
-            } else {
-                const error = await response.json();
-                console.error('Login failed:', error);
-                errorDiv.textContent = error.detail || 'Invalid username or password';
-                errorDiv.style.display = 'block';
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'Login';
-            }
-        } catch (error) {
-            console.error('Login error:', error);
-            errorDiv.textContent = 'Network error. Please try again.';
-            errorDiv.style.display = 'block';
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Login';
         }
     }
 

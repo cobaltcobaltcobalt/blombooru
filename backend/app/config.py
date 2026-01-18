@@ -81,5 +81,9 @@ class Settings:
     @property
     def EXTERNAL_SHARE_URL(self) -> Optional[str]:
         return self.settings.get("external_share_url")
+    
+    @property
+    def REQUIRE_AUTH(self) -> bool:
+        return self.settings.get("require_auth", False)
 
 settings = Settings()
