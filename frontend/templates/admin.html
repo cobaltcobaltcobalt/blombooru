@@ -7,32 +7,6 @@
     <h1 class="text-lg font-bold mb-4 pb-3 border-b">Admin Panel</h1>
 
     <div id="admin-panel">
-        <!-- Login Section (if not logged in) -->
-        <div id="login-section">
-            <div class="surface p-6 border max-w-md">
-                <h2 class="text-base font-bold mb-4">Login</h2>
-
-                <div id="login-error" style="display: none;" class="bg-danger tag-text p-3 mb-4 text-xs"></div>
-
-                <form id="login-form">
-                    <div class="mb-4">
-                        <label class="block text-xs font-bold mb-2">Username</label>
-                        <input type="text" id="username" required autocomplete="username"
-                            class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
-                    </div>
-
-                    <div class="mb-4">
-                        <label class="block text-xs font-bold mb-2">Password</label>
-                        <input type="password" id="password" required autocomplete="current-password"
-                            class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
-                    </div>
-
-                    <button type="submit"
-                        class="w-full px-4 py-2 bg-primary primary-text transition-colors hover:bg-primary text-xs">Login</button>
-                </form>
-            </div>
-        </div>
-
         <!-- Settings Section -->
         <div id="settings-section" style="display: none;">
             <div class="surface p-6 border mb-4">
@@ -127,6 +101,21 @@
                                     </div>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="block text-xs font-bold mb-2">Security</label>
+                        <div class="bg p-4 border">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" id="require-auth" name="require_auth"
+                                    class="w-4 h-4 border focus:outline-none focus:border-primary">
+                                <span class="text-xs">Require Authentication to View Media</span>
+                            </label>
+                            <p class="text-xs text-secondary opacity-70 mt-2 ml-6">
+                                When enabled, users must log in to view media.
+                                Share links and Danbooru API remain public.
+                            </p>
                         </div>
                     </div>
 
