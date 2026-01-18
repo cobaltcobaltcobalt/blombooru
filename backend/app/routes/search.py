@@ -41,11 +41,21 @@ def parse_search_query(query_string: str) -> dict:
         'wildcards': wildcards
     }
 
-def wildcard_to_sql(pattern: str) -> str:
-    """Convert wildcard pattern to SQL LIKE pattern"""
-    # Escape SQL special characters, then replace * with % and ? with _
-    pattern = pattern.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-    pattern = pattern.replace('*', '%').replace('?', '_')
+def wildcard_to_regex(pattern: str) -> str:
+    """Convert wildcard pattern to PostgreSQL regex pattern
+    * matches zero or more characters
+    ? matches zero or one character
+    """
+    # Escape regex special characters except * and ?
+    special_chars = ['.', '^', '$', '+', '(', ')', '[', ']', '{', '}', '|', '\\']
+    for char in special_chars:
+        pattern = pattern.replace(char, '\\' + char)
+    
+    pattern = pattern.replace('*', '.*')  # * -> .* (zero or more of any character)
+    pattern = pattern.replace('?', '.?')  # ? -> .? (zero or one of any character)
+    
+    # Anchor the pattern to match the entire string
+    pattern = '^' + pattern + '$'
     return pattern
 
 @router.get("/")
@@ -85,7 +95,7 @@ async def search_media(
         
         # Wildcards - use subquery approach for efficiency
         for wildcard_type, pattern in parsed['wildcards']:
-            sql_pattern = wildcard_to_sql(pattern)
+            regex_pattern = wildcard_to_regex(pattern)
             
             if wildcard_type == 'include':
                 # Media must have at least one tag matching the pattern
@@ -93,7 +103,7 @@ async def search_media(
                     and_(
                         blombooru_media_tags.c.media_id == Media.id,
                         blombooru_media_tags.c.tag_id == Tag.id,
-                        Tag.name.like(sql_pattern)
+                        Tag.name.op('~*')(regex_pattern)
                     )
                 )
                 query = query.filter(subquery)
@@ -103,7 +113,7 @@ async def search_media(
                     and_(
                         blombooru_media_tags.c.media_id == Media.id,
                         blombooru_media_tags.c.tag_id == Tag.id,
-                        Tag.name.like(sql_pattern)
+                        Tag.name.op('~*')(regex_pattern)
                     )
                 )
                 query = query.filter(~subquery)

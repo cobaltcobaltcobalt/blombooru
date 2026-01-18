@@ -9,7 +9,7 @@ import re
 from ..database import get_db
 from ..models import Media, Tag, TagAlias, User, Album, TagCategoryEnum, blombooru_album_media, blombooru_media_tags, blombooru_album_hierarchy
 from ..config import settings
-from .search import parse_search_query, wildcard_to_sql
+from .search import parse_search_query, wildcard_to_regex
 
 router = APIRouter(tags=["danbooru"])
 
@@ -255,12 +255,12 @@ async def get_posts_json(
                 query = query.filter(~Media.tags.contains(tag))
         
         for wildcard_type, pattern in wildcards:
-            sql_pattern = wildcard_to_sql(pattern)
+            regex_pattern = wildcard_to_regex(pattern)
             subquery = exists().where(
                 and_(
                     blombooru_media_tags.c.media_id == Media.id,
                     blombooru_media_tags.c.tag_id == Tag.id,
-                    Tag.name.like(sql_pattern)
+                    Tag.name.op('~*')(regex_pattern)
                 )
             )
             if wildcard_type == 'include':
