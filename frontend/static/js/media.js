@@ -102,7 +102,16 @@ class MediaViewer extends MediaViewerBase {
             });
 
             // Set initial tags
-            tagsInput.textContent = (this.currentMedia.tags || []).map(t => t.name).join(' ');
+            const categoryOrder = ['artist', 'character', 'copyright', 'general', 'meta'];
+            const sortedTags = [...(this.currentMedia.tags || [])].sort((a, b) => {
+                const catA = categoryOrder.indexOf(a.category);
+                const catB = categoryOrder.indexOf(b.category);
+                const orderA = catA === -1 ? 99 : catA;
+                const orderB = catB === -1 ? 99 : catB;
+                if (orderA !== orderB) return orderA - orderB;
+                return a.name.localeCompare(b.name);
+            });
+            tagsInput.textContent = sortedTags.map(t => t.name).join(' ');
             setTimeout(() => this.validateAndStyleTags(), 100);
         }
 
