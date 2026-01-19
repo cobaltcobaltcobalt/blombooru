@@ -28,6 +28,23 @@ It is designed for individuals who want a powerful, simple to use, and modern so
 
 </details>
 
+## Table of Contents
+
+- [Key Features](#key-features)
+- [Installation & Setup](#installation--setup)
+  - [Docker](#docker-recommended)
+  - [Python](#python)
+- [Usage Guide](#usage-guide)
+  - [Logging In](#logging-in)
+  - [Admin Mode](#admin-mode)
+  - [Adding Tags](#adding-tags)
+  - [Uploading Media](#uploading-media)
+  - [Tagging & Searching](#tagging--searching)
+  - [Sharing Media](#sharing-media)
+- [Theming](#theming)
+- [Technical Details](#technical-details)
+- [Disclaimer](#disclaimer)
+- [License](#license)
 ## Key Features
 
 - **Danbooru-Style Tagging:** A familiar and powerful tagging system with categories (artist, character, copyright, etc.), tag-based searching, and negative tag exclusion.
