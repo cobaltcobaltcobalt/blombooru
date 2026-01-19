@@ -102,6 +102,6 @@ def require_admin_mode(
     if not admin_mode_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin mode required for this operation"
+            detail="You need to be logged in as the admin to perform this action"
         )
     return current_user

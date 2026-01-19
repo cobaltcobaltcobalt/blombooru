@@ -36,7 +36,6 @@ It is designed for individuals who want a powerful, simple to use, and modern so
   - [Python](#python)
 - [Usage Guide](#usage-guide)
   - [Logging In](#logging-in)
-  - [Admin Mode](#admin-mode)
   - [Adding Tags](#adding-tags)
   - [Uploading Media](#uploading-media)
   - [Tagging & Searching](#tagging--searching)
@@ -55,7 +54,7 @@ It is designed for individuals who want a powerful, simple to use, and modern so
 
 - **Secure Mode:** When enabled, users must log in to interact with Blombooru. Public routes such as share links and static files remain public. Perfect for private collections that you don't want anyone else in the house to see!
 
-- **Dedicated Admin Mode:** Safely browse your collection without fear of accidental edits. All management actions (uploading, editing, deleting) require you to be in the explicit "Admin Mode".
+- **Safe Browsing:** Safely browse your collection without fear of accidental edits. All management actions (uploading, editing, deleting) require you to be logged in as the admin.
 
 - **Highly Customizable Theming:** Tailor the look and feel using simple CSS variables. Drop new `.css` files into the `themes` folder, register the themes in `themes.py`, and restart.
 
@@ -180,11 +179,11 @@ docker compose down
 
 ### Logging In
 
-Navigate to the site and click the "Admin Panel" button in the navbar. Use the credentials you created during onboarding. Your login status is preserved with a long-lived cookie for convenience.
+Navigate to the site and click the "Admin Panel" button in the navbar and log in using the credentials you created for the admin account during onboarding. Your login status is preserved with a long-lived cookie for convenience.
 
 ### Admin Mode
 
-By default, you are in "View Mode" after logging in. To make any changes, you must log in as the admin. This protects you from accidentally deleting or editing media. While in Admin Mode, you can:
+To make any changes, you must log in as the admin. This protects you from accidentally deleting or editing media. While logged in as the admin, you can:
 
 - Upload, edit, or delete media.
 - Add or remove tags.
@@ -297,7 +296,7 @@ Order results with `order:{value}`. Suffix with `_asc` or `_desc` where applicab
 
 ### Sharing Media
 
-- Enter Admin Mode.
+- Log in as the admin.
 
 - Navigate to the page of the media you wish to share.
 
