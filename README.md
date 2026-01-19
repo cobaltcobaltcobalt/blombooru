@@ -36,6 +36,7 @@ It is designed for individuals who want a powerful, simple to use, and modern so
   - [Python](#python)
 - [Usage Guide](#usage-guide)
   - [Logging In](#logging-in)
+  - [Admin Mode](#admin-mode)
   - [Adding Tags](#adding-tags)
   - [Uploading Media](#uploading-media)
   - [Tagging & Searching](#tagging--searching)
