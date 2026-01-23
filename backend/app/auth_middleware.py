@@ -129,21 +129,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 if user:
                     return True
         
-        # Method 3: HTTP Basic Auth
-        if auth_header.startswith("Basic "):
+        # Method 3: HTTP Basic Auth - Only for API/Danbooru routes
+        if auth_header.startswith("Basic ") and can_use_api_key():
             username, password = self.extract_basic_auth_credentials(auth_header)
             
             if password:
-                is_blom_password = password.startswith('blom_')
-                
-                if is_blom_password and not can_use_api_key():
-                    # API key provided but not allowed for this route
-                    pass
-                else:
-                    user = verify_api_key(db, password)
-                    if user:
-                        if not username or username == user.username:
-                            return True
+                user = verify_api_key(db, password)
+                if user:
+                    if not username or username == user.username:
+                        return True
         
         # Method 4: Query parameters
         api_key = request.query_params.get("api_key")
@@ -201,8 +195,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if path.startswith("/api/"):
             return JSONResponse(
                 status_code=401,
-                content={"detail": "Authentication required"},
-                headers={"WWW-Authenticate": 'Basic realm="API"'}
+                content={"detail": "Authentication required"}
             )
         
         return_url = quote(str(request.url.path))
