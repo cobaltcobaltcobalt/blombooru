@@ -16,12 +16,22 @@ router = APIRouter(prefix="/api/tags", tags=["tags"])
 async def get_tags(
     request: Request,
     search: Optional[str] = None,
+    names: Optional[str] = Query(None, description="Comma-separated list of tag names"),
     category: Optional[TagCategoryEnum] = None,
     limit: int = 100,
     db: Session = Depends(get_db)
 ):
     """Get tags with optional filtering"""
     query = db.query(Tag)
+    
+    if names:
+        tag_names = [n.strip().lower() for n in names.split(",") if n.strip()]
+        if tag_names:
+            query = query.filter(Tag.name.in_(tag_names))
+            limit = max(limit, len(tag_names))
+            tags = query.all()
+            name_map = {t.name: t for t in tags}
+            return [name_map[n] for n in tag_names if n in name_map]
     
     if search:
         query = query.filter(Tag.name.ilike(f"%{search}%"))
