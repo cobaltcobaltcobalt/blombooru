@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Request
 from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import desc, text, or_, and_
 from typing import List, Optional
 import uuid
@@ -69,7 +69,7 @@ async def get_media_list(
         limit = settings.get_items_per_page()
     
     try:
-        query = db.query(Media)
+        query = db.query(Media).options(selectinload(Media.tags))
         
         if rating and rating != "explicit":
             allowed_ratings = {
@@ -112,6 +112,25 @@ async def get_media_list(
         print(f"Error in get_media_list: {e}")
         import traceback
         traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/batch")
+async def get_media_batch(
+    ids: str = Query(..., description="Comma-separated list of media IDs"),
+    db: Session = Depends(get_db)
+):
+    """Get multiple media items by their IDs in a single request"""
+    try:
+        media_ids = [int(id_str.strip()) for id_str in ids.split(",") if id_str.strip().isdigit()]
+        if not media_ids:
+            return {"items": []}
+            
+        media_list = db.query(Media).options(selectinload(Media.tags)).filter(Media.id.in_(media_ids)).all()
+        items = [MediaResponse.model_validate(m) for m in media_list]
+        
+        return {"items": items}
+    except Exception as e:
+        print(f"Error in get_media_batch: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{media_id}")
