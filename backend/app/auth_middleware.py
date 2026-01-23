@@ -1,5 +1,5 @@
 from fastapi import Request, HTTPException
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 from urllib.parse import quote
@@ -100,11 +100,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         path = request.url.path
 
         def can_use_api_key():
-            if self.is_danbooru_route(path):
+            if self.is_danbooru_route(path) or path.startswith("/api/"):
                 return True
             return False
         
-        # Method 1: Bearer token
+        # Method 1: Bearer token (API Key or JWT)
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
 
@@ -114,41 +114,42 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     if user:
                         return True
             else:
-                return False
+                # Try as JWT session token
+                try:
+                    user = get_current_user(token=token, db=db)
+                    if user:
+                        return True
+                except Exception:
+                    pass
         
         # Method 2: Direct API key
-        elif auth_header.startswith("blom_"):
-
+        if auth_header.startswith("blom_"):
             if can_use_api_key():
                 user = verify_api_key(db, auth_header)
                 if user:
                     return True
-            else:
-                return False
         
         # Method 3: HTTP Basic Auth
-        elif auth_header.startswith("Basic "):
+        if auth_header.startswith("Basic "):
             username, password = self.extract_basic_auth_credentials(auth_header)
-            is_blom_password = password.startswith('blom_') if password else False
             
             if password:
+                is_blom_password = password.startswith('blom_')
+                
                 if is_blom_password and not can_use_api_key():
-                    return False
+                    # API key provided but not allowed for this route
+                    pass
                 else:
                     user = verify_api_key(db, password)
                     if user:
                         if not username or username == user.username:
                             return True
-                        else:
-                            return False
-                    else:
-                        return False
         
         # Method 4: Query parameters
         api_key = request.query_params.get("api_key")
         if api_key:            
             if api_key.startswith("blom_") and not can_use_api_key():
-                return False
+                pass
             else:
                 user = verify_api_key(db, api_key)
                 if user:
@@ -198,9 +199,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         
         if path.startswith("/api/"):
-            raise HTTPException(
+            return JSONResponse(
                 status_code=401,
-                detail="Authentication required",
+                content={"detail": "Authentication required"},
                 headers={"WWW-Authenticate": 'Basic realm="API"'}
             )
         
