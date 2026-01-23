@@ -60,8 +60,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             "/explore/",
             "/counts/",
             "/wiki_pages/",
-            "/users/",
-            "/api/media/",
+            "/users/"
         )
 
     def is_public_route(self, path: str) -> bool:
