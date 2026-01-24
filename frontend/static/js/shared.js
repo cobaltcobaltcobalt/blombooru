@@ -91,19 +91,19 @@ class SharedViewer extends MediaViewerBase {
                     </div>
                 </div>
 
-                <div class="lg:col-span-1">
-                    <div class="surface p-3 border mb-4">
+                <div class="lg:col-span-1 flex flex-col gap-4">
+                    <div class="surface p-3 border">
                         <h3 class="text-sm font-bold mb-3 pb-2 border-b">Information</h3>
                         <div id="media-info-content" class="text-xs"></div>
                     </div>
 
-                    <div class="surface p-3 border mb-4">
+                    <div class="surface p-3 border">
                         <h3 class="text-sm font-bold mb-3 pb-2 border-b">Tags</h3>
                         <div id="tags-container"></div>
                     </div>
 
                     ${showAIMetadata ? `
-                    <div id="ai-metadata-section" style="display: none;" class="surface border mb-4">
+                    <div id="ai-metadata-section" style="display: none;" class="surface border">
                         <button type="button" id="ai-metadata-toggle" class="w-full p-3 flex justify-between items-center text-left hover:text-primary transition-colors">
                             <h3 class="text-sm font-bold">AI Generation Data</h3>
                             <svg id="ai-metadata-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="transition-transform duration-200">

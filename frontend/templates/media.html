@@ -107,12 +107,12 @@
     </div>
 </div>
 
-<div class="container mx-auto px-4 py-4">
+<div class="container mx-auto px-4 py-4 ">
     <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
         <!-- Media Content -->
-        <div class="lg:col-span-3">
+        <div class="lg:col-span-3 flex flex-col gap-4">
             <!-- Parent/Sibling Media -->
-            <div id="hierarchy-media-section" class="surface mb-4 border" style="display: none;">
+            <div id="hierarchy-media-section" class="surface border" style="display: none;">
                 <button type="button" id="hierarchy-media-toggle"
                     class="w-full p-4 flex justify-between items-center text-left hover:surface-light transition-colors">
                     <h2 id="hierarchy-media-title" class="text-base font-bold">Parent & Sibling Media</h2>
@@ -156,16 +156,16 @@
             </div>
 
             <!-- Related Media -->
-            <div class="surface mt-4 p-4 border">
+            <div class="surface p-4 border">
                 <h2 class="text-base font-bold mb-3 pb-2 border-b">Related Media</h2>
                 <div id="related-media" class="grid grid-cols-3 md:grid-cols-6 gap-2"></div>
             </div>
         </div>
 
         <!-- Sidebar -->
-        <div class="lg:col-span-1">
+        <div class="lg:col-span-1 flex flex-col gap-4">
             <!-- Information -->
-            <div class="surface p-3 border mb-4">
+            <div class="surface p-3 border">
                 <h3 class="text-sm font-bold mb-3 pb-2 border-b">Information</h3>
                 <div id="media-info-content" class="text-xs"></div>
 
@@ -182,7 +182,7 @@
             </div>
 
             <!-- Tags -->
-            <div class="surface p-3 border mb-4">
+            <div class="surface p-3 border">
                 <h3 class="text-sm font-bold mb-3 pb-2 border-b">Tags</h3>
                 <div id="tags-container" class="mb-2"></div>
 
@@ -227,7 +227,7 @@
             </div>
 
             <!-- AI Metadata (if present) -->
-            <div id="ai-metadata-section" style="display: none;" class="surface border mb-4">
+            <div id="ai-metadata-section" style="display: none;" class="surface border">
                 <button type="button" id="ai-metadata-toggle"
                     class="w-full p-3 flex justify-between items-center text-left hover:text-primary transition-colors cursor-pointer">
                     <h3 class="text-sm font-bold">AI Generation Data</h3>
@@ -241,7 +241,7 @@
             </div>
 
             <!-- Actions -->
-            <div class="surface p-3 border mb-4">
+            <div class="surface p-3 border">
                 <h3 class="text-sm font-bold mb-3 pb-2 border-b">Actions</h3>
 
                 <div class="flex flex-col gap-3">
@@ -320,7 +320,7 @@
             </div>
 
             <!-- Share Link Display -->
-            <div id="share-link-section" style="display: none;" class="surface p-3 border mb-4">
+            <div id="share-link-section" style="display: none;" class="surface p-3 border">
                 <h4 class="text-sm font-bold mb-3 pb-2 border-b">Share Actions</h4>
                 <div id="ai-metadata-share-toggle" class="mb-2 p-2 bg border" style="display: none;">
                     <label class="flex items-center justify-between cursor-pointer">
