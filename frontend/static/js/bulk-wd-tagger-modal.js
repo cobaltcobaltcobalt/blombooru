@@ -75,11 +75,11 @@ class BulkWDTaggerModal extends BulkTagModalBase {
                     Model: <strong class="download-model-name">${this.settings.modelName}</strong><br>
                     Size: approximately <strong class="download-model-size">~850 MB</strong>
                 </p>
-                <div class="flex justify-center gap-2">
-                    <button class="${prefix}-download-cancel px-4 py-2 surface-light text text-sm">
+                <div class="flex flex-col sm:flex-row justify-center gap-2">
+                    <button class="${prefix}-download-cancel w-full sm:w-auto px-4 py-3 sm:py-2 surface-light text text-sm font-medium transition-colors hover:surface">
                         Cancel
                     </button>
-                    <button class="${prefix}-download-confirm-btn px-4 py-2 bg-primary tag-text text-sm">
+                    <button class="${prefix}-download-confirm-btn w-full sm:w-auto px-4 py-3 sm:py-2 bg-primary tag-text text-sm font-medium transition-colors hover:bg-primary">
                         Download & Continue
                     </button>
                 </div>
@@ -104,7 +104,7 @@ class BulkWDTaggerModal extends BulkTagModalBase {
     getFooterLeftHTML() {
         const prefix = this.options.classPrefix;
         return `
-            <button class="${prefix}-toggle-settings px-3 py-2 surface-light text text-sm">
+            <button class="${prefix}-toggle-settings w-full sm:w-auto px-4 py-3 sm:py-2 surface-light text text-sm font-medium transition-colors hover:surface">
                 Settings
             </button>
         `;
