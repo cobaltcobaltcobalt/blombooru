@@ -244,12 +244,13 @@ class BaseGallery {
     }
 
     async goToPage(page) {
+        const pageTop = document.getElementById('main-scroll');
         if (page < 1 || page > this.totalPages || page === this.currentPage) return;
 
         this.currentPage = page;
         this.updateUrlParams({ page });
         await this.loadContent();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        pageTop.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     renderPagination() {
