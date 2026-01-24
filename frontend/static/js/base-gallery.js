@@ -1017,9 +1017,15 @@ class BaseGallery {
         img.src = `/api/media/${media.id}/thumbnail`;
         img.alt = media.filename;
         img.loading = 'lazy';
-        img.className = 'transition-colors';
+        img.className = 'transition-colors skeleton';
         img.draggable = false;
+        img.onload = () => {
+            img.classList.remove('skeleton');
+            img.classList.add('loaded');
+        };
         img.onerror = () => {
+            img.classList.remove('skeleton');
+            img.classList.add('loaded');
             img.src = '/static/images/no-thumbnail.png';
         };
 

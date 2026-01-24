@@ -212,6 +212,8 @@ span.checked:hover {
     -webkit-user-drag: none;
     -webkit-touch-callout: none;
     pointer-events: none;
+    opacity: 0;
+    transition: border-color 0.15s ease, opacity 0.3s ease;
 }
 
 .gallery-item.parent-item a img {
@@ -353,6 +355,35 @@ span.checked:hover {
 .gallery-item.long-pressing .select-indicator {
     opacity: 1;
     transform: scale(1);
+}
+
+/* Skeleton Loading Animation */
+@keyframes skeleton-wave {
+    0% {
+        background-position: 100% 0;
+    }
+
+    100% {
+        background-position: -100% 0;
+    }
+}
+
+.gallery-item a img.skeleton {
+    background-color: var(--surface);
+    background-image: linear-gradient(90deg, var(--surface) 0%, color-mix(in srgb, var(--surface-light), var(--surface) 40%) 50%, var(--surface) 100%);
+    background-size: 200% 100%;
+    animation: skeleton-wave 2s infinite linear;
+    color: transparent;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 1;
+}
+
+.gallery-item a img.loaded {
+    background: none;
+    animation: none;
+    opacity: 1;
 }
 
 /* Popular tag styling */
