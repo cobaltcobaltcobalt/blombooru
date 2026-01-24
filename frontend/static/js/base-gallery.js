@@ -1014,20 +1014,37 @@ class BaseGallery {
 
         // Image
         const img = document.createElement('img');
-        img.src = `/api/media/${media.id}/thumbnail`;
+        img.classList.add('transition-colors');
         img.alt = media.filename;
         img.loading = 'lazy';
-        img.className = 'transition-colors skeleton';
         img.draggable = false;
-        img.onload = () => {
-            img.classList.remove('skeleton');
-            img.classList.add('loaded');
+
+        const markLoaded = () => {
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    img.classList.add('loaded');
+                });
+            });
         };
+
+        img.onload = () => {
+            if (img.decode) {
+                img.decode().then(markLoaded).catch(markLoaded);
+            } else {
+                markLoaded();
+            }
+        };
+
         img.onerror = () => {
-            img.classList.remove('skeleton');
             img.classList.add('loaded');
             img.src = '/static/images/no-thumbnail.png';
         };
+
+        img.src = `/api/media/${media.id}/thumbnail`;
+
+        if (img.complete && img.naturalWidth > 0) {
+            markLoaded();
+        }
 
         // Link
         const link = document.createElement('a');
