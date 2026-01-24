@@ -243,12 +243,12 @@ class BaseGallery {
         input.select();
     }
 
-    goToPage(page) {
+    async goToPage(page) {
         if (page < 1 || page > this.totalPages || page === this.currentPage) return;
 
         this.currentPage = page;
         this.updateUrlParams({ page });
-        this.loadContent();
+        await this.loadContent();
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
