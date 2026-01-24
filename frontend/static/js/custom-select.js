@@ -86,7 +86,7 @@ class CustomSelect {
         this.clearFocused();
     }
 
-    selectOption(option) {
+    selectOption(option, triggerEvent = true) {
         const options = this.dropdown.querySelectorAll('.custom-select-option');
         options.forEach(opt => opt.classList.remove('selected'));
 
@@ -95,12 +95,14 @@ class CustomSelect {
         this.element.dataset.value = this.selectedValue;
         this.valueDisplay.textContent = option.textContent;
 
-        this.element.dispatchEvent(new CustomEvent('change', {
-            detail: {
-                value: this.selectedValue,
-                text: option.textContent
-            }
-        }));
+        if (triggerEvent) {
+            this.element.dispatchEvent(new CustomEvent('change', {
+                detail: {
+                    value: this.selectedValue,
+                    text: option.textContent
+                }
+            }));
+        }
 
         this.close();
     }
@@ -170,11 +172,11 @@ class CustomSelect {
         options.forEach(opt => opt.classList.remove('focused'));
     }
 
-    setValue(value) {
+    setValue(value, triggerEvent = false) {
         const options = this.dropdown.querySelectorAll('.custom-select-option');
         const option = Array.from(options).find(opt => opt.dataset.value === value);
         if (option) {
-            this.selectOption(option);
+            this.selectOption(option, triggerEvent);
         }
     }
 

@@ -133,36 +133,71 @@ class BaseGallery {
             return;
         }
 
-        if (this.elements.sortBy) {
-            this.sortBySelect = new CustomSelect(this.elements.sortBy);
+        this.sortBySelects = [];
+        this.sortOrderSelects = [];
 
-            // Set initial value from URL
-            const params = new URLSearchParams(window.location.search);
+        // 1. Setup Sort By Selects
+        const sortByElements = document.querySelectorAll('.js-sort-by-select');
+        const params = new URLSearchParams(window.location.search);
+
+        sortByElements.forEach(element => {
+            const select = new CustomSelect(element);
+
+            // Set initial value from URL if present
             if (params.has('sort')) {
-                this.sortBySelect.setValue(params.get('sort'));
+                select.setValue(params.get('sort'));
             }
 
-            this.elements.sortBy.addEventListener('change', () => this.onSortChange());
-        }
+            // Sync changes to other instances and reload
+            element.addEventListener('change', (e) => {
+                const newValue = e.detail.value;
+                this.sortBySelects.forEach(s => {
+                    if (s !== select) s.setValue(newValue);
+                });
+                this.onSortChange();
+            });
 
-        if (this.elements.sortOrder) {
-            this.sortOrderSelect = new CustomSelect(this.elements.sortOrder);
+            this.sortBySelects.push(select);
+        });
 
-            const params = new URLSearchParams(window.location.search);
+        // 2. Setup Sort Order Selects
+        const sortOrderElements = document.querySelectorAll('.js-sort-order-select');
+
+        sortOrderElements.forEach(element => {
+            const select = new CustomSelect(element);
+
             if (params.has('order')) {
-                this.sortOrderSelect.setValue(params.get('order'));
+                select.setValue(params.get('order'));
             }
 
-            this.elements.sortOrder.addEventListener('change', () => this.onSortChange());
-        }
+            element.addEventListener('change', (e) => {
+                const newValue = e.detail.value;
+                this.sortOrderSelects.forEach(s => {
+                    if (s !== select) s.setValue(newValue);
+                });
+                this.onSortChange();
+            });
+
+            this.sortOrderSelects.push(select);
+        });
+
+        // Backwards compatibility for single access
+        this.sortBySelect = this.sortBySelects[0];
+        this.sortOrderSelect = this.sortOrderSelects[0];
     }
 
     getSortValue() {
-        return this.elements.sortBy?.dataset.value || this.currentSort;
+        if (this.sortBySelects && this.sortBySelects.length > 0) {
+            return this.sortBySelects[0].getValue();
+        }
+        return this.currentSort;
     }
 
     getOrderValue() {
-        return this.elements.sortOrder?.dataset.value || this.currentOrder;
+        if (this.sortOrderSelects && this.sortOrderSelects.length > 0) {
+            return this.sortOrderSelects[0].getValue();
+        }
+        return this.currentOrder;
     }
 
     onSortChange() {
@@ -173,14 +208,14 @@ class BaseGallery {
     }
 
     addSortOption(value, label) {
-        if (this.sortBySelect) {
-            this.sortBySelect.addOption(value, label);
+        if (this.sortBySelects) {
+            this.sortBySelects.forEach(select => select.addOption(value, label));
         }
     }
 
     removeSortOption(value) {
-        if (this.sortBySelect) {
-            this.sortBySelect.removeOption(value);
+        if (this.sortBySelects) {
+            this.sortBySelects.forEach(select => select.removeOption(value));
         }
     }
 
