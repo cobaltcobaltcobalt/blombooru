@@ -6,11 +6,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}{{ app_name }}{% endblock %}</title>
     {% block pwa %}
-    <link rel="manifest" href="/manifest.json">
+    <link rel="manifest" href="/manifest.json?v={{ app_version }}">
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js')
+                navigator.serviceWorker.register('/sw.js?v={{ app_version }}')
                     .then(registration => {
                         console.log('ServiceWorker registration successful');
                     })
@@ -21,9 +21,9 @@
         }
     </script>
     {% endblock %}
-    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
-    <link rel="stylesheet" href="/static/css/tailwind.css">
-    <link rel="stylesheet" href="/static/css/main.css">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico?v={{ app_version }}">
+    <link rel="stylesheet" href="/static/css/tailwind.css?v={{ app_version }}">
+    <link rel="stylesheet" href="/static/css/main.css?v={{ app_version }}">
     <link id="theme-stylesheet" rel="stylesheet" href="{{ current_theme.css_path if current_theme else '' }}">
     {% if not current_theme %}
     <script>
@@ -35,14 +35,14 @@
 
                 const themeLink = document.getElementById('theme-stylesheet');
                 if (themeLink && theme.css_path) {
-                    themeLink.href = theme.css_path;
+                    themeLink.href = theme.css_path + '?v={{ app_version }}';
                 }
             } catch (error) {
                 console.error('Error loading theme:', error);
                 // Fallback to default dark theme
                 const themeLink = document.getElementById('theme-stylesheet');
                 if (themeLink) {
-                    themeLink.href = '/static/css/themes/default_dark.css';
+                    themeLink.href = '/static/css/themes/default_dark.css?v={{ app_version }}';
                 }
             }
         })();

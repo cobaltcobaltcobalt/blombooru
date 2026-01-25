@@ -181,13 +181,13 @@ async def manifest(request: Request):
         "orientation": "any",
         "icons": [
             {
-                "src": "/static/images/pwa-icon.png",
+                "src": f"/static/images/pwa-icon.png?v={APP_VERSION}",
                 "sizes": "512x512",
                 "type": "image/png",
                 "purpose": "any maskable"
             },
             {
-                "src": "/static/images/pwa-icon-192.png",
+                "src": f"/static/images/pwa-icon-192.png?v={APP_VERSION}",
                 "sizes": "192x192",
                 "type": "image/png",
                 "purpose": "any maskable"

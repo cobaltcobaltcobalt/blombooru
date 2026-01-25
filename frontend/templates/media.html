@@ -330,8 +330,7 @@
                             <div
                                 class="w-9 h-5 surface-light transition-colors peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-[var(--primary-text)] after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-[var(--text)] after:border-[var(--surface-light)] after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[var(--primary-color)] peer-checked:after:bg-[var(--primary-text)]">
                             </div>
-                        </div>
-                    </label>
+                        </label>
                 </div>
                 <input type="text" id="share-link-input" readonly
                     class="w-full bg px-2 py-1 border focus:outline-none hover:border-primary transition-colors focus:border-primary text-xs text mb-2">
@@ -347,15 +346,15 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="/static/js/fullscreen-mediaviewer.js"></script>
-<script src="/static/js/tooltip-helper.js"></script>
-<script src="/static/js/modal-helper.js"></script>
-<script src="/static/js/tag-input-helper.js"></script>
-<script src="/static/js/custom-select.js"></script>
-<script src="/static/js/album-picker.js"></script>
-<script src="/static/js/ai-tag-utils.js"></script>
-<script src="/static/js/media-viewer-base.js"></script>
-<script src="/static/js/media.js"></script>
+<script src="/static/js/fullscreen-mediaviewer.js?v={{ app_version }}"></script>
+<script src="/static/js/tooltip-helper.js?v={{ app_version }}"></script>
+<script src="/static/js/modal-helper.js?v={{ app_version }}"></script>
+<script src="/static/js/tag-input-helper.js?v={{ app_version }}"></script>
+<script src="/static/js/custom-select.js?v={{ app_version }}"></script>
+<script src="/static/js/album-picker.js?v={{ app_version }}"></script>
+<script src="/static/js/ai-tag-utils.js?v={{ app_version }}"></script>
+<script src="/static/js/media-viewer-base.js?v={{ app_version }}"></script>
+<script src="/static/js/media.js?v={{ app_version }}"></script>
 <script>
     document.addEventListener('DOMContentLoaded', () => {
         const mediaId = "{{ media_id }}";

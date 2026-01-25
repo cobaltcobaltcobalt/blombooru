@@ -41,11 +41,11 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="/static/js/fullscreen-mediaviewer.js"></script>
-<script src="/static/js/modal-helper.js"></script>
-<script src="/static/js/ai-tag-utils.js"></script>
-<script src="/static/js/media-viewer-base.js"></script>
-<script src="/static/js/shared.js"></script>
+<script src="/static/js/fullscreen-mediaviewer.js?v={{ app_version }}"></script>
+<script src="/static/js/modal-helper.js?v={{ app_version }}"></script>
+<script src="/static/js/ai-tag-utils.js?v={{ app_version }}"></script>
+<script src="/static/js/media-viewer-base.js?v={{ app_version }}"></script>
+<script src="/static/js/shared.js?v={{ app_version }}"></script>
 <script>
     document.addEventListener('DOMContentLoaded', () => {
         const shareUuid = '{{ share_uuid }}';
