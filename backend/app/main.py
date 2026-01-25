@@ -11,7 +11,9 @@ from .routes import admin, media, tags, search, sharing, albums, ai_tagger, danb
 from .auth_middleware import AuthMiddleware
 from datetime import datetime
 
-app = FastAPI(title="Blombooru", version="1.24.0")
+APP_VERSION = "1.24.1"
+
+app = FastAPI(title="Blombooru", version=APP_VERSION)
 app.add_middleware(AuthMiddleware)
 static_path = Path(__file__).parent.parent.parent / "frontend" / "static"
 templates_path = Path(__file__).parent.parent.parent / "frontend" / "templates"
@@ -19,6 +21,7 @@ templates_path = Path(__file__).parent.parent.parent / "frontend" / "templates"
 app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
 templates = Jinja2Templates(directory=str(templates_path))
 
+templates.env.globals['app_version'] = APP_VERSION
 templates.env.globals['get_current_year'] = lambda: datetime.now().year
 app.include_router(admin.router)
 app.include_router(media.router)
