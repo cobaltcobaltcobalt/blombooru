@@ -143,6 +143,7 @@ class Blombooru {
     updateUI() {
         const body = document.body;
         const logoutBtn = document.getElementById('logout-btn');
+        const logoutBtnMobile = document.getElementById('logout-btn-mobile');
 
         // Update body class
         if (this.isAdminMode) {
@@ -154,6 +155,7 @@ class Blombooru {
         // Show/hide logout button's
         if (logoutBtn) {
             logoutBtn.parentElement.style.display = this.isAuthenticated ? 'inline' : 'none';
+            logoutBtnMobile.parentElement.style.display = this.isAuthenticated ? 'inline' : 'none';
         }
     }
 

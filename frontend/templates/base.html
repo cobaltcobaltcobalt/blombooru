@@ -75,6 +75,7 @@
                     </span>
                 </a>
 
+                <!-- Desktop Search -->
                 <div class="flex-1 max-w-2xl hidden sm:block">
                     <form id="search-form">
                         <input type="text" id="search-input" name="q"
@@ -84,7 +85,8 @@
                     </form>
                 </div>
 
-                <nav>
+                <!-- Desktop Navigation -->
+                <nav class="hidden sm:block">
                     <ul class="flex gap-2">
                         <li id="nav-albums-item">
                             <a href="/albums"
@@ -104,13 +106,44 @@
                         </li>
                     </ul>
                 </nav>
+
+                <!-- Mobile Nav Toggle -->
+                <button id="mobile-menu-btn" class="sm:hidden p-1 border bg hover:border-primary transition-colors">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                    </svg>
+                </button>
             </div>
-            <div class="flex-1 max-w-2xl mt-2 block sm:hidden">
-                <form id="search-form">
+
+            <!-- Mobile Navigation -->
+            <nav id="mobile-menu" class="sm:hidden hidden border-y my-2">
+                <ul class="flex flex-col py-2 gap-1">
+                    <li id="nav-albums-item-mobile">
+                        <a href="/albums"
+                            class="block px-4 py-2 border bg hover:border-primary transition-colors {{ 'text-[var(--primary-color)]' if request.url.path.startswith('/albums') or request.url.path.startswith('/album/') else 'text' }}">
+                            Albums
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#" id="admin-mode-toggle-mobile"
+                            class="block px-4 py-2 border bg hover:border-primary transition-colors {{ 'text-[var(--primary-color)]' if request.url.path.startswith('/admin') else 'text' }}">
+                            <span id="admin-mode-text-mobile">Admin Panel</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#" id="logout-btn-mobile"
+                            class="block px-4 py-2 border bg hover:border-primary transition-colors">Logout</a>
+                    </li>
+                </ul>
+            </nav>
+
+            <!-- Mobile Search -->
+            <div class="mt-2 sm:hidden">
+                <form id="search-form-mobile">
                     <input type="text" id="search-input-mobile" name="q"
                         placeholder="Search tags... (e.g., ?girl? *_background cat_ears -dog)"
                         value="{{ request.query_params.get('q', '') }}"
-                        class="w-full bg px-3 py-1 border text text-xs focus:outline-none focus:border-primary hover:border-primary transition-colors">
+                        class="w-full bg px-3 py-2 border text text-xs focus:outline-none focus:border-primary hover:border-primary transition-colors">
                 </form>
             </div>
         </div>
@@ -178,6 +211,12 @@
         document.addEventListener('DOMContentLoaded', () => {
             const header = document.getElementById('main-header');
             const mainScroll = document.getElementById('main-scroll');
+            const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+            const mobileMenu = document.getElementById('mobile-menu');
+            const adminToggle = document.getElementById('admin-mode-toggle');
+            const adminToggleMobile = document.getElementById('admin-mode-toggle-mobile');
+            const logoutBtn = document.getElementById('logout-btn');
+            const logoutBtnMobile = document.getElementById('logout-btn-mobile');
 
             if (!header || !mainScroll) return;
 
@@ -208,6 +247,34 @@
 
                 lastScrollTop = currentScroll;
             });
+
+            if (mobileMenuBtn && mobileMenu) {
+                mobileMenuBtn.addEventListener('click', () => {
+                    mobileMenu.classList.toggle('hidden');
+                    setTimeout(adjustPadding, 10);
+                });
+
+                document.addEventListener('click', (e) => {
+                    if (!header.contains(e.target) && !mobileMenu.classList.contains('hidden')) {
+                        mobileMenu.classList.add('hidden');
+                        setTimeout(adjustPadding, 10);
+                    }
+                });
+
+                if (adminToggleMobile && adminToggle) {
+                    adminToggleMobile.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        adminToggle.click();
+                    });
+                }
+
+                if (logoutBtnMobile && logoutBtn) {
+                    logoutBtnMobile.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        logoutBtn.click();
+                    });
+                }
+            }
         });
     </script>
 
