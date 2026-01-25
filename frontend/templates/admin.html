@@ -293,10 +293,11 @@
                     <h3 class="text-sm font-bold mb-3">Import Tags from CSV</h3>
                     <div class="bg p-4 border">
                         <p class="text-xs text-secondary mb-3">
-                            Upload a CSV file with the following format: (usage_count/column 3 will always be
-                            ignored)<br>
-                            <code
-                                class="surface px-1 py-0.5">tag_name, category_number, usage_count, "alias1,alias2,alias3"</code><br>
+                            Upload a CSV file with the following format:
+                            (usage_count/column 3 will always be ignored)<br>
+                            <code class="surface">
+                                tag_name, category_number, usage_count, "alias1,alias2,alias3"
+                            </code><br>
                             Categories: 0=General, 1=Artist, 3=Copyright, 4=Character, 5=Meta
                         </p>
 
@@ -318,8 +319,10 @@
                     <div class="bg p-4 border">
                         <p class="text-xs text-secondary mb-3">
                             Add tags with optional category prefixes:<br>
-                            <code>artist:&lt;tag&gt;</code>, <code>copyright:&lt;tag&gt;</code>,
-                            <code>character:&lt;tag&gt;</code>, <code>meta:&lt;tag&gt;</code><br>
+                            <code class="surface">artist:&lt;tag&gt;</code>,
+                            <code class="surface">copyright:&lt;tag&gt;</code>,
+                            <code class="surface">character:&lt;tag&gt;</code>,
+                            <code class="surface">meta:&lt;tag&gt;</code><br>
                             Tags without a prefix will be added as "general" category.<br>
                             Tags that already exist (or exist as aliases) will be ignored.
                         </p>
