@@ -85,6 +85,12 @@ class Uploader {
                 container.appendChild(badge);
             }
         });
+
+        if (container.children.length === 0) {
+            container.classList.add('hidden');
+        } else {
+            container.classList.remove('hidden');
+        }
     }
 
     renderIndividualAlbumSelect() {
@@ -211,7 +217,7 @@ class Uploader {
 
             <div class="mb-4">
                 <label class="block text-xs font-bold mb-2">Base Albums</label>
-                <div class="flex flex-wrap gap-2 mb-2" id="base-albums-list"></div>
+                <div class="flex flex-wrap gap-2 mb-2 hidden" id="base-albums-list"></div>
                 <div id="base-album-select" class="custom-select" data-value="">
                     <button class="custom-select-trigger w-full flex items-center justify-between gap-3 px-3 py-2 surface border text-xs cursor-pointer focus:outline-none focus:border-primary" type="button">
                         <span class="custom-select-value text-secondary">Select album to add...</span>
@@ -1060,6 +1066,12 @@ class Uploader {
                 container.appendChild(badge);
             }
         });
+
+        if (container.children.length === 0) {
+            container.classList.add('hidden');
+        } else {
+            container.classList.remove('hidden');
+        }
     }
 }
 
