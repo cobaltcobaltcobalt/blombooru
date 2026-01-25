@@ -6,6 +6,8 @@ class Uploader {
         this.selectedFileIndex = null;
         this.baseRating = 'safe';
         this.baseTags = [];
+        this.baseAlbumIds = new Set();
+        this.allAlbums = [];
         this.baseSource = '';
         this.fileHashes = new Set();
         this.tagInputHelper = new TagInputHelper();
@@ -24,6 +26,131 @@ class Uploader {
         this.setupBaseControls();
         this.createPreviewGrid();
         this.createSubmitControls();
+        this.loadAlbums();
+    }
+
+    async loadAlbums() {
+        try {
+            const response = await fetch('/api/albums?limit=1000&sort=name&order=asc');
+            const data = await response.json();
+            this.allAlbums = data.items || [];
+            this.renderBaseAlbumSelect();
+        } catch (error) {
+            console.error('Error loading albums:', error);
+        }
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    renderBaseAlbumSelect() {
+        if (!this.baseAlbumSelect) return;
+
+        const availableAlbums = this.allAlbums.filter(album => !this.baseAlbumIds.has(album.id));
+        const options = [{ value: '', text: 'Select album to add...', selected: true }];
+        availableAlbums.forEach(album => {
+            options.push({ value: album.id, text: album.name });
+        });
+
+        this.baseAlbumSelect.setOptions(options);
+    }
+
+    renderBaseAlbumBadges() {
+        const container = document.getElementById('base-albums-list');
+        if (!container) return;
+
+        container.innerHTML = '';
+        this.baseAlbumIds.forEach(id => {
+            const album = this.allAlbums.find(a => a.id == id);
+            if (album) {
+                const badge = document.createElement('div');
+                badge.className = 'surface px-2 py-1 border text-xs flex items-center gap-2';
+                badge.innerHTML = `
+                    <span>${this.escapeHtml(album.name)}</span>
+                    <button class="bg-danger tag-text px-1 hover:bg-danger transition-colors" data-id="${id}">×</button>
+                `;
+                badge.querySelector('button').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.baseAlbumIds.delete(parseInt(id));
+                    this.renderBaseAlbumBadges();
+                    this.renderBaseAlbumSelect();
+                    // Update individual select if visible, as this album is now available again
+                    if (this.selectedFileIndex !== null && typeof this.renderIndividualAlbumSelect === 'function') {
+                        this.renderIndividualAlbumSelect();
+                    }
+                });
+                container.appendChild(badge);
+            }
+        });
+    }
+
+    renderIndividualAlbumSelect() {
+        if (this.selectedFileIndex === null) return;
+        const selectEl = document.getElementById('individual-album-select');
+        if (!selectEl) return;
+
+        if (!this.individualAlbumSelect) return;
+
+        const fileData = this.uploadedFiles[this.selectedFileIndex];
+        if (!fileData) return;
+
+        const availableAlbums = this.allAlbums.filter(album =>
+            !this.baseAlbumIds.has(album.id) &&
+            !fileData.individualAlbumIds.has(album.id)
+        );
+
+        const options = [{ value: '', text: 'Select album to add...', selected: true }];
+        availableAlbums.forEach(album => {
+            options.push({ value: album.id, text: album.name });
+        });
+
+        this.individualAlbumSelect.setOptions(options);
+    }
+
+    renderIndividualAlbumBadges() {
+        const container = document.getElementById('individual-albums-list');
+        if (!container || this.selectedFileIndex === null) return;
+
+        const fileData = this.uploadedFiles[this.selectedFileIndex];
+        if (!fileData) return;
+
+        container.innerHTML = '';
+
+        this.baseAlbumIds.forEach(id => {
+            const album = this.allAlbums.find(a => a.id == id);
+            if (album) {
+                const badge = document.createElement('div');
+                badge.className = 'surface px-2 py-1 border text-xs flex items-center gap-2 opacity-70';
+                badge.innerHTML = `
+                    <span>${this.escapeHtml(album.name)}</span>
+                    <span class="text-[10px] text-secondary">(Base)</span>
+                `;
+                container.appendChild(badge);
+            }
+        });
+
+        // Show individual albums
+        fileData.individualAlbumIds.forEach(id => {
+            const album = this.allAlbums.find(a => a.id == id);
+            if (album) {
+                const badge = document.createElement('div');
+                badge.className = 'surface px-2 py-1 border text-xs flex items-center gap-2';
+                badge.innerHTML = `
+                    <span>${this.escapeHtml(album.name)}</span>
+                    <button class="bg-danger tag-text px-1 hover:bg-danger transition-colors" data-id="${id}">×</button>
+                `;
+                badge.querySelector('button').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    fileData.individualAlbumIds.delete(parseInt(id));
+                    this.renderIndividualAlbumBadges();
+                    this.renderIndividualAlbumSelect();
+                });
+                container.appendChild(badge);
+            }
+        });
     }
 
     setupDragAndDrop() {
@@ -81,6 +208,22 @@ class Uploader {
                     </div>
                 </div>
             </div>
+
+            <div class="mb-4">
+                <label class="block text-xs font-bold mb-2">Base Albums</label>
+                <div class="flex flex-wrap gap-2 mb-2" id="base-albums-list"></div>
+                <div id="base-album-select" class="custom-select" data-value="">
+                    <button class="custom-select-trigger w-full flex items-center justify-between gap-3 px-3 py-2 surface border text-xs cursor-pointer focus:outline-none focus:border-primary" type="button">
+                        <span class="custom-select-value text-secondary">Select album to add...</span>
+                        <svg class="custom-select-arrow flex-shrink-0 transition-transform duration-200 text-secondary" width="12" height="12" viewBox="0 0 12 12">
+                            <path fill="currentColor" d="M6 9L1 4h10z"/>
+                        </svg>
+                    </button>
+                    <div class="custom-select-dropdown surface border border-primary max-h-60 overflow-y-auto shadow-lg">
+                        <div class="custom-select-option px-3 py-2 cursor-pointer hover:surface text text-xs selected" data-value="">Select album to add...</div>
+                    </div>
+                </div>
+            </div>
             
             <div class="mb-4">
                 <label class="block text-xs font-bold mb-2">Base Source URL (optional)</label>
@@ -106,6 +249,24 @@ class Uploader {
             baseRatingElement.addEventListener('change', (e) => {
                 this.baseRating = e.detail.value;
                 this.updateAllMediaRatings();
+            });
+        }
+
+        // Initialize custom select for base albums
+        const baseAlbumElement = document.getElementById('base-album-select');
+        if (baseAlbumElement) {
+            this.baseAlbumSelect = new CustomSelect(baseAlbumElement);
+            this.baseAlbumSelect.element.addEventListener('change', (e) => {
+                const albumId = parseInt(e.detail.value);
+                if (albumId) {
+                    this.baseAlbumIds.add(albumId);
+                    this.renderBaseAlbumBadges();
+                    this.renderBaseAlbumSelect();
+
+                    if (this.selectedFileIndex !== null && typeof this.renderIndividualAlbumSelect === 'function') {
+                        this.renderIndividualAlbumSelect();
+                    }
+                }
             });
         }
 
@@ -171,6 +332,22 @@ class Uploader {
                             </div>
                         </div>
                     </div>
+
+                    <div class="mb-4">
+                        <label class="block text-xs font-bold mb-2">Individual Albums</label>
+                        <div class="flex flex-wrap gap-2 mb-2" id="individual-albums-list"></div>
+                        <div id="individual-album-select" class="custom-select" data-value="">
+                            <button class="custom-select-trigger w-full flex items-center justify-between gap-3 px-3 py-2 surface border text-xs cursor-pointer focus:outline-none focus:border-primary" type="button">
+                                <span class="custom-select-value text-secondary">Select album to add...</span>
+                                <svg class="custom-select-arrow flex-shrink-0 transition-transform duration-200 text-secondary" width="12" height="12" viewBox="0 0 12 12">
+                                    <path fill="currentColor" d="M6 9L1 4h10z"/>
+                                </svg>
+                            </button>
+                            <div class="custom-select-dropdown surface border border-primary max-h-60 overflow-y-auto shadow-lg">
+                                <!-- Options populated dynamically -->
+                            </div>
+                        </div>
+                    </div>
                     
                     <div class="mb-3">
                         <label class="block text-xs font-bold mb-2">Individual Source URL (optional)</label>
@@ -205,6 +382,20 @@ class Uploader {
                 if (this.selectedFileIndex !== null) {
                     this.uploadedFiles[this.selectedFileIndex].rating = e.detail.value;
                     this.updateThumbnailIndicator(this.selectedFileIndex);
+                }
+            });
+        }
+
+        // Initialize custom select for individual albums
+        const individualAlbumElement = document.getElementById('individual-album-select');
+        if (individualAlbumElement) {
+            this.individualAlbumSelect = new CustomSelect(individualAlbumElement);
+            this.individualAlbumSelect.element.addEventListener('change', (e) => {
+                const albumId = parseInt(e.detail.value);
+                if (albumId && this.selectedFileIndex !== null) {
+                    this.uploadedFiles[this.selectedFileIndex].individualAlbumIds.add(albumId);
+                    this.renderIndividualAlbumBadges();
+                    this.renderIndividualAlbumSelect();
                 }
             });
         }
@@ -350,6 +541,7 @@ class Uploader {
                     rating: this.baseRating,
                     source: this.baseSource,
                     additionalTags: [],
+                    individualAlbumIds: new Set(),
                     preview: null,
                     scannedPath: null
                 };
@@ -529,6 +721,8 @@ class Uploader {
         setTimeout(() => this.tagInputHelper.validateAndStyleTags(individualTagsInput), 100);
 
         this.updateFinalTagsPreview();
+        this.renderIndividualAlbumBadges();
+        this.renderIndividualAlbumSelect();
     }
 
     updateFinalTagsPreview() {
@@ -681,9 +875,11 @@ class Uploader {
     }
 
     async uploadFile(fileData) {
-        const formData = new FormData();
+        const allTags = [...this.baseTags, ...fileData.additionalTags];
+        const uniqueTags = [...new Set(allTags)];
+        const allAlbumIds = new Set([...this.baseAlbumIds, ...fileData.individualAlbumIds]);
 
-        // If scanned file, send path instead of file
+        const formData = new FormData();
         if (fileData.scannedPath) {
             formData.append('scanned_path', fileData.scannedPath);
         } else {
@@ -691,10 +887,10 @@ class Uploader {
         }
 
         formData.append('rating', fileData.rating);
+        formData.append('tags', uniqueTags.join(' '));
 
-        const fullTags = this.getFullTags(fileData);
-        if (fullTags.length > 0) {
-            formData.append('tags', fullTags.join(' '));
+        if (allAlbumIds.size > 0) {
+            formData.append('album_ids', Array.from(allAlbumIds).join(','));
         }
 
         if (fileData.source) {
@@ -721,6 +917,7 @@ class Uploader {
         this.baseTags = [];
         this.baseRating = 'safe';
         this.baseSource = '';
+        this.baseAlbumIds = new Set();
         this.fileHashes.clear();
 
         // Clear UI
@@ -729,6 +926,9 @@ class Uploader {
         const individualTagsInput = document.getElementById('individual-tags');
         if (baseTagsInput) baseTagsInput.textContent = '';
         if (individualTagsInput) individualTagsInput.textContent = '';
+
+        this.renderBaseAlbumBadges();
+        this.renderBaseAlbumSelect();
 
         // Reset custom selects
         if (this.baseRatingSelect) {
@@ -795,6 +995,71 @@ class Uploader {
 
         const filename = filePath.split('/').pop().split('\\').pop();
         return this.uploadedFiles.some(f => f.file.name === filename);
+    }
+
+    renderIndividualAlbumSelect() {
+        if (this.selectedFileIndex === null) return;
+        const selectEl = document.getElementById('individual-album-select');
+        if (!selectEl) return;
+
+        if (!this.individualAlbumSelect) return;
+
+        const fileData = this.uploadedFiles[this.selectedFileIndex];
+        if (!fileData) return;
+
+        const availableAlbums = this.allAlbums.filter(album =>
+            !this.baseAlbumIds.has(album.id) &&
+            !fileData.individualAlbumIds.has(album.id)
+        );
+
+        const options = [{ value: '', text: 'Select album to add...', selected: true }];
+        availableAlbums.forEach(album => {
+            options.push({ value: album.id, text: album.name });
+        });
+
+        this.individualAlbumSelect.setOptions(options);
+    }
+
+    renderIndividualAlbumBadges() {
+        const container = document.getElementById('individual-albums-list');
+        if (!container || this.selectedFileIndex === null) return;
+
+        const fileData = this.uploadedFiles[this.selectedFileIndex];
+        if (!fileData) return;
+
+        container.innerHTML = '';
+
+        this.baseAlbumIds.forEach(id => {
+            const album = this.allAlbums.find(a => a.id == id);
+            if (album) {
+                const badge = document.createElement('div');
+                badge.className = 'surface px-2 py-1 border text-xs flex items-center gap-2 opacity-70';
+                badge.innerHTML = `
+                    <span>${this.escapeHtml(album.name)}</span>
+                    <span class="text-[10px] text-secondary">(Base)</span>
+                `;
+                container.appendChild(badge);
+            }
+        });
+
+        fileData.individualAlbumIds.forEach(id => {
+            const album = this.allAlbums.find(a => a.id == id);
+            if (album) {
+                const badge = document.createElement('div');
+                badge.className = 'surface px-2 py-1 border text-xs flex items-center gap-2';
+                badge.innerHTML = `
+                    <span>${this.escapeHtml(album.name)}</span>
+                    <button class="bg-danger tag-text px-1 hover:bg-danger transition-colors" data-id="${id}">×</button>
+                `;
+                badge.querySelector('button').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    fileData.individualAlbumIds.delete(parseInt(id));
+                    this.renderIndividualAlbumBadges();
+                    this.renderIndividualAlbumSelect();
+                });
+                container.appendChild(badge);
+            }
+        });
     }
 }
 
