@@ -4,9 +4,6 @@ loading_indicator, page_navigation, popular_tags_section, sidebar_start, sidebar
 
 {% block content %}
 <div class="container mx-auto px-4 py-4">
-    {{ rating_filter('mobile') }}
-    {{ sorting_options(default_sort=default_sort, default_order=default_order, location='mobile') }}
-
     <div class="grid grid-cols-1 xl:grid-cols-5 lg:grid-cols-4 gap-4">
         <!-- Main Content -->
         <div class="xl:col-span-4 lg:col-span-3">
@@ -17,6 +14,8 @@ loading_indicator, page_navigation, popular_tags_section, sidebar_start, sidebar
                 <h1 id="album-name" class="text-lg font-bold">Loading...</h1>
             </div>
 
+            {{ rating_filter('mobile') }}
+            {{ sorting_options(default_sort=default_sort, default_order=default_order, location='mobile') }}
             {{ bulk_actions(['select_all', 'deselect_all', 'remove', 'album', 'ai_tags', 'wd_tagger', 'delete']) }}
 
             <!-- Sub-albums Section -->
@@ -39,8 +38,8 @@ loading_indicator, page_navigation, popular_tags_section, sidebar_start, sidebar
                 </div>
             </div>
 
-            {{ page_navigation() }}
             {{ loading_indicator() }}
+            {{ page_navigation() }}
         </div>
 
         <!-- Sidebar -->
