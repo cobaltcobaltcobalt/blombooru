@@ -17,10 +17,10 @@ from ..config import settings
 from ..utils.media_processor import process_media_file, calculate_file_hash
 from ..utils.thumbnail_generator import generate_thumbnail
 from ..utils.media_helpers import extract_image_metadata, serve_media_file, sanitize_filename, get_unique_filename, delete_media_cache
-from ..utils.album_utils import get_random_thumbnails, get_album_rating, get_media_count
+from ..utils.album_utils import get_random_thumbnails, get_album_rating, get_media_count, update_album_last_modified
 from ..models import Media, Tag, User, blombooru_media_tags, Album, blombooru_album_media
 from ..schemas import MediaResponse, MediaUpdate, MediaCreate, RatingEnum, AlbumListResponse
-from ..utils.cache import cache_response, invalidate_media_cache, invalidate_tag_cache
+from ..utils.cache import cache_response, invalidate_media_cache, invalidate_tag_cache, invalidate_album_cache
 
 router = APIRouter(prefix="/api/media", tags=["media"])
 
@@ -208,6 +208,7 @@ async def upload_media(
     scanned_path: Optional[str] = Form(None),
     rating: RatingEnum = Form(RatingEnum.safe),
     tags: str = Form(""),
+    album_ids: Optional[str] = Form(None),
     source: Optional[str] = Form(None),
     current_user: User = Depends(require_admin_mode),
     db: Session = Depends(get_db)
@@ -304,21 +305,41 @@ async def upload_media(
             source=source if source else None,
         )
         
-        tag_ids = []
+        tag_ids_to_update = []
         if tags:
             tag_list = [t.strip() for t in tags.split() if t.strip()]
             media.tags = get_or_create_tags(db, tag_list)
-            tag_ids = [tag.id for tag in media.tags]
+            tag_ids_to_update = [tag.id for tag in media.tags]
             print(f"Tags added: {tag_list}")
+            
+        # Handle Album IDs
+        affected_album_ids = []
+        if album_ids:
+            try:
+                a_ids = [int(id_str.strip()) for id_str in album_ids.split(",") if id_str.strip().isdigit()]
+                if a_ids:
+                    albums = db.query(Album).filter(Album.id.in_(a_ids)).all()
+                    media.albums = albums
+                    affected_album_ids = [album.id for album in albums]
+                    print(f"Added to albums: {affected_album_ids}")
+            except Exception as e:
+                print(f"Error parsing album_ids: {e}")
         
         db.add(media)
         db.commit()
         db.refresh(media)
         
-        if tag_ids:
-            update_tag_counts(db, tag_ids)
+        if tag_ids_to_update:
+            update_tag_counts(db, tag_ids_to_update)
             db.commit()
-            db.refresh(media)
+            
+        if affected_album_ids:
+            for a_id in affected_album_ids:
+                update_album_last_modified(a_id, db)
+            db.commit()
+            invalidate_album_cache()
+            
+        db.refresh(media)
         
         print(f"Media uploaded successfully: ID={media.id}, Filename={unique_filename}")
         
