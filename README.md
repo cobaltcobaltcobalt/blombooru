@@ -50,6 +50,7 @@ Blombooru is a private, single-user alternative to image boorus like Danbooru an
   - [Uploading Media](#uploading-media)
   - [Tagging & Searching](#tagging--searching)
   - [Sharing Media](#sharing-media)
+  - [System Updater](#system-updater)
   - [API & Third-Party Apps](#api--third-party-apps)
 - [Theming](#theming)
 - [Technical Details](#technical-details)
@@ -350,6 +351,35 @@ Order results with `order:{value}`. Suffix with `_asc` or `_desc` where applicab
 2. Navigate to the page of the media you wish to share.
 3. Click the **Share** button and a unique share URL (`https://localhost:8000/shared/<uuid>`) will be generated.
 4. Anyone with this link can view the media in a simplified, read-only interface. The shared media can optionally include or exclude its accompanying AI metadata. Shared items are marked with a "shared" icon in your private gallery view.
+
+### System Updater
+
+Blombooru includes a built-in system updater in the Admin Panel that allows you to easily update your installation to the latest version.
+
+> [!WARNING]
+> Always back up your data before updating! While updates are designed to be safe, unexpected issues can occur, especially if you're updating to a new major version or the latest dev build.
+
+#### How to Update
+
+1. Log in as the admin and navigate to the **Admin Panel**.
+2. Scroll to the **System Update** section.
+3. Click **Check for Updates** to fetch the latest version information from GitHub.
+4. Review the changelog by clicking **View Changelog** to see what's new.
+5. If updates are available, click either:
+   - **Update to Latest Dev** - Updates to the latest commit on the `main` branch (bleeding edge)
+   - **Update to Latest Stable** - Updates to the latest tagged release (recommended)
+
+The updater will automatically run `git pull` (or `git checkout <tag>`) and display the output. After updating, **restart Blombooru** to apply the changes:
+
+- **Docker:** `docker compose down && docker compose up -d`
+- **Python:** Stop the server (Ctrl+C) and run `python run.py` again
+
+#### Dependency Changes
+
+If the update includes changes to `requirements.txt` or `docker-compose.yml`, the updater will display a notice. You will need to:
+
+- **Docker:** Run `docker compose down && docker compose up --build -d` to rebuild the container
+- **Python:** Stop the server (Ctrl+C) and run `pip install -r requirements.txt` before running `python run.py` again.
 
 ### API & Third-Party Apps
 
