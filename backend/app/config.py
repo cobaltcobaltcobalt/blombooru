@@ -21,12 +21,20 @@ class Settings:
         self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
         self.DATA_DIR.mkdir(parents=True, exist_ok=True)
         
-        self.settings = self.load_settings()
+        self.file_settings = self._load_file_settings()
+        self.settings = self._get_default_settings()
+        self.settings.update(self.file_settings)
         
-    def load_settings(self) -> dict:
+    def _load_file_settings(self) -> dict:
         if self.SETTINGS_FILE.exists():
             with open(self.SETTINGS_FILE, 'r') as f:
-                return json.load(f)
+                try:
+                    return json.load(f)
+                except json.JSONDecodeError:
+                    return {}
+        return {}
+        
+    def _get_default_settings(self) -> dict:
         return {
             "app_name": "Blombooru",
             "first_run": True,
@@ -64,32 +72,63 @@ class Settings:
     
     def save_settings(self, settings: dict):
         self.settings.update(settings)
+        self.file_settings.update(settings)
         with open(self.SETTINGS_FILE, 'w') as f:
             json.dump(self.settings, f, indent=2)
     
     @property
     def DATABASE_URL(self) -> str:
-        db = self.settings["database"]
-        return f"postgresql://{db['user']}:{db['password']}@{db['host']}:{db['port']}/{db['name']}"
+        db_defaults = self.settings.get("database", {})
+        file_db = self.file_settings.get("database", {})
+        
+        user = file_db.get('user') or os.getenv("POSTGRES_USER") or db_defaults.get('user', 'postgres')
+        password = file_db.get('password') or os.getenv("POSTGRES_PASSWORD") or db_defaults.get('password', '')
+        host = file_db.get('host') or os.getenv("POSTGRES_HOST") or db_defaults.get('host', 'localhost')
+        port = file_db.get('port') or os.getenv("POSTGRES_PORT") or db_defaults.get('port', 5432)
+        name = file_db.get('name') or os.getenv("POSTGRES_DB") or db_defaults.get('name', 'blombooru')
+        
+        return f"postgresql://{user}:{password}@{host}:{port}/{name}"
     
     @property
     def REDIS_HOST(self) -> str:
-        return self.settings.get("redis", {}).get("host", "localhost")
+        val = self.file_settings.get("redis", {}).get("host")
+        if val is not None:
+            return val
+        return os.getenv("REDIS_HOST", self.settings.get("redis", {}).get("host", "localhost"))
     
     @property
     def REDIS_PORT(self) -> int:
-        return self.settings.get("redis", {}).get("port", 6379)
+        val = self.file_settings.get("redis", {}).get("port")
+        if val is not None:
+            return int(val)
+        return int(os.getenv("REDIS_PORT", self.settings.get("redis", {}).get("port", 6379)))
     
     @property
     def REDIS_DB(self) -> int:
-        return self.settings.get("redis", {}).get("db", 0)
+        val = self.file_settings.get("redis", {}).get("db")
+        if val is not None:
+            return int(val)
+        return int(os.getenv("REDIS_DB", self.settings.get("redis", {}).get("db", 0)))
     
     @property
     def REDIS_PASSWORD(self) -> Optional[str]:
-        return self.settings.get("redis", {}).get("password")
+        val = self.file_settings.get("redis", {}).get("password")
+        if val is not None:
+            return val
+        return os.getenv("REDIS_PASSWORD", self.settings.get("redis", {}).get("password"))
     
     @property
     def REDIS_ENABLED(self) -> bool:
+        file_enabled = self.file_settings.get("redis", {}).get("enabled")
+        if file_enabled is not None:
+            if isinstance(file_enabled, bool):
+                return file_enabled
+            return str(file_enabled).lower() in ("true", "1", "yes")
+            
+        env_enabled = os.getenv("REDIS_ENABLED")
+        if env_enabled is not None:
+            return env_enabled.lower() in ("true", "1", "yes")
+            
         return self.settings.get("redis", {}).get("enabled", False)
     
     @property
@@ -98,7 +137,10 @@ class Settings:
     
     @property
     def APP_NAME(self) -> str:
-        return self.settings["app_name"]
+        val = self.file_settings.get("app_name")
+        if val is not None:
+            return val
+        return os.getenv("APP_NAME", self.settings.get("app_name", "Blombooru"))
     
     @property
     def CURRENT_THEME(self) -> str:
