@@ -29,6 +29,7 @@
                 <label class="block text-xs font-bold mb-2">Host</label>
                 <input type="text" id="db-host" name="db_host" value="{{ settings.DB_HOST }}" required
                     class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
+                <span class="text-xs text-secondary">Set this to "db" if running in docker</span>
             </div>
 
             <div class="mb-4">
@@ -70,6 +71,7 @@
                     <label class="block text-xs font-bold mb-2">Host</label>
                     <input type="text" id="redis-host" name="redis_host" value="{{ settings.REDIS_HOST }}"
                         class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
+                    <span class="text-xs text-secondary">Set this to "redis" if running in docker</span>
                 </div>
 
                 <div class="mb-4">
