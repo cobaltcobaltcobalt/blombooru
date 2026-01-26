@@ -77,11 +77,6 @@ span.checked:hover {
     border-top: none;
     max-height: 200px;
     overflow-y: auto;
-    width: 338px;
-}
-
-#search-input~.tag-suggestions,
-#search-input-mobile~.tag-suggestions {
     top: 100%;
     left: 0;
     width: 100%;
@@ -126,10 +121,6 @@ span.checked:hover {
     margin-right: 0.5rem;
     font-size: 0.7em;
     text-transform: uppercase;
-}
-
-.tag-suggestions-mobile {
-    width: calc(100% - 2rem);
 }
 
 /* Tag styling */
