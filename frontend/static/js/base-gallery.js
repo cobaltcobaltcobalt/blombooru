@@ -1164,7 +1164,7 @@ class BaseGallery {
         const errorDiv = document.createElement('div');
         errorDiv.className = 'col-span-full';
         errorDiv.innerHTML = `
-            <div class="bg-danger text-white p-4 my-4">
+            <div class="bg-danger tag-text p-4 my-4">
                 <strong>Error:</strong> ${message}
                 <br><small>Check the browser console for more details</small>
             </div>

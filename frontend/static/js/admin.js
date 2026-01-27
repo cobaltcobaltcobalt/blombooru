@@ -883,7 +883,7 @@ class AdminPanel {
             resultsDiv.innerHTML = data.tags.map(tag => `
                 <div class="bg p-3 border-b flex justify-between items-center">
                     <div>
-                        <button class="delete-tag-btn text-xs text-secondary bg-danger hover:bg-danger tag-text px-2 py-1 mr-2" data-tag-id="${tag.id}">&#x2715;</button>
+                        <button class="delete-tag-btn text-xs bg-danger hover:bg-danger tag-text px-2 py-1 mr-2" data-tag-id="${tag.id}">&#x2715;</button>
                         <a href="/?q=${encodeURIComponent(tag.name)}" class="tag ${tag.category} tag-text">${tag.name}</a>
                         <span class="text-xs text-secondary ml-2">(${tag.post_count} posts)</span>
                     </div>

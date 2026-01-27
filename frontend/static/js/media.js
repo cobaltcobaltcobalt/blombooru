@@ -780,7 +780,7 @@ class MediaViewer extends MediaViewerBase {
                     const btnText = this.el('share-btn-text');
                     if (btn) {
                         btn.style.removeProperty('display');
-                        btn.classList.remove('unshare-mode', 'border-danger', 'text-danger', 'hover:bg-danger', 'hover:text-white');
+                        btn.classList.remove('unshare-mode', 'border-danger', 'text-danger', 'hover:bg-danger', 'hover:tag-text');
                         btn.classList.add('surface-light', 'hover:surface-light');
                         btnText.innerHTML = `Share`;
                     }
@@ -1675,7 +1675,7 @@ class MediaViewer extends MediaViewerBase {
         const btnText = this.el('share-btn-text');
         if (btn) {
             btn.style.removeProperty('display');
-            btn.classList.add('unshare-mode', 'border-danger', 'text-danger', 'hover:bg-danger', 'hover:text-white');
+            btn.classList.add('unshare-mode', 'border-danger', 'text-danger', 'hover:bg-danger', 'hover:tag-text');
             btn.classList.remove('surface-light', 'hover:surface-light');
             btnText.innerHTML = `Unshare`;
         }
