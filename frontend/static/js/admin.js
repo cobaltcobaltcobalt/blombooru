@@ -1792,7 +1792,7 @@ class AdminPanel {
             if (latestHashEl) latestHashEl.textContent = status.latest_dev_hash.substring(0, 8);
 
             const latestTagEl = document.getElementById('latest-version-tag');
-            if (latestTagEl) latestTagEl.textContent = status.latest_stable_tag || 'dev';
+            if (latestTagEl) latestTagEl.textContent = status.latest_stable_tag || 'main';
 
             const devBtn = document.getElementById('btn-update-dev');
             if (devBtn) {
