@@ -1872,7 +1872,7 @@ class AdminPanel {
     async performUpdate(target) {
         if (typeof ModalHelper === 'undefined') {
             console.error('ModalHelper not available');
-            if (!confirm(`Are you sure you want to update to ${target}? This will stop the server briefly.`)) return;
+            if (!confirm(`Are you sure you want to update to ${target}? You will need to manually restart the server to fully apply the update.`)) return;
             this._execute_update(target);
             return;
         }
@@ -1881,7 +1881,7 @@ class AdminPanel {
             id: 'update-confirm-modal',
             type: 'warning',
             title: 'System Update',
-            message: `Are you sure you want to update to the latest <strong>${target}</strong> release?<br>The server will stop briefly to restart.<br><br><b>Ensure you have read and understood the changelog and notices before proceeding.</b>`,
+            message: `Are you sure you want to update to the latest <strong>${target}</strong> release?<br>You will need to manually restart the server to fully apply the update.<br><br><b>Ensure you have read and understood the changelog and notices before proceeding.</b>`,
             confirmText: 'Update Now',
             cancelText: 'Cancel',
             onConfirm: () => {
