@@ -52,7 +52,9 @@ class Gallery extends BaseGallery {
 
             console.log('Loading gallery:', endpoint, apiParams.toString());
 
-            const response = await fetch(`${endpoint}?${apiParams.toString()}`);
+            const response = await fetch(`${endpoint}?${apiParams.toString()}`, {
+                credentials: 'include'
+            });
 
             if (!response.ok) {
                 const error = await response.json().catch(() => ({ detail: `HTTP ${response.status}` }));

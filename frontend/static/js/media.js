@@ -309,7 +309,9 @@ class MediaViewer extends MediaViewerBase {
             const actualNumTags = Math.min(numTags, shuffled.length);
             const tagQuery = shuffled.slice(0, actualNumTags).map(t => t.name).join(' ');
 
-            const res = await fetch(`/api/search?q=${encodeURIComponent(tagQuery)}&limit=12`);
+            const res = await fetch(`/api/search?q=${encodeURIComponent(tagQuery)}&limit=12`, {
+                credentials: 'include'
+            });
             const data = await res.json();
             return (data.items || []).filter(i => i.id !== currentMediaId);
         };
@@ -1260,7 +1262,9 @@ class MediaViewer extends MediaViewerBase {
                     limit: 24
                 });
 
-                const res = await fetch(`/api/search?${params.toString()}`);
+                const res = await fetch(`/api/search?${params.toString()}`, {
+                    credentials: 'include'
+                });
                 const data = await res.json();
                 items = data.items || [];
                 totalPages = data.pages || 1;
@@ -1351,7 +1355,9 @@ class MediaViewer extends MediaViewerBase {
             if (generalTags.length > 0) {
                 const tagQuery = generalTags.slice(0, 3).map(t => t.name).join(' ');
                 try {
-                    const res = await fetch(`/api/search?q=${encodeURIComponent(tagQuery)}&limit=30`);
+                    const res = await fetch(`/api/search?q=${encodeURIComponent(tagQuery)}&limit=30`, {
+                        credentials: 'include'
+                    });
                     const data = await res.json();
                     (data.items || []).forEach(item => {
                         if (item.id !== currentId && !addedIds.has(item.id)) {

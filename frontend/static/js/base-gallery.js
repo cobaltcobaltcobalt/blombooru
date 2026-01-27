@@ -525,7 +525,9 @@ class BaseGallery {
             params.set('limit', '100000'); // Fetch "all" (reasonable limit)
             params.delete('page');
 
-            const res = await fetch(`${endpoint}?${params.toString()}`);
+            const res = await fetch(`${endpoint}?${params.toString()}`, {
+                credentials: 'include'
+            });
             if (!res.ok) throw new Error('Failed to fetch all items');
 
             const data = await res.json();
