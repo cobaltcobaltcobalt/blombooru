@@ -36,6 +36,9 @@
                 <label class="block text-xs font-bold mb-2">Port</label>
                 <input type="number" id="db-port" name="db_port" value="{{ settings.DB_PORT }}" required
                     class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
+                <span class="text-xs text-secondary">
+                    Set this to "5432" if running in docker or if the pre-filled value is incorrect
+                </span>
             </div>
 
             <div class="mb-4">
@@ -78,6 +81,9 @@
                     <label class="block text-xs font-bold mb-2">Port</label>
                     <input type="number" id="redis-port" name="redis_port" value="{{ settings.REDIS_PORT }}"
                         class="w-full bg px-3 py-2 border text-xs focus:outline-none focus:border-primary">
+                    <span class="text-xs text-secondary">
+                        Set this to "6379" if running in docker or if the pre-filled value is incorrect
+                    </span>
                 </div>
 
                 <div class="mb-4">

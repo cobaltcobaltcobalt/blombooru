@@ -42,6 +42,7 @@ Blombooru is a private, single-user alternative to image boorus like Danbooru an
 - [Key Features](#key-features)
 - [Installation & Setup](#installation--setup)
   - [Docker](#docker-recommended)
+    - [Multi-Instance Setup](#running-multiple-instances)
   - [Python](#python)
 - [Usage Guide](#usage-guide)
   - [Logging In](#logging-in)
@@ -157,6 +158,129 @@ This is the recommended method for using Blombooru.
     ```bash
     docker compose down
     ```
+
+#### Running Multiple Instances
+
+If you need to run multiple independent Blombooru instances (for example, separate libraries for different purposes or users), Docker Compose makes this straightforward. Each instance will have its own isolated database, Redis cache, media storage, and configuration.
+
+**Prerequisites:**
+- Completed at least one standard Docker installation (see above)
+- Basic familiarity with the command line
+
+**Setup Steps:**
+
+1. **Create separate directories for each instance**  
+    Each instance should live in its own folder to keep everything organized and isolated:
+
+    ```bash
+    mkdir -p ~/blombooru-instance1
+    mkdir -p ~/blombooru-instance2
+    cd ~/blombooru-instance1
+    ```
+
+2. **Clone or copy Blombooru into each directory**  
+    You can either clone the repository fresh into each folder:
+
+    ```bash
+    git clone https://github.com/mrblomblo/blombooru.git
+    ```
+
+    Or copy an existing installation (faster if you've already cloned it once):
+
+    ```bash
+    cp -r /path/to/existing/blombooru/* /path/to/other-blombooru-instance/
+    ```
+
+3. **Configure unique ports for each instance**  
+    Create a `.env` file in each instance directory (copy from `example.env`) and assign **different port numbers** to avoid conflicts:
+
+    **Instance 1** (`~/blombooru-instance1/.env`):
+    ```env
+    APP_PORT=8000
+    POSTGRES_PORT=5432
+    REDIS_PORT=6379
+    POSTGRES_PASSWORD=your_secure_password_here
+    # ... other settings
+    ```
+
+    **Instance 2** (`~/blombooru-instance2/.env`):
+    ```env
+    APP_PORT=8001
+    POSTGRES_PORT=5433
+    REDIS_PORT=6380
+    POSTGRES_PASSWORD=different_secure_password
+    # ... other settings
+    ```
+
+> [!IMPORTANT]
+> Each instance **must** use unique values for `APP_PORT`, `POSTGRES_PORT`, and `REDIS_PORT`. Using the same ports will cause conflicts and prevent instances from starting.
+
+> [!NOTE] 
+> `POSTGRES_PORT` and `REDIS_PORT` are **only** used for mapping ports to your host machine, or for if an external PostgreSQL or Redis server is using different ports. Inside Docker, the containers always communicate using the default internal ports (PostgreSQL: `5432`, Redis: `6379`).
+
+4. **Start each instance independently**  
+    Navigate to each instance directory and start it with Docker Compose:
+
+    ```bash
+    cd ~/blombooru-instance1
+    docker compose up --build -d
+    ```
+
+    ```bash
+    cd ~/blombooru-instance2
+    docker compose up --build -d
+    ```
+
+    Docker Compose will automatically name containers using the directory name (e.g., `blombooru-instance1-web-1`, `blombooru-instance2-web-1`), preventing naming conflicts.
+
+5. **Complete onboarding for each instance**  
+    Each instance is completely independent, so you'll need to complete the onboarding process separately:
+    - Instance 1: `http://localhost:8000`
+    - Instance 2: `http://localhost:8001`
+
+> [!WARNING]
+> During onboarding, the database and Redis port & host fields will be **auto-filled with incorrect values** from your `.env` file. When using Docker, you **must** manually change these to the default internal ports (also noted in the onboarding form):
+> - **PostgreSQL Port:** Always use `5432` (not the `POSTGRES_PORT` value from `.env`)
+> - **Redis Port:** Always use `6379` (not the `REDIS_PORT` value from `.env`)
+> - **DB Host:** Always use `db` (the Docker service name)
+> - **Redis Host:** Always use `redis` (the Docker service name)
+
+**Managing Multiple Instances:**
+
+- **View running instances:**  
+    ```bash
+    docker ps
+    ```
+
+- **Stop a specific instance:**  
+    ```bash
+    cd ~/blombooru-instance1
+    docker compose down
+    ```
+
+- **View logs for a specific instance:**  
+    ```bash
+    cd ~/blombooru-instance1
+    docker compose logs -f
+    ```
+
+- **Update a specific instance:**  
+    Navigate to the instance directory and use the built-in updater via the Admin Panel, or manually:
+    ```bash
+    cd ~/blombooru-instance1
+    git pull
+    docker compose down && docker compose up --build -d
+    ```
+
+**Data Isolation:**
+
+Each instance maintains completely separate:
+- **Databases** – Stored in Docker volumes named after the instance directory (e.g., `blombooru-instance1_pgdata`)
+- **Media files** – Stored in separate Docker volumes (e.g., `blombooru-instance1_media`)
+- **Configuration** – Each instance has its own `settings.json` in its Docker volume
+- **Redis cache** – Separate Redis instances with isolated data
+
+This means you can safely delete, update, or modify one instance without affecting any others.
 
 ### Python
 
