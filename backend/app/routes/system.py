@@ -100,10 +100,10 @@ async def check_update_status(current_user: dict = Depends(require_admin_mode)):
             diff_output = subprocess.check_output(["git", "diff", "--name-only", "HEAD", "origin/main"]).decode()
             if "requirements.txt" in diff_output:
                 requirements_changed = True
-                notices.append("Python dependencies have changed. You may need to run `docker compose up --build -d` or `pip install -r requirements.txt` (in the venv).")
+                notices.append("Python dependencies have changed. You need to run `git pull` then `docker compose up --build -d` (if running in docker) or `pip install -r requirements.txt` in the project root folder (if running locally).")
             
-            if "docker-compose.yml" in diff_output:
-                notices.append("Docker Compose configuration has changed. You may need to run `docker compose up --build -d`.")
+            if "docker-compose.yml" in diff_output or "Dockerfile" in diff_output:
+                notices.append("Docker configuration has changed. You need to run `git pull` then `docker compose up --build -d` in the project root folder (if running in docker).")
                 
         except subprocess.CalledProcessError:
             pass
