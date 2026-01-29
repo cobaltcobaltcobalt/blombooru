@@ -77,3 +77,28 @@ def invalidate_tag_cache():
 def invalidate_album_cache():
     """Invalidate all album-related caches"""
     invalidate_cache("album_list", "album_contents", "danbooru")
+
+def invalidate_media_item_cache(media_id: int):
+    """
+    Invalidate cache for a specific media item.
+    This should be called when a single media item's properties change
+    (like sharing status or parent relationships) that affect its display.
+    """
+    c = redis_cache.client
+    if not c:
+        return
+    
+    try:
+        media_keys = c.keys(f"media_detail:{media_id}:*")
+        all_keys = list(media_keys) if media_keys else []
+        
+        for prefix in ["media_list", "search", "danbooru"]:
+            keys = c.keys(f"{prefix}:*")
+            if keys:
+                all_keys.extend(keys)
+        
+        if all_keys:
+            c.delete(*all_keys)
+            print(f"Invalidated {len(all_keys)} cache keys for media ID {media_id}")
+    except Exception as e:
+        print(f"Error invalidating media item cache: {e}")

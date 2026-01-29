@@ -20,7 +20,7 @@ from ..utils.media_helpers import extract_image_metadata, serve_media_file, sani
 from ..utils.album_utils import get_random_thumbnails, get_album_rating, get_media_count, update_album_last_modified
 from ..models import Media, Tag, User, blombooru_media_tags, Album, blombooru_album_media
 from ..schemas import MediaResponse, MediaUpdate, MediaCreate, RatingEnum, AlbumListResponse
-from ..utils.cache import cache_response, invalidate_media_cache, invalidate_tag_cache, invalidate_album_cache
+from ..utils.cache import cache_response, invalidate_media_cache, invalidate_tag_cache, invalidate_album_cache, invalidate_media_item_cache
 
 router = APIRouter(prefix="/api/media", tags=["media"])
 
@@ -390,6 +390,9 @@ async def update_media(
         new_tag_ids = [tag.id for tag in media.tags]
         affected_tag_ids = list(set(old_tag_ids + new_tag_ids))
 
+    parent_id_changed = False
+    old_parent_id = media.parent_id
+    
     if 'parent_id' in updates.model_fields_set:
         if updates.parent_id:
             parent = db.query(Media).filter(Media.id == updates.parent_id).first()
@@ -405,8 +408,12 @@ async def update_media(
             if updates.parent_id == media.id:
                 raise HTTPException(status_code=400, detail="An item cannot be its own parent")
             
+            if media.parent_id != updates.parent_id:
+                parent_id_changed = True
             media.parent_id = updates.parent_id
         else:
+            if media.parent_id is not None:
+                parent_id_changed = True
             media.parent_id = None
     
     db.commit()
@@ -416,8 +423,18 @@ async def update_media(
         db.commit()
     
     db.refresh(media)
-    invalidate_media_cache()
-    invalidate_tag_cache()
+    
+    if parent_id_changed:
+        invalidate_media_item_cache(media_id)
+
+        if old_parent_id:
+            invalidate_media_item_cache(old_parent_id)
+
+        if media.parent_id:
+            invalidate_media_item_cache(media.parent_id)
+    else:
+        invalidate_media_cache()
+        invalidate_tag_cache()
     
     return MediaResponse.model_validate(media)
 
@@ -474,6 +491,7 @@ async def share_media(
         media.is_shared = True
     
     db.commit()
+    invalidate_media_item_cache(media_id)
     
     return {
         "share_url": f"/shared/{media.share_uuid}",
@@ -494,6 +512,7 @@ async def unshare_media(
     media.is_shared = False
     media.share_uuid = None
     db.commit()
+    invalidate_media_item_cache(media_id)
     
     # Cleanup cache
     try:
@@ -521,11 +540,8 @@ async def update_share_settings(
     
     media.share_ai_metadata = share_ai_metadata
     db.commit()
+    invalidate_media_item_cache(media_id)
     
-    return {
-        "share_ai_metadata": media.share_ai_metadata
-    }
-
     return {
         "share_ai_metadata": media.share_ai_metadata
     }
