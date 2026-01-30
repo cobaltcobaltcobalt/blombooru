@@ -23,6 +23,7 @@ class AdminPanel {
         this.loadThemes();
         this.setupApiKeyManagement();
         this.setupSystemUpdate();
+        this.setupTabs();
     }
 
     // Helper to escape HTML and prevent XSS
@@ -150,6 +151,51 @@ class AdminPanel {
         const testRedisBtn = document.getElementById('test-redis-btn');
         if (testRedisBtn) {
             testRedisBtn.addEventListener('click', () => this.testRedisConnection());
+        }
+    }
+
+    setupTabs() {
+        const tabButtons = document.querySelectorAll('.tab-btn');
+        const tabContents = document.querySelectorAll('.tab-content');
+
+        if (tabButtons.length === 0) return;
+
+        const switchTab = (tabId) => {
+            tabButtons.forEach(btn => {
+                if (btn.dataset.tab === tabId) {
+                    btn.classList.add('text-primary', 'border-primary');
+                    btn.classList.remove('border-transparent');
+                } else {
+                    btn.classList.remove('text-primary', 'border-primary');
+                    btn.classList.add('border-transparent');
+                }
+            });
+
+            tabContents.forEach(content => {
+                if (content.id === `tab-${tabId}`) {
+                    content.classList.remove('hidden');
+                } else {
+                    content.classList.add('hidden');
+                }
+            });
+
+            localStorage.setItem('admin_active_tab', tabId);
+        };
+
+        tabButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                switchTab(btn.dataset.tab);
+            });
+        });
+
+        // Initialize from local storage or default
+        const savedTab = localStorage.getItem('admin_active_tab');
+        const defaultTab = 'content';
+
+        if (savedTab && document.querySelector(`.tab-btn[data-tab="${savedTab}"]`)) {
+            switchTab(savedTab);
+        } else {
+            switchTab(defaultTab);
         }
     }
 
