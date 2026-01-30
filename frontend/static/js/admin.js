@@ -465,7 +465,7 @@ class AdminPanel {
     }
 
     async saveSettings() {
-        const appName = document.getElementById('app-name').value;
+        const appName = document.getElementById('app-name').value.trim();
         const themeSelectElement = document.getElementById('theme-select');
         const theme = themeSelectElement?.dataset.value;
         const itemsPerPage = document.getElementById('items-per-page')?.value;
@@ -473,6 +473,11 @@ class AdminPanel {
 
         if (!appName || !theme || !itemsPerPage) {
             app.showNotification('Please fill in all settings fields!', 'error');
+            return;
+        }
+
+        if (appName.length < 1 || appName.length > 25) {
+            app.showNotification('Application name must be between 1 and 25 characters!', 'error');
             return;
         }
 
