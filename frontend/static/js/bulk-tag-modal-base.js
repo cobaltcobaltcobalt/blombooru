@@ -428,7 +428,7 @@ class BulkTagModalBase {
             if (response.ok) {
                 const results = await response.json();
                 const foundMap = new Map();
-                results.forEach(t => foundMap.set(t.name.toLowerCase(), t.name)); showError
+                results.forEach(t => foundMap.set(t.name.toLowerCase(), t.name));
 
                 tagsToValidate.forEach(tag => {
                     const normalized = tag.toLowerCase().trim();
