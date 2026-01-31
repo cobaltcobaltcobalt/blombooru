@@ -222,6 +222,19 @@
         "view_album_for_tags": "View an album to see tags."
     },
     "bulk_modal": {
+        "manage_title": "Manage Tags",
+        "menu": {
+            "manual_editor": "Manual Tag Editor",
+            "manual_desc": "Edit tags manually for each selected item.",
+            "ai_tags": "Append AI Tags",
+            "ai_desc": "Append tags from existing AI generation metadata.",
+            "wd_tagger": "Predict Tags (WD)",
+            "wd_desc": "Predict tags using dedicated tagger models."
+        },
+        "manual": {
+            "title": "Manual Tag Editor",
+            "empty_message": "No items selected."
+        },
         "ai_tags": {
             "default_media_name": "Media {id}",
             "empty_message": "No new AI tags found in the selected items' metadata.",
@@ -323,6 +336,7 @@
         "error_label": "Error:",
         "go_to_admin": "Go to Admin Panel",
         "jump_to_page": "Jump to Page",
+        "manage_tags": "Manage Tags",
         "no_items_found": "No items found",
         "no_tags_found": "No tags found",
         "popular_tags": "Popular Tags",

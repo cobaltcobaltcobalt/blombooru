@@ -222,6 +222,19 @@
         "view_album_for_tags": "Visa ett album för att se taggar."
     },
     "bulk_modal": {
+        "manage_title": "Hantera taggar",
+        "menu": {
+            "manual_editor": "Manuell tagghanterare",
+            "manual_desc": "Redigera taggar manuellt för varje vald fil.",
+            "ai_tags": "Lägg till AI-taggar",
+            "ai_desc": "Lägg till taggar från befintlig AI-genereringsdata.",
+            "wd_tagger": "Förutsäg taggar (WD)",
+            "wd_desc": "Förutsäg taggar med dedikerade modeller."
+        },
+        "manual": {
+            "title": "Manuell tagghanterare",
+            "empty_message": "Inga filer valda."
+        },
         "ai_tags": {
             "default_media_name": "Media {id}",
             "empty_message": "Inga nya AI-taggar hittades i de valda objektens metadata.",
@@ -323,6 +336,7 @@
         "error_label": "Fel:",
         "go_to_admin": "Gå till adminpanel",
         "jump_to_page": "Gå till sida",
+        "manage_tags": "Hantera taggar",
         "no_items_found": "Inga objekt hittades",
         "no_tags_found": "Inga taggar hittades",
         "popular_tags": "Populära taggar",
