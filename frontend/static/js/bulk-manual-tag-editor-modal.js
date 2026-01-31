@@ -163,6 +163,43 @@ class BulkManualTagEditorModal extends BulkTagModalBase {
             const uniqueTags = new Set([...serverTags, ...currentInputTags]);
             const mergedTags = Array.from(uniqueTags);
 
+            // Resolve tags to get categories for sorting
+            let tagObjects = [];
+            if (this.tagInputHelper) {
+                const limit = 100; // Batch limit safe guard
+                const batches = [];
+                for (let i = 0; i < mergedTags.length; i += limit) {
+                    batches.push(mergedTags.slice(i, i + limit));
+                }
+
+                const resolvedBatches = await Promise.all(batches.map(batch => this.tagInputHelper.checkTagsBatch(batch)));
+                const resolvedMap = Object.assign({}, ...resolvedBatches);
+
+                tagObjects = mergedTags.map(tagName => {
+                    const tagObj = resolvedMap[tagName.toLowerCase()];
+                    return tagObj ? tagObj : { name: tagName, category: 'general' }; // Default to general if unknown
+                });
+            } else {
+                // Likely not needed, but just in case
+                tagObjects = mergedTags.map(t => ({ name: t, category: 'general' }));
+            }
+
+            // Sort tags
+            const categoryOrder = ['artist', 'character', 'copyright', 'general', 'meta'];
+            tagObjects.sort((a, b) => {
+                const catA = categoryOrder.indexOf(a.category);
+                const catB = categoryOrder.indexOf(b.category);
+
+                // If category for some reason is not found in list, push to end
+                const orderA = catA === -1 ? 99 : catA;
+                const orderB = catB === -1 ? 99 : catB;
+
+                if (orderA !== orderB) return orderA - orderB;
+                return a.name.localeCompare(b.name);
+            });
+
+            const sortedTagNames = tagObjects.map(t => t.name);
+
             // Check if anything actually changed from what's currently in input
             const inputSet = new Set(currentInputTags.map(t => t.toLowerCase()));
             const mergedSet = new Set(mergedTags.map(t => t.toLowerCase()));
@@ -179,8 +216,21 @@ class BulkManualTagEditorModal extends BulkTagModalBase {
                 }
             }
 
+            if (!changed) {
+                const currentNormalized = currentInputTags.map(t => t.toLowerCase());
+                const sortedNormalized = sortedTagNames.map(t => t.toLowerCase());
+
+                // Check order
+                for (let i = 0; i < currentNormalized.length; i++) {
+                    if (currentNormalized[i] !== sortedNormalized[i]) {
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+
             if (changed) {
-                const newValue = mergedTags.join(' ');
+                const newValue = sortedTagNames.join(' ');
                 inputElement.textContent = newValue;
                 this.triggerValidation(inputElement);
                 this.flashButton(index, 'var(--primary)');
