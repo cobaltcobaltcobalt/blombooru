@@ -1933,7 +1933,7 @@ class AdminPanel {
                     <div class="flex flex-col">
                         <span class="font-bold text-sm">${this.escapeHtml(commit.subject)}</span>
                         ${commit.body ? `<div class="text-xs text-secondary whitespace-pre-wrap">${this.escapeHtml(commit.body)}</div>` : ''}
-                    </div>
+                    </div><b>hi!</b>
                 </div>
             </div>
         `).join('');
