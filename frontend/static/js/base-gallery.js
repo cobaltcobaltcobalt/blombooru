@@ -402,8 +402,7 @@ class BaseGallery {
         const bulkDeleteBtn = document.getElementById('bulk-delete-btn');
         const bulkAlbumBtn = document.getElementById('bulk-album-btn');
         const bulkRemoveBtn = document.getElementById('bulk-remove-btn');
-        const bulkAITagsBtn = document.getElementById('bulk-ai-tags-btn');
-        const bulkWDTaggerBtn = document.getElementById('bulk-wd-tagger-btn');
+        const bulkManageTagsBtn = document.getElementById('bulk-manage-tags-btn');
 
         if (selectAllBtn) {
             selectAllBtn.addEventListener('click', () => this.handleSelectAll());
@@ -420,11 +419,37 @@ class BaseGallery {
         if (bulkRemoveBtn) {
             bulkRemoveBtn.addEventListener('click', () => this.bulkRemove());
         }
-        if (bulkAITagsBtn) {
-            bulkAITagsBtn.addEventListener('click', () => this.openBulkAITagsModal());
+        if (bulkManageTagsBtn) {
+            bulkManageTagsBtn.addEventListener('click', () => this.openBulkManageTagsModal());
         }
-        if (bulkWDTaggerBtn) {
-            bulkWDTaggerBtn.addEventListener('click', () => this.openBulkWDTaggerModal());
+    }
+
+    initBulkManageTagsModal() {
+        if (typeof BulkManageTagsModal !== 'undefined' && !this.bulkManageTagsModal) {
+            this.bulkManageTagsModal = new BulkManageTagsModal({
+                onAction: (action) => {
+                    if (action === 'manual') this.openBulkManualTagEditorModal();
+                    else if (action === 'ai_tags') this.openBulkAITagsModal();
+                    else if (action === 'wd_tagger') this.openBulkWDTaggerModal();
+                }
+            });
+        }
+    }
+
+    initBulkManualTagEditorModal() {
+        if (typeof BulkManualTagEditorModal !== 'undefined' && !this.bulkManualTagEditorModal) {
+            this.bulkManualTagEditorModal = new BulkManualTagEditorModal({
+                onSave: () => {
+                    this.clearSelection();
+                    this.loadContent();
+                },
+                onClose: () => {
+                    // Re-open manager if it was the source
+                    if (this.bulkManageTagsModal && this.bulkManageTagsModal.isOpen) {
+                        this.bulkManageTagsModal.show();
+                    }
+                }
+            });
         }
     }
 
@@ -434,6 +459,11 @@ class BaseGallery {
                 onSave: () => {
                     this.clearSelection();
                     this.loadContent();
+                },
+                onClose: () => {
+                    if (this.bulkManageTagsModal && this.bulkManageTagsModal.isOpen) {
+                        this.bulkManageTagsModal.show();
+                    }
                 }
             });
         }
@@ -445,8 +475,32 @@ class BaseGallery {
                 onSave: () => {
                     this.clearSelection();
                     this.loadContent();
+                },
+                onClose: () => {
+                    if (this.bulkManageTagsModal && this.bulkManageTagsModal.isOpen) {
+                        this.bulkManageTagsModal.show();
+                    }
                 }
             });
+        }
+    }
+
+    openBulkManageTagsModal() {
+        if (!this.bulkManageTagsModal) {
+            this.initBulkManageTagsModal();
+        }
+        if (this.bulkManageTagsModal) {
+            this.bulkManageTagsModal.isOpen = true; // Track state
+            this.bulkManageTagsModal.show();
+        }
+    }
+
+    openBulkManualTagEditorModal() {
+        if (!this.bulkManualTagEditorModal) {
+            this.initBulkManualTagEditorModal();
+        }
+        if (this.bulkManualTagEditorModal) {
+            this.bulkManualTagEditorModal.show(this.selectedItems);
         }
     }
 
