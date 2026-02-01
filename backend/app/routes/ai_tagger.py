@@ -24,6 +24,16 @@ router = APIRouter(prefix="/api/ai-tagger", tags=["ai-tagger"])
 # Dedicated thread pool for inference
 _inference_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="wd_inference")
 
+def shutdown_tagger_resources():
+    """Cleanup tagger resources on application shutdown."""
+    logger.info("Shutting down AI tagger resources...")
+    _inference_executor.shutdown(wait=False)
+    try:
+        from ..services.wd_tagger import get_wd_tagger
+        get_wd_tagger().shutdown()
+    except Exception as e:
+        logger.error(f"Error shutting down WD tagger: {e}")
+
 
 def find_media_file(filename: str) -> Optional[Path]:
     """Find a media file in ORIGINAL_DIR or its subdirectories."""

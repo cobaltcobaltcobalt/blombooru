@@ -51,6 +51,15 @@ async def startup_event():
     else:
         print("First run detected - please complete onboarding")
 
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Run on shutdown"""
+    try:
+        from .routes.ai_tagger import shutdown_tagger_resources
+        shutdown_tagger_resources()
+    except Exception as e:
+        print(f"Error during shutdown: {e}")
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Home page"""
