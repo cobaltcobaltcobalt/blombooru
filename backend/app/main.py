@@ -27,6 +27,7 @@ templates.env.globals['get_current_year'] = lambda: datetime.now().year
 templates.env.globals['t'] = lambda key, **kwargs: translation_helper.get(key, settings.CURRENT_LANGUAGE, **kwargs)
 templates.env.globals['current_language'] = lambda: settings.CURRENT_LANGUAGE
 templates.env.globals['available_languages'] = lambda: [lang.to_dict() for lang in language_registry.get_all_languages()]
+templates.env.globals['is_admin'] = lambda request: request.cookies.get("admin_mode") == "true"
 app.include_router(admin.router)
 app.include_router(media.router)
 app.include_router(tags.router)
