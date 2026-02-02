@@ -138,10 +138,31 @@
             "title": "Inställningar",
             "upload_date": "Uppladdningsdatum"
         },
+        "stats": {
+            "total_storage": "Använt Lagringsutrymme",
+            "tags_with_aliases": "Taggar + Alias",
+            "parent_media": "Föräldramedia",
+            "child_media": "Barnmedia",
+            "upload_trends": "Uppladdningstrender (Senaste 30 dagarna)",
+            "media_type_distribution": "Mediatypsfördelning",
+            "rating_distribution": "Betygsfördelning",
+            "top_tags": "Topp 10 Taggar",
+            "top_general_tags": "Topp 10 Allmänna Taggar",
+            "top_artist_tags": "Topp 10 Konstnärstaggar",
+            "top_character_tags": "Topp 10 Karaktärstaggar",
+            "top_copyright_tags": "Topp 10 Upphovsrättstaggar",
+            "top_meta_tags": "Topp 10 Metataggar",
+            "tag_category_distribution": "Taggkategorifördelning",
+            "album_size_distribution": "Albumstorleksfördelning",
+            "uploads_per_day": "Uppladdningar per dag",
+            "usage_count": "Antal användningar",
+            "empty_albums": "Tomma"
+        },
         "tabs": {
             "account": "Konto",
             "content": "Innehåll",
-            "system": "System"
+            "system": "System",
+            "stats": "Statistik"
         },
         "tags_management": {
             "add_tags": "Lägg till taggar",
@@ -313,7 +334,16 @@
         "yes": "Ja",
         "explicit": "Explicit",
         "questionable": "Tveksam",
-        "safe": "Säker"
+        "safe": "Säker",
+        "images": "Bilder",
+        "gifs": "GIFs",
+        "videos": "Videor",
+        "media": "Media",
+        "tag_category_general": "Allmänt",
+        "tag_category_artist": "Konstnär",
+        "tag_category_character": "Karaktär",
+        "tag_category_copyright": "Upphovsrätt",
+        "tag_category_meta": "Meta"
     },
     "errors": {
         "forbidden": "Förbjudet",
@@ -600,6 +630,7 @@
             "enter_at_least_one_tag": "Ange minst en tagg!",
             "enter_name": "Ange ett namn!",
             "error_clearing_tags": "Fel vid rensning av taggar",
+            "error_loading_stats": "Fel vid laddning av statistik",
             "error_creating_album": "Fel vid skapande av album",
             "error_deleting_album": "Fel vid radering av album",
             "error_deleting_tag": "Fel vid radering av tagg",
