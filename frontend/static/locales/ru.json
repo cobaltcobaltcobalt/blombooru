@@ -339,6 +339,8 @@
         "manage_tags": "Управление тегами",
         "no_items_found": "Элементы не найдены",
         "no_tags_found": "Теги не найдены",
+        "no_media_found": "Медиафайлы не найдены",
+        "no_results_found": "Результаты не найдены",
         "popular_tags": "Популярные теги",
         "rating_filter": "Фильтр рейтинга",
         "remove_from_album": "Удалить из альбома",
