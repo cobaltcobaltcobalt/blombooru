@@ -60,6 +60,14 @@ class LanguageRegistry:
             native_name="Русский"
         ))
 
+        # Additional languages are registered here
+        # Example (Note how "name" should be in English, while "native_name" should be in the native language):
+        # self.register_language(Language(
+        #     id="de",
+        #     name="German",
+        #     native_name="Deutsch"
+        # ))
+
 class TranslationHelper:
     """Helper for getting translated strings with fallback to English"""
     

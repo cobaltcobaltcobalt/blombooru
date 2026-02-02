@@ -12,7 +12,7 @@
   
 </div>
 
-<p align="center">Also available in <a href="">Russian</a> (last updated Feb, 01, 2026)</p>
+<p align="center">Also available in <a href="https://github.com/mrblomblo/blombooru/blob/main/README_RU.md">Russian</a> (last updated Feb, 01, 2026)</p>
 
 <p align="center"><b>Your Personal, Self-Hosted Media Tagging Tool.</b></p>
 
@@ -386,7 +386,7 @@ Upload a `.zip`, `.tar.gz`, or `.tgz` archive containing your media, and Blomboo
 
 #### 3. Filesystem Scan
 
-Move your media files directly into the configured storage directory. Then, navigate to the Admin Panel and click the **Scan for Untracked Media** button. The server will scan the /app/media/original dir (notice that it's not easily accessible directory), find new files, generate thumbnails, and add them to your library.
+Move your media files directly into the configured storage directory. Then, navigate to the Admin Panel and click the **Scan for Untracked Media** button. The server will scan the `media/original` dir (notice that it's an not easily accessible directory), find new files, generate thumbnails, and add them to your library.
  
 *Duplicate media is automatically detected by its hash and will not be re-imported.*
 
@@ -501,7 +501,7 @@ The updater will automatically run `git pull` (or `git checkout <tag>`) and disp
 - **Docker:** `docker compose down && docker compose up -d`
 
 > [!NOTE]
-> Docker updates are not supported at the moment. When running in Docker, Blombooru will show a warning, telling you to manually run git pull on host machine and recompose the container.
+> Docker updates are not supported at the moment. When running in Docker, Blombooru will show a warning, telling you to manually run `git pull` on host machine and rebuild the container.
 
 - **Python:** Stop the server (Ctrl+C) and run `python run.py` again
 
