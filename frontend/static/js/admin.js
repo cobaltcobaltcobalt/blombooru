@@ -5,6 +5,7 @@ class AdminPanel {
         this.validationTimeout = null;
         this.themeSelect = null;
         this.languageSelect = null;
+        this.statsModule = null;
         window.adminPanel = this;
         this.init();
     }
@@ -25,6 +26,7 @@ class AdminPanel {
         this.loadLanguages();
         this.setupApiKeyManagement();
         this.setupSystemUpdate();
+        this.setupStats();
         this.setupTabs();
     }
 
@@ -186,6 +188,10 @@ class AdminPanel {
                 }
             });
 
+            if (tabId === 'stats' && this.statsModule && !this.statsModule.isInitialized) {
+                this.statsModule.init();
+            }
+
             localStorage.setItem('admin_active_tab', tabId);
         };
 
@@ -203,6 +209,21 @@ class AdminPanel {
             switchTab(savedTab);
         } else {
             switchTab(defaultTab);
+        }
+
+        // If stats tab is active after initialization, ensure it's loaded
+        if ((savedTab === 'stats' || defaultTab === 'stats') && this.statsModule) {
+            setTimeout(() => {
+                if (this.statsModule && !this.statsModule.isInitialized) {
+                    this.statsModule.init();
+                }
+            }, 100);
+        }
+    }
+
+    setupStats() {
+        if (typeof AdminStats !== 'undefined') {
+            this.statsModule = new AdminStats();
         }
     }
 
