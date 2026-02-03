@@ -311,6 +311,12 @@ class Blombooru {
         setTimeout(dismiss, 5000);
     }
 
+    translateError(error) {
+        if (typeof error === 'string') return error;
+        if (error.key) return window.i18n.t(error.key, error);
+        return JSON.stringify(error);
+    }
+
     setRatingFilter(rating) {
         document.querySelectorAll('.rating-filter-label').forEach(label => {
             label.classList.remove('checked');
