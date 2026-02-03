@@ -282,6 +282,7 @@ async def update_admin_password(
 @router.post("/update-admin-username")
 async def update_admin_username(
     data: dict,
+    request: Request,
     response: Response,
     current_user: User = Depends(require_admin_mode),
     db: Session = Depends(get_db)
