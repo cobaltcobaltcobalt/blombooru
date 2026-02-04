@@ -177,18 +177,20 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if not settings.REQUIRE_AUTH:
             return await call_next(request)
         
+        is_authenticated = False
         try:
             db = next(get_db())
             try:
                 if self.verify_auth(request, db):
-                    return await call_next(request)
-                else:
-                    return self.handle_unauthenticated(request)
+                    is_authenticated = True
             finally:
                 db.close()
-        except HTTPException:
-            raise
         except Exception:
+            pass
+
+        if is_authenticated:
+            return await call_next(request)
+        else:
             return self.handle_unauthenticated(request)
     
     def handle_unauthenticated(self, request: Request):
