@@ -724,7 +724,7 @@ class AdminPanel {
 
         // Require at least one valid button
         if (sidebarMode === 'custom' && validButtons.length === 0) {
-            app.showNotification(window.i18n.t('notifications.admin.custom_button_required'), 'error');
+            app.showNotification(window.i18n.t('notifications.admin.error_custom_button_required'), 'error');
             return;
         }
 

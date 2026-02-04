@@ -660,7 +660,7 @@
             "error_revoking_api_key": "Fel vid återkallande av API-nyckel",
             "error_saving_settings": "Fel vid sparande av inställningar",
             "error_scanning_media": "Fel vid skanning av media",
-            "custom_button_required": "Minst en giltig anpassad knapp krävs för läget Anpassade Knappar!",
+            "error_custom_button_required": "Minst en giltig anpassad knapp krävs för läget Anpassade Knappar!",
             "error_tag_too_long": "Rad {row}: Tagg '{tag}...' för lång ({length} tecken)",
             "error_invalid_category": "Rad {row}: Ogiltig kategori",
             "error_batch_error": "Batchfel vid rad {row}: {error}",
