@@ -65,6 +65,9 @@ class TagInputHelper {
             if (!found && element.lastChild) {
                 range.setStartAfter(element.lastChild);
                 range.collapse(true);
+            } else if (!found && !element.lastChild) {
+                range.setStart(element, 0);
+                range.collapse(true);
             }
             selection.removeAllRanges();
             selection.addRange(range);
