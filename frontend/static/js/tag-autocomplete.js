@@ -32,14 +32,18 @@ class TagAutocomplete {
 
         this.input.parentNode.insertBefore(this.suggestionsEl, this.input.nextSibling);
 
-        // Add event listeners
-        this.input.addEventListener('input', this.onInput.bind(this));
-        this.input.addEventListener('keydown', this.onKeydown.bind(this));
-        document.addEventListener('click', (e) => {
+        // Store bound handlers for cleanup
+        this.onInputBound = this.onInput.bind(this);
+        this.onKeydownBound = this.onKeydown.bind(this);
+        this.onDocumentClickBound = (e) => {
             if (!this.input.contains(e.target) && !this.suggestionsEl.contains(e.target)) {
                 this.hideSuggestions();
             }
-        });
+        };
+
+        this.input.addEventListener('input', this.onInputBound);
+        this.input.addEventListener('keydown', this.onKeydownBound);
+        document.addEventListener('click', this.onDocumentClickBound);
     }
 
     async onInput() {
@@ -287,6 +291,22 @@ class TagAutocomplete {
                 e.preventDefault();
                 this.hideSuggestions();
                 break;
+        }
+    }
+
+    destroy() {
+        if (this.onInputBound) {
+            this.input.removeEventListener('input', this.onInputBound);
+        }
+        if (this.onKeydownBound) {
+            this.input.removeEventListener('keydown', this.onKeydownBound);
+        }
+        if (this.onDocumentClickBound) {
+            document.removeEventListener('click', this.onDocumentClickBound);
+        }
+
+        if (this.suggestionsEl && this.suggestionsEl.parentNode) {
+            this.suggestionsEl.parentNode.removeChild(this.suggestionsEl);
         }
     }
 }
