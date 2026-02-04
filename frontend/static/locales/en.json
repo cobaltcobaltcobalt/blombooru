@@ -660,6 +660,7 @@
             "error_revoking_api_key": "Error revoking API key",
             "error_saving_settings": "Error saving settings",
             "error_scanning_media": "Error scanning media",
+            "custom_button_required": "At least one valid custom button is required for Custom Buttons mode!",
             "error_tag_too_long": "Row {row}: Tag '{tag}...' too long ({length} chars)",
             "error_invalid_category": "Row {row}: Invalid category",
             "error_batch_error": "Batch error at row {row}: {error}",

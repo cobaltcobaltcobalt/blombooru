@@ -710,6 +710,24 @@ class AdminPanel {
             password: document.getElementById('redis-password')?.value || ''
         };
 
+        const sidebarMode = this.sidebarFilterModeSelect ? this.sidebarFilterModeSelect.getValue() : 'rating';
+
+        // Filter out empty buttons (must have both title and tags)
+        let validButtons = [];
+        if (this.customButtons) {
+            validButtons = this.customButtons.filter(btn => {
+                const title = (btn.title || '').trim();
+                const tags = (btn.tags || '').trim();
+                return title.length > 0 && tags.length > 0;
+            });
+        }
+
+        // Require at least one valid button
+        if (sidebarMode === 'custom' && validButtons.length === 0) {
+            app.showNotification(window.i18n.t('notifications.admin.custom_button_required'), 'error');
+            return;
+        }
+
         const settings = {
             app_name: appName,
             theme: theme,
@@ -720,8 +738,8 @@ class AdminPanel {
             external_share_url: externalShareUrl || null,
             require_auth: requireAuth,
             redis: redisSettings,
-            sidebar_filter_mode: this.sidebarFilterModeSelect ? this.sidebarFilterModeSelect.getValue() : 'rating',
-            sidebar_custom_buttons: this.customButtons || []
+            sidebar_filter_mode: sidebarMode,
+            sidebar_custom_buttons: validButtons
         };
 
         try {
