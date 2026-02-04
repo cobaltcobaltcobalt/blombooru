@@ -5,6 +5,7 @@ from pathlib import Path
 import json
 import mimetypes
 from typing import Dict, Any, Optional
+import cv2
 
 def extract_image_metadata(file_path: Path) -> Dict[str, Any]:
     """Extract metadata from media files (EXIF, PNG chunks, XMP, etc.)"""
@@ -141,10 +142,24 @@ def extract_video_metadata(file_path: Path) -> Dict[str, Any]:
     """Extract metadata from video files."""
     metadata = {}
     
-    # Todo: add proper video metadata extraction using either:
-    # - ffprobe (from ffmpeg)
-    # - pymediainfo
-    # - opencv-python
+    try:
+        vid = cv2.VideoCapture(str(file_path))
+        if vid.isOpened():
+            metadata['width'] = int(vid.get(cv2.CAP_PROP_FRAME_WIDTH))
+            metadata['height'] = int(vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            
+            frame_count = int(vid.get(cv2.CAP_PROP_FRAME_COUNT))
+            fps = vid.get(cv2.CAP_PROP_FPS)
+            
+            metadata['frame_count'] = frame_count
+            metadata['fps'] = fps
+            
+            if fps > 0:
+                metadata['duration'] = frame_count / fps
+            
+            vid.release()
+    except Exception as e:
+        print(f"Error reading video metadata with cv2 for {file_path}: {e}")
 
     try:
         stat = file_path.stat()
