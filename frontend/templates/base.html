@@ -56,7 +56,8 @@
     {% block head_extra %}{% endblock %}
 </head>
 
-<body class="bg text text-xs flex flex-col h-screen overflow-hidden">
+<body class="bg text text-xs flex flex-col h-screen overflow-hidden"
+    data-sidebar-mode="{{ sidebar_filter_mode if sidebar_filter_mode is defined else 'rating' }}">
     {% if show_header is not defined or show_header %}
     {% block header %}
     <header id="main-header"

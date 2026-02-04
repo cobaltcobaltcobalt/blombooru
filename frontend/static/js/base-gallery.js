@@ -46,7 +46,14 @@ class BaseGallery {
 
         // Current state
         this.currentRating = localStorage.getItem('selectedRating') || this.options.defaultRating;
-        this.currentCustomFilter = localStorage.getItem('selectedCustomFilter') || '';
+
+        const sidebarMode = document.body.dataset.sidebarMode || 'rating';
+        if (sidebarMode === 'custom') {
+            this.currentCustomFilter = localStorage.getItem('selectedCustomFilter') || '';
+        } else {
+            this.currentCustomFilter = '';
+        }
+
         this.currentSort = this.elements.sortBy?.dataset.value || this.options.defaultSort;
         this.currentOrder = this.elements.sortOrder?.dataset.value || this.options.defaultOrder;
     }
