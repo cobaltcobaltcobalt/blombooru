@@ -23,7 +23,7 @@ Blombooru - приватная, single-user альтернатива Booru-like 
 
 > [!NOTE]
 > Локализация на русский язык: @cobaltcobaltcobalt  
-> Актуально на момент: 04 сен 2026
+> Актуально на момент: 09 сен 2026
 
 <details>
 <summary>Скриншоты:</summary>
