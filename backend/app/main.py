@@ -496,7 +496,7 @@ async def shared_page(request: Request, share_uuid: str, db: Session = Depends(g
 
     return templates.TemplateResponse("shared.html", context)
 
-@app.get("/tags-gallery", response_class=HTMLResponse)
+@app.get("/tags", response_class=HTMLResponse)
 async def tags_overview_page(request: Request):
     return templates.TemplateResponse("tags_gallery.html", {
         "request": request,
