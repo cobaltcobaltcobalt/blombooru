@@ -652,7 +652,7 @@ async def manifest(request: Request):
     return {
         "name": settings.APP_NAME,
         "short_name": settings.APP_NAME,
-        "description": "A modern, self-hosted, single-user image booru and media tagger",
+        "description": "A modern self-hosted personal booru for organizing and tagging private image collections",
         "id": "/",
         "scope": "/",
         "start_url": "/",
