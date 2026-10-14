@@ -71,10 +71,10 @@ class FormatRegistry:
         # Natively supported video
         self._register(MediaFormat(".mp4", "video/mp4", FormatCategory.VIDEO))
         self._register(MediaFormat(".webm", "video/webm", FormatCategory.VIDEO))
-        self._register(MediaFormat(".mov", "video/quicktime", FormatCategory.VIDEO))
         self._register(MediaFormat(".m4v", "video/x-m4v", FormatCategory.VIDEO))
 
         # Videos requiring transcode
+        self._register(MediaFormat(".mov", "video/quicktime", FormatCategory.VIDEO, transcode_target=".mp4"))
         self._register(MediaFormat(".mkv", "video/x-matroska", FormatCategory.VIDEO, transcode_target=".mp4"))
         self._register(MediaFormat(".avi", "video/x-msvideo", FormatCategory.VIDEO, transcode_target=".mp4"))
 
