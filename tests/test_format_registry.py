@@ -75,6 +75,11 @@ class TestFormatRegistry(unittest.TestCase):
         self.assertTrue(mkv.requires_transcode)
         self.assertEqual(mkv.transcode_target, ".mp4")
 
+        mov = format_registry.get_format(".mov")
+        self.assertIsNotNone(mov)
+        self.assertTrue(mov.requires_transcode)
+        self.assertEqual(mov.transcode_target, ".mp4")
+
         jpg = format_registry.get_format(".jpg")
         self.assertIsNotNone(jpg)
         self.assertFalse(jpg.requires_transcode)

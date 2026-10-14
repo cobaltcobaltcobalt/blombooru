@@ -83,6 +83,7 @@ class SharedMediaResponse(MediaBase):
     filename: str
     file_type: FileTypeEnum
     mime_type: Optional[str]
+    transcoded_path: Optional[str] = None
     file_size: int
     width: Optional[int]
     height: Optional[int]

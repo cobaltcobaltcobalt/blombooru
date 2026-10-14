@@ -142,7 +142,7 @@ class TestTranscoderComprehensive(BackupTestBase):
     # --- transcode_media_if_needed Logic & Caching Tests ---
 
     def test_transcode_media_if_needed_standard_formats_skipped(self):
-        standard_extensions = [".jpg", ".png", ".gif", ".webp", ".avif", ".jxl", ".mp4", ".webm", ".mov"]
+        standard_extensions = [".jpg", ".png", ".gif", ".webp", ".avif", ".jxl", ".mp4", ".webm"]
         for ext in standard_extensions:
             p = self.base_path / f"test{ext}"
             p.touch()

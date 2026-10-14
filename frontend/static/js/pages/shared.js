@@ -185,9 +185,18 @@ class SharedViewer extends MediaViewerBase {
         }
 
         if (media.file_type === 'video') {
+            let videoType = media.mime_type || 'video/mp4';
+            const fmt = window.FormatRegistry ? window.FormatRegistry.getFormat(media.filename) : null;
+            if (media.transcoded_path) {
+                const transcodedFmt = window.FormatRegistry ? window.FormatRegistry.getFormat(media.transcoded_path) : null;
+                videoType = transcodedFmt ? transcodedFmt.mime_type : 'video/mp4';
+            } else if (fmt && fmt.requires_transcode && fmt.category === 'video') {
+                const targetFmt = fmt.transcode_target && window.FormatRegistry ? window.FormatRegistry.getFormat(fmt.transcode_target) : null;
+                videoType = targetFmt ? targetFmt.mime_type : 'video/mp4';
+            }
             return `
                 <video controls loop id="shared-media-video" style="max-width: 100%; max-height: 80vh; margin: 0 auto;">
-                    <source src="/api/shared/${this.shareUuid}/file?chunked=true${media.hash ? '&v=' + media.hash : ''}" type="${media.mime_type}">
+                    <source src="/api/shared/${this.shareUuid}/file?chunked=true${media.hash ? '&v=' + media.hash : ''}" type="${videoType}">
                 </video>
                 <div id="video-error" style="display: none;" class="flex flex-col items-center justify-center py-8 text-secondary">
                     <img src="/static/images/no-thumbnail.png" alt="${window.i18n.t('common.media_not_found')}" class="w-32 h-32 mb-4 opacity-50">

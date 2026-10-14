@@ -166,8 +166,8 @@ Blombooru maintains a centralized format registry. Supported media containers an
 
 - **Native images:** `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`, `.avif`, `.jxl`, `.bmp`, `.tiff`, `.tif`
 - **Transcoded images:** `.heic`, `.heif` (automatically transcoded to `.webp`)
-- **Native videos:** `.mp4`, `.webm`, `.mov`, `.m4v`
-- **Transcoded videos:** `.mkv`, `.avi` (automatically transcoded to H.264/AAC `.mp4`)
+- **Native videos:** `.mp4`, `.webm`, `.m4v`
+- **Transcoded videos:** `.mov`, `.mkv`, `.avi` (automatically transcoded to H.264/AAC `.mp4`)
 - **Archives:** `.zip`, `.tar.gz`, `.tgz`, `.tar`
 - **Themes:** `.blombooru-theme`, `.css`
 - **Data & documents:** `.csv`, `.json`, `.txt`

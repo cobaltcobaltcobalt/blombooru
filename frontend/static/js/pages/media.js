@@ -268,7 +268,17 @@ class MediaViewer extends MediaViewerBase {
 
             const source = document.createElement('source');
             source.src = `/api/media/${media.id}/file?chunked=true${media.hash ? '&v=' + media.hash : ''}`;
-            source.type = media.mime_type;
+
+            let videoType = media.mime_type || 'video/mp4';
+            const fmt = window.FormatRegistry ? window.FormatRegistry.getFormat(media.filename) : null;
+            if (media.transcoded_path) {
+                const transcodedFmt = window.FormatRegistry ? window.FormatRegistry.getFormat(media.transcoded_path) : null;
+                videoType = transcodedFmt ? transcodedFmt.mime_type : 'video/mp4';
+            } else if (fmt && fmt.requires_transcode && fmt.category === 'video') {
+                const targetFmt = fmt.transcode_target && window.FormatRegistry ? window.FormatRegistry.getFormat(fmt.transcode_target) : null;
+                videoType = targetFmt ? targetFmt.mime_type : 'video/mp4';
+            }
+            source.type = videoType;
 
             video.appendChild(source);
 
