@@ -838,5 +838,30 @@ class TestTagImplications(BackupTestBase):
         self.assertIn("swimsuit_bulk", assigned_tag_names)
         self.assertIn("summer_bulk", assigned_tag_names)
 
+    def test_list_implications_with_exact_tag(self):
+        """Verify list_implications with tag parameter only matches exact tag or wildcards."""
+        cat_ears = self._create_tag("cat_ears_exact")
+        animal_ears = self._create_tag("animal_ears_exact")
+        tail = self._create_tag("tail_exact")
+
+        rule1 = TagImplication(target_tags=[self.tag_cat], implied_tags=[self.tag_animal])
+        rule2 = TagImplication(target_tags=[cat_ears], implied_tags=[animal_ears])
+        rule3 = TagImplication(target_tag_patterns=["*_exact"], implied_tags=[tail])
+        self.db.add_all([rule1, rule2, rule3])
+        self.db.commit()
+
+        # Query for exact tag "cat"
+        res_cat = asyncio.run(list_implications(tag="cat", current_user=self.admin_user, db=self.db))
+        res_cat_ids = [r.id for r in res_cat]
+        self.assertIn(rule1.id, res_cat_ids)
+        self.assertNotIn(rule2.id, res_cat_ids)  # cat_ears_exact is not cat
+
+        # Query for "cat_ears_exact" matches rule2 and wildcard rule3
+        res_ears = asyncio.run(list_implications(tag="cat_ears_exact", current_user=self.admin_user, db=self.db))
+        res_ears_ids = [r.id for r in res_ears]
+        self.assertIn(rule2.id, res_ears_ids)
+        self.assertIn(rule3.id, res_ears_ids)  # matches *_exact pattern
+        self.assertNotIn(rule1.id, res_ears_ids)
+
 if __name__ == "__main__":
     unittest.main()

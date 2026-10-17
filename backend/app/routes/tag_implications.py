@@ -1,4 +1,5 @@
 import asyncio
+import fnmatch
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -77,6 +78,7 @@ async def list_implications(
     limit: Optional[int] = Query(default=None, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
     search: Optional[str] = Query(default=None),
+    tag: Optional[str] = Query(default=None, description="Exact tag name to match as target, implied, or pattern"),
     response: Response = Response(),
     current_user: User = Depends(require_admin_mode),
     db: Session = Depends(get_db)
@@ -108,11 +110,31 @@ async def list_implications(
     clean_limit = limit if isinstance(limit, int) else None
     clean_offset = offset if isinstance(offset, int) else 0
     clean_search = search.strip() if isinstance(search, str) and search.strip() else None
+    clean_tag = tag.strip().lower() if isinstance(tag, str) and tag.strip() else None
 
     query = db.query(TagImplication).options(
         selectinload(TagImplication.target_tags),
         selectinload(TagImplication.implied_tags),
     )
+
+    if clean_tag:
+        tag_condition = or_(
+            TagImplication.target_tags.any(func.lower(Tag.name) == clean_tag),
+            TagImplication.implied_tags.any(func.lower(Tag.name) == clean_tag),
+        )
+        pattern_rows = (
+            db.query(TagImplication.id, TagImplication.target_tag_patterns)
+            .filter(TagImplication.target_tag_patterns.is_not(None))
+            .all()
+        )
+        matching_pattern_ids = [
+            imp_id for imp_id, patterns in pattern_rows
+            if any(fnmatch.fnmatch(clean_tag, pat) for pat in (patterns or []))
+        ]
+        if matching_pattern_ids:
+            query = query.filter(or_(tag_condition, TagImplication.id.in_(matching_pattern_ids)))
+        else:
+            query = query.filter(tag_condition)
 
     if clean_search:
         term = f"%{clean_search.lower()}%"

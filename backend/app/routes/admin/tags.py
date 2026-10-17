@@ -12,6 +12,7 @@ from ...auth import require_admin_mode
 from ...config import settings
 from ...utils.request_helpers import safe_error_detail
 from ...database import get_db
+from ...enums import TagCategoryEnum
 from ...models import Media, Tag, TagAlias, TagImplication, User
 from ...utils.cache import invalidate_tag_cache
 from ...utils.logger import logger
@@ -529,6 +530,28 @@ async def bulk_create_tags(
         "skipped": skipped,
         "errors": errors
     }
+
+class BulkCategoryUpdateRequest(BaseModel):
+    tag_ids: list[int]
+    category: TagCategoryEnum
+
+@router.post("/tags/bulk-category")
+async def bulk_update_tag_category(
+    data: BulkCategoryUpdateRequest,
+    current_user: User = Depends(require_admin_mode),
+    db: Session = Depends(get_db)
+):
+    """Bulk update tag category for selected tags."""
+    if not data.tag_ids:
+        return {"updated": 0}
+
+    updated = db.query(Tag).filter(Tag.id.in_(data.tag_ids)).update(
+        {Tag.category: data.category},
+        synchronize_session=False
+    )
+    db.commit()
+    invalidate_tag_cache()
+    return {"updated": updated}
 
 def cleanup_aliased_tags_logic(db: Session):
     """

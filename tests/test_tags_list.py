@@ -138,3 +138,19 @@ class TestTagsList(BackupTestBase):
         self.assertEqual(len(matching_rel), 2)  # get_related_tags and fallback get_tag
         self.assertEqual(matching_rel[0].name, "get_related_tags")
         self.assertEqual(matching_rel[0].matches(scope_related)[1]["path_params"], {"tag_name": "fate/grand_order"})
+
+    def test_bulk_update_tag_category(self):
+        from backend.app.routes.admin.tags import BulkCategoryUpdateRequest, bulk_update_tag_category
+        admin_user = User(id=99, username="admin_tester", password_hash="hash")
+        self.db.add(admin_user)
+        self.db.commit()
+
+        tag_ids = [self.tags["cat_ears"].id, self.tags["cat_tail"].id]
+        req = BulkCategoryUpdateRequest(tag_ids=tag_ids, category=TagCategoryEnum.character)
+        res = asyncio.run(bulk_update_tag_category(data=req, current_user=admin_user, db=self.db))
+        self.assertEqual(res["updated"], 2)
+
+        self.db.refresh(self.tags["cat_ears"])
+        self.db.refresh(self.tags["cat_tail"])
+        self.assertEqual(self.tags["cat_ears"].category, TagCategoryEnum.character)
+        self.assertEqual(self.tags["cat_tail"].category, TagCategoryEnum.character)
