@@ -303,7 +303,7 @@ class AlbumViewer extends BaseGallery {
                         const data = await res.json();
                         const newIds = [];
                         if (page === 1) {
-                            app.clearAllGifBlobCache();
+                            window.unloadAllGifs();
                             this.elements.grid.innerHTML = '';
                         }
                         if (data.media) {
