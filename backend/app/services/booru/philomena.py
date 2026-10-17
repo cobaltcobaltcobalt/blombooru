@@ -85,13 +85,13 @@ class PhilomenaClient(BooruClient):
 
     @staticmethod
     def _derive_rating(tag_names: List[str]) -> str:
-        """Strictest rating tag wins. No rating tag at all is treated as questionable."""
+        """Strictest rating tag wins. No rating tag at all is treated as safe."""
         best: Optional[str] = None
         for name in tag_names:
             level = _RATING_TAG_LEVELS.get(name.strip().lower())
             if level and (best is None or _RATING_ORDER[level] > _RATING_ORDER[best]):
                 best = level
-        return best or "questionable"
+        return best or "safe"
 
     @staticmethod
     def _parse_tags(tag_names: List[str]) -> List[BooruTag]:

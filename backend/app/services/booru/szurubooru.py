@@ -129,7 +129,7 @@ class SzurubooruClient(BooruClient):
         return BooruPost(
             id=post_id,
             tags=self._parse_tags(data.get("tags")),
-            rating=SZURUBOORU_RATING_MAP.get(str(data.get("safety") or "").lower(), "questionable"),
+            rating=SZURUBOORU_RATING_MAP.get(str(data.get("safety") or "").lower(), "safe"),
             source=html.unescape(source),
             file_url=file_url,
             preview_url=self._absolute(data.get("thumbnailUrl")),

@@ -559,8 +559,7 @@ class ShimmieClient(BooruClient):
         height = html_data.get("height") or rss_data.get("height") or 0
         file_size = rss_data.get("file_size") or 0
         source = html_data.get("source") or ""
-        # Point 4: Unrated posts fall back to "questionable", matching other backends
-        rating = html_data.get("rating") or rss_data.get("rating") or "questionable"
+        rating = html_data.get("rating") or rss_data.get("rating") or "safe"
         description = html_data.get("description")
 
         # Point 5: Tag fallback order: 1. tag row, 2. RSS tags, 3. meta keywords
@@ -671,10 +670,10 @@ class ShimmieClient(BooruClient):
                 tags_m = re.search(r"data-tags=[\x27\"]([^\x27\"]*)[\x27\"]", desc)
                 raw_tags = tags_m.group(1).split() if tags_m else []
 
-                rating = "questionable"
+                rating = "safe"
                 rating_m = re.search(r"data-rating=[\x27\"]([^\x27\"]+)[\x27\"]", desc)
                 if rating_m:
-                    rating = _RATING_MAP.get(rating_m.group(1).lower(), "questionable")
+                    rating = _RATING_MAP.get(rating_m.group(1).lower(), "safe")
 
                 w_m = re.search(r"data-width=[\x27\"](\d+)[\x27\"]", desc)
                 width = int(w_m.group(1)) if w_m else 0
