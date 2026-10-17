@@ -164,8 +164,8 @@ class TagInputHelper {
             }
         }
 
-        // Batch fetch uncached tags if possible
-        if (uncachedTags.size > 0) {
+        // Batch fetch uncached tags if possible (only when using default tag existence check)
+        if (!options.checkFunction && uncachedTags.size > 0) {
             const results = await this.checkTagsBatch(Array.from(uncachedTags));
             for (let tag of uncachedTags) {
                 if (results.hasOwnProperty(tag)) {
@@ -175,6 +175,11 @@ class TagInputHelper {
                     const exists = await checkFunction(tag);
                     validationCache.set(tag, exists);
                 }
+            }
+        } else if (uncachedTags.size > 0) {
+            for (let tag of uncachedTags) {
+                const exists = await checkFunction(tag);
+                validationCache.set(tag, exists);
             }
         }
 
