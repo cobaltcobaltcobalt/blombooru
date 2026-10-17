@@ -55,11 +55,16 @@ def get_api_base_url(base_url: str) -> str:
     parsed = urlparse(base_url)
     hostname = (parsed.hostname or "").lower()
     root = get_root_domain(hostname)
-    api_host: Optional[str] = DOMAIN_OVERRIDES.get(root, {}).get("api_host")
-    if not api_host:
-        return base_url.rstrip("/")
-    api_host = api_host.strip().lower()
-    if not _same_site(api_host, root):
-        logger.warning(f"Ignoring api_host '{api_host}' for '{root}': outside the same domain")
-        return base_url.rstrip("/")
-    return f"{parsed.scheme}://{api_host}"
+    override = DOMAIN_OVERRIDES.get(root, {})
+    api_host: Optional[str] = override.get("api_host")
+    api_path: str = (override.get("api_path") or "").strip().strip("/")
+    result = base_url.rstrip("/")
+    if api_host:
+        api_host = api_host.strip().lower()
+        if _same_site(api_host, root):
+            result = f"{parsed.scheme}://{api_host}"
+        else:
+            logger.warning(f"Ignoring api_host '{api_host}' for '{root}': outside the same domain")
+    if api_path:
+        result = f"{result}/{api_path}"
+    return result

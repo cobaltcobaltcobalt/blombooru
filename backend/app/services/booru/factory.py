@@ -9,13 +9,19 @@ from sqlalchemy.orm import Session
 from ...models import BooruConfig
 from ...utils.logger import logger
 from .base import BooruClient
-from .danbooru import DanbooruClient
 from .domain_overrides import get_api_base_url, get_domain_candidates
+from .danbooru import DanbooruClient
 from .gelbooru import GelbooruClient
+from .philomena import PhilomenaClient
+from .shimmie import ShimmieClient
+from .szurubooru import SzurubooruClient
 
 _CLIENT_CLASSES = [
     DanbooruClient,
     GelbooruClient,
+    PhilomenaClient,
+    SzurubooruClient,
+    ShimmieClient,
 ]
 
 _client_cache: Dict[Tuple, BooruClient] = {}
@@ -147,10 +153,17 @@ def _get_cached_client(
     with _cache_lock:
         client = _client_cache.get(cache_key)
         if client is None:
-            if username and api_key:
+            has_creds = bool(api_key) and (bool(username) or not client_cls.REQUIRES_USERNAME)
+            if has_creds:
                 if client_cls == GelbooruClient:
                     client = client_cls(base_url, user_id=username, api_key=api_key)
                 elif client_cls == DanbooruClient:
+                    client = client_cls(base_url, username=username, api_key=api_key)
+                elif client_cls == SzurubooruClient:
+                    client = client_cls(base_url, username=username, api_key=api_key)
+                elif client_cls == PhilomenaClient:
+                    client = client_cls(base_url, api_key=api_key)
+                elif client_cls == ShimmieClient:
                     client = client_cls(base_url, username=username, api_key=api_key)
                 else:
                     client = client_cls(base_url)
@@ -173,11 +186,12 @@ def get_client_for_url(
             username: Optional[str] = None
             api_key: Optional[str] = None
 
-            # Inject credentials only if both username and api_key are present
+            # Inject credentials only when the client can actually use them:
+            # username + key normally, key alone for token-only backends.
             if config is None and db:
                 config = get_booru_config_for_url(db, url)
-            if config and config.username and config.api_key:
-                username = config.username
+            if config and config.api_key and (config.username or not client_cls.REQUIRES_USERNAME):
+                username = config.username or None
                 api_key = config.api_key
 
             return _get_cached_client(client_cls, base_url, username, api_key)

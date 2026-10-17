@@ -1,21 +1,28 @@
 from .base import (BooruAuthenticationError, BooruClient, BooruError,
-                   BooruNotFoundError)
-from .danbooru import DanbooruClient
+                   BooruNotFoundError, BooruRateLimitError)
 from .factory import (clear_client_cache, get_booru_config_for_url,
                       get_client_for_url, get_user_agent_for_url,
                       normalize_domain, upsert_booru_config)
+from .danbooru import DanbooruClient
 from .gelbooru import GelbooruClient
+from .philomena import PhilomenaClient
+from .shimmie import ShimmieClient
+from .szurubooru import SzurubooruClient
 from .types import BooruPost, BooruTag
 
 __all__ = [
     "BooruError",
     "BooruAuthenticationError",
     "BooruNotFoundError",
+    "BooruRateLimitError",
     "BooruPost",
     "BooruTag",
     "BooruClient",
     "DanbooruClient",
     "GelbooruClient",
+    "PhilomenaClient",
+    "ShimmieClient",
+    "SzurubooruClient",
     "get_client_for_url",
     "get_booru_config_for_url",
     "get_user_agent_for_url",
