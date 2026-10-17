@@ -944,6 +944,17 @@ class AdminContent {
                     }
                 }
 
+                let ratingLabel = 'err';
+                if (tag.rating) {
+                    const ratings = [
+                        { value: 'none', label: window.i18n.t('common.none')},
+                        { value: 'safe', label: window.i18n.t('common.safe') },
+                        { value: 'questionable', label: window.i18n.t('common.questionable') },
+                        { value: 'explicit', label: window.i18n.t('common.explicit') },
+                    ];
+                    ratingLabel = (ratings.find(c => c.value === tag.rating) || ratings[0]).label;
+                }
+
                 return `
                 <div class="bg px-2 py-1.5 ${i === arr.length - 1 ? '' : 'border-b'} flex flex-wrap items-center gap-2">
                     <div class="flex items-center gap-2 min-w-0">
@@ -951,6 +962,7 @@ class AdminContent {
                             data-tag-id="${tag.id}"
                             data-tag-name="${escapeHtml(tag.name)}"
                             data-tag-category="${tag.category}"
+                            data-tag-rating="${tag.rating}"
                             title="${window.i18n.t('admin.tags_management.manage_tag')}">
                             ${window.Icons.tagMenu({ size: 14 })}
                         </button>
@@ -959,7 +971,8 @@ class AdminContent {
                     <div class="flex justify-between items-center gap-2 flex-1">
                         <span class="text-xs text-secondary">(${tag.post_count})</span>
                         ${creationDateStr ? `<span class="text-xs text-secondary text-center">${creationDateStr}</span>` : ''}
-                        <span class="text-xs text-secondary uppercase flex-1 text-right">${tag.category}</span>
+                        <span class="text-xs text-secondary uppercase flex-1 text-right">${ratingLabel}</span>
+                        <span class="text-xs text-secondary uppercase">${tag.category}</span>
                     </div>
                 </div>
                 `;
@@ -971,7 +984,8 @@ class AdminContent {
                     this.showTagManageModal(
                         btn.dataset.tagId,
                         btn.dataset.tagName,
-                        btn.dataset.tagCategory
+                        btn.dataset.tagCategory,
+                        btn.dataset.tagRating
                     );
                 });
             });
@@ -983,10 +997,10 @@ class AdminContent {
         }
     }
 
-    async deleteTag(tagId, tagName, tagCategory) {
+    async deleteTag(tagId, tagName, tagCategory, tagRating) {
         TagManageModals.remove({
-            tagId, tagName, tagCategory,
-            onCancel: () => this.showTagManageModal(tagId, tagName, tagCategory),
+            tagId, tagName, tagCategory, tagRating,
+            onCancel: () => this.showTagManageModal(tagId, tagName, tagCategory, tagRating),
             onDeleted: () => this.refreshTagViews()
         });
     }
@@ -996,7 +1010,7 @@ class AdminContent {
         await this.app.content.loadTagStats();
     }
 
-    showTagManageModal(tagId, tagName, tagCategory) {
+    showTagManageModal(tagId, tagName, tagCategory, tagRating) {
         const existingModal = document.getElementById('tag-manage-modal');
         if (existingModal) existingModal.remove();
 
@@ -1042,17 +1056,17 @@ class AdminContent {
 
         document.getElementById('tag-manage-edit').addEventListener('click', () => {
             closeModal();
-            this.showTagEditModal(tagId, tagName, tagCategory);
+            this.showTagEditModal(tagId, tagName, tagCategory, tagRating);
         });
 
         document.getElementById('tag-manage-merge').addEventListener('click', () => {
             closeModal();
-            this.showTagMergeModal(tagId, tagName, tagCategory);
+            this.showTagMergeModal(tagId, tagName, tagCategory, tagRating);
         });
 
         document.getElementById('tag-manage-delete').addEventListener('click', () => {
             closeModal();
-            this.deleteTag(tagId, tagName, tagCategory);
+            this.deleteTag(tagId, tagName, tagCategory, tagRating);
         });
 
         document.getElementById('tag-manage-cancel').addEventListener('click', closeModal);
@@ -1064,20 +1078,20 @@ class AdminContent {
         document.addEventListener('keydown', handleEscape);
     }
 
-    showTagMergeModal(tagId, tagName, tagCategory) {
+    showTagMergeModal(tagId, tagName, tagCategory, tagRating) {
         TagManageModals.merge({
             tagId, tagName,
-            onCancel: () => this.showTagManageModal(tagId, tagName, tagCategory),
+            onCancel: () => this.showTagManageModal(tagId, tagName, tagCategory, tagRating),
             onMerged: () => this.refreshTagViews()
         });
     }
 
 
-    async showTagEditModal(tagId, tagName, tagCategory) {
+    async showTagEditModal(tagId, tagName, tagCategory, tagRating) {
         await TagManageModals.edit({
-            tagId, tagName, tagCategory,
+            tagId, tagName, tagCategory, tagRating,
             tagInputHelper: this.app.tagInputHelper,
-            onCancel: () => this.showTagManageModal(tagId, tagName, tagCategory),
+            onCancel: () => this.showTagManageModal(tagId, tagName, tagCategory, tagRating),
             onSaved: () => this.refreshTagViews()
         });
     }

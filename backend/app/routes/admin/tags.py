@@ -2,6 +2,7 @@ import asyncio
 import csv
 import io
 
+from typing import List
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import case, desc, func
@@ -13,7 +14,8 @@ from ...config import settings
 from ...utils.request_helpers import safe_error_detail
 from ...database import get_db
 from ...enums import TagCategoryEnum
-from ...models import Media, Tag, TagAlias, TagImplication, User
+from ...models import Media, Tag, TagAlias, TagImplication, TagRating, User
+from ...schemas import TagResponse
 from ...utils.cache import invalidate_tag_cache
 from ...utils.logger import logger
 
@@ -296,8 +298,22 @@ async def search_tags(
         func.length(Tag.name),
         Tag.name
     ).limit(50).all()
-    
-    return {"tags": tags}
+
+    return_items = []
+    for tag in tags:
+        if tag.rating_entry:
+            returned_rating = tag.rating_entry.rating
+        else:
+            returned_rating = "none"
+        return_items.append(TagResponse(
+            name=tag.name,
+            category=tag.category,
+            id=tag.id,
+            rating=returned_rating,
+            post_count=tag.post_count,
+            created_at=tag.created_at
+        ))
+    return {"tags": return_items}
 
 @router.delete("/clear-tags")
 async def clear_all_tags(
@@ -372,10 +388,16 @@ async def get_tag(
         raise HTTPException(status_code=404, detail="error_tag_not_found")
     
     aliases = [a.alias_name for a in tag.aliases]
+
+    if tag.rating_entry:
+        tag_rating = tag.rating_entry.rating
+    else:
+        tag_rating = 'none'
     return {
         "id": tag.id,
         "name": tag.name,
         "category": tag.category,
+        "rating": tag_rating,
         "post_count": tag.post_count,
         "aliases": aliases
     }
@@ -387,8 +409,9 @@ async def update_tag(
     current_user: User = Depends(require_admin_mode),
     db: Session = Depends(get_db)
 ):
-    """Rename a tag, change its category, and update its aliases"""
+    """Rename a tag, change its category, update its aliases, change its rating"""
     from ...models import TagAlias
+    from ...enums import RatingEnum
 
     try:
         tag = db.query(Tag).filter(Tag.id == tag_id).first()
@@ -397,6 +420,7 @@ async def update_tag(
 
         new_name = (data.get("name") or "").strip().lower()
         new_category = data.get("category", tag.category)
+        new_rating = data.get("rating").strip().lower()
 
         if not new_name:
             raise HTTPException(status_code=400, detail="error_tag_name_empty")
@@ -456,11 +480,29 @@ async def update_tag(
                 if alias not in existing_alias_names:
                     db.add(TagAlias(alias_name=alias, target_tag_id=tag.id))
 
+        if new_rating == "none":
+            if tag.rating_entry:
+                db.delete(tag.rating_entry)
+        elif new_rating in RatingEnum:
+            if tag.rating_entry is None:
+                db.add(TagRating(
+                    tag_id=tag_id,
+                    rating=new_rating
+                ))
+            elif tag.rating_entry.rating is not new_rating:
+                tag.rating_entry.rating = new_rating
+        else:
+            raise HTTPException(status_code=400, detail=f"Invalid Tag Rating: '{new_rating}'. Accepted values: 'none', 'safe', 'questionable', 'explicit'.")
+
         db.commit()
         invalidate_tag_cache()
 
         updated_aliases = [a.alias_name for a in db.query(TagAlias).filter(TagAlias.target_tag_id == tag.id).all()]
-        return {"old_name": old_name, "tag_name": tag.name, "category": tag.category, "aliases": updated_aliases}
+        if tag.rating_entry:
+            tag_rating = tag.rating_entry.rating
+        else:
+            tag_rating = "none"
+        return {"old_name": old_name, "tag_name": tag.name, "category": tag.category, "Rating": tag_rating, "aliases": updated_aliases}
 
     except HTTPException:
         raise

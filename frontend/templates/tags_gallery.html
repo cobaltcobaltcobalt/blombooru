@@ -1,6 +1,6 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import sorting_options, page_jump_modal, category_filter, bulk_actions,
-loading_indicator, page_navigation, sidebar_start, sidebar_end %}
+{% from "components/macros.html" import sorting_options, rating_filter, page_jump_modal, category_filter, 
+bulk_actions, loading_indicator, page_navigation, sidebar_start, sidebar_end %}
 {% from "components/icons.html" import icon_use %}
 
 {% block title %}{{ t('common.tags') }} - {{ app_name }}{% endblock %}
@@ -58,6 +58,8 @@ loading_indicator, page_navigation, sidebar_start, sidebar_end %}
 <div class="container mx-auto px-4 py-4">
     <div class="grid grid-cols-1 xl:grid-cols-5 lg:grid-cols-4 gap-4">
         <div class="xl:col-span-4 lg:col-span-3">
+            {{ rating_filter('mobile', mode=sidebar_filter_mode, custom_buttons=sidebar_custom_buttons) }}
+
             <!-- Mobile Category Filters -->
             {{ category_filter(location='mobile') }}
 
@@ -84,6 +86,7 @@ loading_indicator, page_navigation, sidebar_start, sidebar_end %}
 
         <!-- Sidebar -->
         {{ sidebar_start(class="hidden lg:block") }}
+        {{ rating_filter('desktop', mode=sidebar_filter_mode, custom_buttons=sidebar_custom_buttons) }}
         {{ sorting_options(sort_options=tag_sort_options, default_sort=default_sort, default_order=default_order) }}
 
         <!-- Desktop Category Filters -->
