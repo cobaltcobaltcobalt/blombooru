@@ -1171,11 +1171,19 @@
     },
     "tags_gallery": {
         "sort_created_at": "Creation Date",
-        "sort_tag_name": "Tag Name",
-        "sort_post_count": "Post Count",
-        "sort_category": "Category",
         "failed_load_list": "Failed to load tags",
-        "no_visible_tags": "No visible tags found"
+        "implied_by": "Implied By",
+        "add_implied_tag": "Add implied tag...",
+        "add_alias": "Add alias...",
+        "load_details_failed": "Failed to load tag details",
+        "toggle_details": "Toggle tag details",
+        "shared_rule_hint": "Part of a rule with multiple targets. Edit it under Tag Implications in the admin panel.",
+        "alias_added": "Alias \"{alias}\" added",
+        "alias_removed": "Alias \"{alias}\" removed",
+        "implication_added": "Implication added",
+        "implication_removed": "Implication removed",
+        "bulk_delete_title": "Delete {count} Tags",
+        "bulk_delete_message": "Are you sure you want to delete {count} selected tag(s) and their aliases? This action cannot be undone."
     },
     "upload": {
         "folder": {

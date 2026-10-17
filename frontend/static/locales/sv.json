@@ -1171,11 +1171,19 @@
     },
     "tags_gallery": {
         "sort_created_at": "Skapandedatum",
-        "sort_tag_name": "Taggnamn",
-        "sort_post_count": "Antal inlägg",
-        "sort_category": "Kategori",
         "failed_load_list": "Kunde inte ladda taggar",
-        "no_visible_tags": "Inga synliga taggar hittades"
+        "implied_by": "Implikeras av",
+        "add_implied_tag": "Lägg till implikerad tagg...",
+        "add_alias": "Lägg till alias...",
+        "load_details_failed": "Kunde inte ladda taggdetaljer",
+        "toggle_details": "Växla taggdetaljer",
+        "shared_rule_hint": "Del av en regel med flera mål. Redigera den under Tagg-implikationer i adminpanelen.",
+        "alias_added": "Alias \"{alias}\" lades till",
+        "alias_removed": "Alias \"{alias}\" togs bort",
+        "implication_added": "Implikation lades till",
+        "implication_removed": "Implikation togs bort",
+        "bulk_delete_title": "Ta bort {count} taggar",
+        "bulk_delete_message": "Är du säker på att du vill ta bort {count} markerade tagg(ar) och deras alias? Denna åtgärd kan inte ångras."
     },
     "upload": {
         "folder": {

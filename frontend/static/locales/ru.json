@@ -1171,11 +1171,19 @@
     },
     "tags_gallery": {
         "sort_created_at": "Дате создания",
-        "sort_tag_name": "Имени тега",
-        "sort_post_count": "Количеству постов",
-        "sort_category": "Категории",
         "failed_load_list": "Не удалось загрузить список тегов",
-        "no_visible_tags": "Нет видимых тегов"
+        "implied_by": "",
+        "add_implied_tag": "",
+        "add_alias": "",
+        "load_details_failed": "",
+        "toggle_details": "",
+        "shared_rule_hint": "",
+        "alias_added": "",
+        "alias_removed": "",
+        "implication_added": "",
+        "implication_removed": "",
+        "bulk_delete_title": "",
+        "bulk_delete_message": ""
     },
     "upload": {
         "folder": {
