@@ -501,8 +501,8 @@ async def tags_overview_page(request: Request):
     return templates.TemplateResponse("tags_gallery.html", {
         "request": request,
         "app_name": settings.APP_NAME,
-        "default_sort": settings.get_default_sort(),
-        "default_order": settings.get_default_order(),
+        "default_sort": "post_count",
+        "default_order": "desc",
         "sidebar_filter_mode": settings.SIDEBAR_FILTER_MODE,
         "sidebar_custom_buttons": settings.SIDEBAR_CUSTOM_BUTTONS
     })

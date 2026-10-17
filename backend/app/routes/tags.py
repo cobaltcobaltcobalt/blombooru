@@ -1,8 +1,8 @@
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import and_, asc, case, desc, func, or_
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, asc, case, desc, false, func, or_
+from sqlalchemy.orm import Session, selectinload
 
 from ..auth import require_admin_mode
 from ..config import settings
@@ -11,7 +11,7 @@ from ..enums import parse_rating_filter
 from ..models import Media, Tag, TagAlias, User, blombooru_media_tags
 from ..schemas import (BatchResolveCombinedRequest,
                        BatchResolveCombinedResponse, BatchTagValidateRequest,
-                       TagCategoryEnum, TagCreate, TagResponse)
+                       TagCategoryEnum, TagCreate, TagListItem, TagResponse)
 from ..utils.cache import cache_response, invalidate_tag_cache
 from ..utils.search_parser import (apply_custom_filters_or,
                                    apply_search_criteria, parse_search_query)
@@ -281,6 +281,18 @@ async def get_tags(
     
     return tags
 
+TAG_LIST_SORT_COLUMNS = {
+    "post_count": Tag.post_count,
+    "tag_name": Tag.name,
+    "category": Tag.category,
+    "created_at": Tag.created_at,
+    "id": Tag.id,
+}
+
+def _escape_like(value: str) -> str:
+    """Escape LIKE wildcards so '_' and '%' in tag names match literally."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
 @router.get("/list", response_model=dict)
 @router.get("/list/", response_model=dict)
 @cache_response(expire=3600, key_prefix="tags_list")
@@ -290,51 +302,84 @@ async def get_tags_list(
     limit: Optional[int] = Query(default=None),
     sort: Optional[str] = Query(default="post_count"),
     order: Optional[str] = Query(default="desc"),
+    q: Optional[str] = Query(default=None, description="Match against tag names and aliases"),
+    categories: Optional[str] = Query(default=None, description="Comma-separated list of categories"),
+    include_aliases: bool = Query(default=True, description="Whether to include aliases in response items"),
     db: Session = Depends(get_db)
 ):
     """Get paginated tag list"""
     limit = get_effective_limit(limit)
+    page = max(1, page)
+    if include_aliases:
+        limit = min(limit, 200)
 
-    # Build query
     query = db.query(Tag)
 
-    # Apply Sorting
-    sort_column = Tag.post_count
-    if sort == "tag_name":
-        sort_column = Tag.name
-    elif sort == "category":
-        sort_column = Tag.category
-    elif sort == "created_at":
-        sort_column = Tag.created_at
-
-    # Apply Sorting Order
-    if order == "desc":
-        query = query.order_by(desc(sort_column))
-    else:
-        query = query.order_by(asc(sort_column))
-
-    # Get All Tags
-    total_tags = query.count()
-    page_start = (page - 1) * limit
-    paginated_tags = query.offset(page_start).limit(limit).all()
-
-    # Build Response
-    return_items = []
-    for tag in paginated_tags:
-        return_items.append(TagResponse(
-            name=tag.name,
-            category=tag.category,
-            id=tag.id,
-            post_count=tag.post_count,
-            created_at=tag.created_at
+    search_term = (q or "").strip().lower()
+    if search_term:
+        pattern = f"%{_escape_like(search_term)}%"
+        query = query.filter(or_(
+            Tag.name.ilike(pattern, escape="\\"),
+            Tag.aliases.any(TagAlias.alias_name.ilike(pattern, escape="\\"))
         ))
+
+    if categories is not None and categories.strip():
+        valid_categories = {c.value for c in TagCategoryEnum}
+        requested = [c.strip().lower() for c in categories.split(",") if c.strip()]
+        selected = [c for c in requested if c in valid_categories]
+        if selected:
+            query = query.filter(Tag.category.in_(selected))
+        else:
+            query = query.filter(false())
+
+    sort_column = TAG_LIST_SORT_COLUMNS.get(sort, Tag.post_count)
+    direction = desc if order == "desc" else asc
+    # Tag.id tie-breaker keeps pagination stable when the sort column has ties
+    query = query.order_by(direction(sort_column), direction(Tag.id))
+
+    total_tags = query.count()
+
+    if include_aliases:
+        paginated_tags = (
+            query.options(selectinload(Tag.aliases))
+            .offset((page - 1) * limit)
+            .limit(limit)
+            .all()
+        )
+
+        return_items = [
+            TagListItem(
+                name=tag.name,
+                category=tag.category,
+                id=tag.id,
+                post_count=tag.post_count,
+                created_at=tag.created_at,
+                aliases=sorted(a.alias_name for a in tag.aliases)
+            )
+            for tag in paginated_tags
+        ]
+    else:
+        tag_rows = (
+            query.with_entities(Tag.id, Tag.name, Tag.category)
+            .offset((page - 1) * limit)
+            .limit(limit)
+            .all()
+        )
+        return_items = [
+            {
+                "id": row[0],
+                "name": row[1],
+                "category": row[2].value if row[2] else "general"
+            }
+            for row in tag_rows
+        ]
 
     return {
         "items": return_items,
         "total": total_tags,
         "page": page,
         "limit": limit,
-        "pages": max(1, (total_tags + limit - 1) // limit)
+        "pages": max(1, (total_tags + limit - 1) // limit) if limit > 0 else 1
     }
 
 @router.get("/autocomplete")
@@ -503,15 +548,6 @@ async def get_suggested_tags(
 
     return {"items": results, "status": "ready"}
 
-@router.get("/{tag_name}", response_model=TagResponse)
-@cache_response(expire=3600, key_prefix="tag_detail")
-async def get_tag(request: Request, tag_name: str, db: Session = Depends(get_db)):
-    """Get single tag"""
-    tag = db.query(Tag).filter(Tag.name == tag_name.lower()).first()
-    if not tag:
-        raise HTTPException(status_code=404, detail="Tag not found")
-    return tag
-
 @router.post("/", response_model=TagResponse)
 async def create_tag(
     tag_data: TagCreate,
@@ -593,41 +629,6 @@ async def delete_tag(
     
     return {"message": "Tag deleted successfully"}
 
-@router.get("/{tag_name}/related")
-@cache_response(expire=3600, key_prefix="tag_detail")
-async def get_related_tags(
-    request: Request,
-    tag_name: str,
-    limit: int = 20,
-    db: Session = Depends(get_db)
-):
-    """Get tags that frequently appear with this tag"""
-    tag = db.query(Tag).filter(Tag.name == tag_name.lower()).first()
-    if not tag:
-        raise HTTPException(status_code=404, detail="Tag not found")
-    
-    media_with_tag = db.query(Media.id).join(blombooru_media_tags).filter(
-        blombooru_media_tags.c.tag_id == tag.id
-    ).subquery()
-    
-    related = db.query(
-        Tag,
-        func.count(blombooru_media_tags.c.media_id).label('cooccurrence')
-    ).join(blombooru_media_tags).filter(
-        blombooru_media_tags.c.media_id.in_(media_with_tag),
-        Tag.id != tag.id
-    ).group_by(Tag.id).order_by(desc('cooccurrence')).limit(limit).all()
-    
-    return [
-        {
-            "name": t.name,
-            "category": t.category,
-            "count": t.post_count,
-            "cooccurrence": co
-        }
-        for t, co in related
-    ]
-
 @router.get("/related")
 @cache_response(expire=3600, key_prefix="tag_detail")
 async def related_tags(
@@ -671,3 +672,47 @@ async def related_tags(
         "category": tag.category,
         "frequency": freq
     } for tag, freq in related]
+
+@router.get("/{tag_name:path}/related")
+@cache_response(expire=3600, key_prefix="tag_detail")
+async def get_related_tags(
+    request: Request,
+    tag_name: str,
+    limit: int = 20,
+    db: Session = Depends(get_db)
+):
+    """Get tags that frequently appear with this tag"""
+    tag = db.query(Tag).filter(Tag.name == tag_name.lower()).first()
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    
+    media_with_tag = db.query(Media.id).join(blombooru_media_tags).filter(
+        blombooru_media_tags.c.tag_id == tag.id
+    ).subquery()
+    
+    related = db.query(
+        Tag,
+        func.count(blombooru_media_tags.c.media_id).label('cooccurrence')
+    ).join(blombooru_media_tags).filter(
+        blombooru_media_tags.c.media_id.in_(media_with_tag),
+        Tag.id != tag.id
+    ).group_by(Tag.id).order_by(desc('cooccurrence')).limit(limit).all()
+    
+    return [
+        {
+            "name": t.name,
+            "category": t.category,
+            "count": t.post_count,
+            "cooccurrence": co
+        }
+        for t, co in related
+    ]
+
+@router.get("/{tag_name:path}", response_model=TagResponse)
+@cache_response(expire=3600, key_prefix="tag_detail")
+async def get_tag(request: Request, tag_name: str, db: Session = Depends(get_db)):
+    """Get single tag"""
+    tag = db.query(Tag).filter(Tag.name == tag_name.lower()).first()
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    return tag

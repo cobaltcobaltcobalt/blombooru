@@ -20,6 +20,9 @@ class TagResponse(TagBase):
     
     model_config = ConfigDict(from_attributes=True)
 
+class TagListItem(TagResponse):
+    aliases: List[str] = []
+
 class MediaBase(BaseModel):
     rating: RatingEnum = RatingEnum.safe
 
