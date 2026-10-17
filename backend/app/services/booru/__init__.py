@@ -3,6 +3,7 @@ from .base import (BooruAuthenticationError, BooruClient, BooruError,
 from .factory import (clear_client_cache, get_booru_config_for_url,
                       get_client_for_url, get_user_agent_for_url,
                       normalize_domain, upsert_booru_config)
+from .blombooru import BlombooruClient
 from .danbooru import DanbooruClient
 from .gelbooru import GelbooruClient
 from .philomena import PhilomenaClient
@@ -18,6 +19,7 @@ __all__ = [
     "BooruPost",
     "BooruTag",
     "BooruClient",
+    "BlombooruClient",
     "DanbooruClient",
     "GelbooruClient",
     "PhilomenaClient",

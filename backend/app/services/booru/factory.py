@@ -10,6 +10,7 @@ from ...models import BooruConfig
 from ...utils.logger import logger
 from .base import BooruClient
 from .domain_overrides import get_api_base_url, get_domain_candidates
+from .blombooru import BlombooruClient
 from .danbooru import DanbooruClient
 from .gelbooru import GelbooruClient
 from .philomena import PhilomenaClient
@@ -22,6 +23,7 @@ _CLIENT_CLASSES = [
     PhilomenaClient,
     SzurubooruClient,
     ShimmieClient,
+    BlombooruClient,
 ]
 
 _client_cache: Dict[Tuple, BooruClient] = {}
@@ -165,6 +167,8 @@ def _get_cached_client(
                     client = client_cls(base_url, api_key=api_key)
                 elif client_cls == ShimmieClient:
                     client = client_cls(base_url, username=username, api_key=api_key)
+                elif client_cls == BlombooruClient:
+                    client = client_cls(base_url, api_key=api_key)
                 else:
                     client = client_cls(base_url)
             else:
