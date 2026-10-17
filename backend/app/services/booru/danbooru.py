@@ -7,7 +7,8 @@ import html
 
 import requests
 
-from .base import BooruAuthenticationError, BooruClient, BooruNotFoundError
+from .base import (BooruAuthenticationError, BooruClient, BooruNotFoundError,
+                   BooruRateLimitError)
 from .types import BooruPost, BooruTag
 from ...utils.logger import logger
 from ...utils.tag_utils import dtext_to_plain
@@ -127,7 +128,7 @@ class DanbooruClient(BooruClient):
                         f"Danbooru profile check returned HTTP {resp.status_code} for user {self.username} on {self.base_url}"
                     )
             except Exception as e:
-                logger.warning(f"Could not fetch Danbooru account ID from {self.base_url}: {e}")
+                logger.warning(f"Could not fetch Danbooru account ID from {self.base_url}: {self._redact(e)}")
 
         return None
 
@@ -155,7 +156,7 @@ class DanbooruClient(BooruClient):
                     if attempt < self.MAX_RETRIES:
                         time.sleep(self.RETRY_DELAY * (attempt + 1))
                         continue
-                    raise Exception("Rate limited by booru API")
+                    raise BooruRateLimitError("Rate limited by booru API")
 
                 if response.status_code == 404:
                     raise BooruNotFoundError("Post not found")
@@ -171,14 +172,14 @@ class DanbooruClient(BooruClient):
                 return response.json()
 
             except requests.ConnectionError as e:
-                raise Exception(f"Failed to connect to booru API: {e}")
+                raise Exception(f"Failed to connect to booru API: {self._redact(e)}")
             except requests.RequestException as e:
                 last_error = e
                 if attempt < self.MAX_RETRIES:
                     time.sleep(self.RETRY_DELAY * (attempt + 1))
                     continue
 
-        raise Exception(f"Failed to fetch from booru after {self.MAX_RETRIES + 1} attempts: {last_error}")
+        raise Exception(f"Failed to fetch from booru after {self.MAX_RETRIES + 1} attempts: {self._redact(last_error)}")
 
     def _parse_tags_from_post(self, data: dict) -> List[BooruTag]:
         """
@@ -253,7 +254,7 @@ class DanbooruClient(BooruClient):
             response.raise_for_status()
             data = response.json()
         except Exception as e:
-            logger.debug(f"Could not fetch artist commentary for post {post_id}: {e}")
+            logger.debug(f"Could not fetch artist commentary for post {post_id}: {self._redact(e)}")
             return None
 
         title = (data.get("original_title") or "").strip()
@@ -311,9 +312,12 @@ class DanbooruClient(BooruClient):
         url = f"{self.api_base_url}/posts.json"
         params = {"tags": tags, "page": page, "limit": min(limit, 200)}
 
-        response = self.session.get(url, params=params, timeout=15)
-        response.raise_for_status()
-        posts_data = response.json()
+        try:
+            response = self.session.get(url, params=params, timeout=15)
+            response.raise_for_status()
+            posts_data = response.json()
+        except requests.RequestException as e:
+            raise Exception(f"Failed to search Danbooru posts: {self._redact(e)}")
 
         results = []
         for data in posts_data:

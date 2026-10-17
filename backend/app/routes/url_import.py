@@ -18,7 +18,7 @@ from ..utils.media_helpers import get_unique_filename
 from ..utils.request_helpers import safe_error_detail
 from ..utils.url_fetch import UrlFetchError, download_media_to_temp, fetch_media_stream, probe_media_url
 from ..services.booru import (BooruAuthenticationError, BooruNotFoundError,
-                              get_client_for_url)
+                              BooruRateLimitError, get_client_for_url)
 
 router = APIRouter(prefix="/api/media/url-import", tags=["url-import"])
 
@@ -83,6 +83,8 @@ def _do_fetch_media_url(url: str) -> dict:
                     raise HTTPException(status_code=403, detail="admin.media_management.booru_import.error_access_denied_403")
                 if isinstance(e, BooruNotFoundError) or (isinstance(e, requests.HTTPError) and e.response.status_code == 404):
                     raise HTTPException(status_code=404, detail="admin.media_management.booru_import.error_post_not_found")
+                if isinstance(e, BooruRateLimitError) or (isinstance(e, requests.HTTPError) and e.response.status_code == 429):
+                    raise HTTPException(status_code=429, detail=f"admin.media_management.booru_import.error_booru_api:::{safe_error_detail('Rate limited', e)}")
                 raise HTTPException(
                     status_code=500,
                     detail=f"admin.media_management.booru_import.error_fetch_failed:::{safe_error_detail('Fetch failed', e)}",
@@ -148,6 +150,11 @@ def _do_import_media_url(req: ImportRequest) -> MediaResponse:
                 from .booru_import import _enrich_post_tags_with_db_categories
                 booru_post = client.fetch_post_by_url(req.url)
                 _enrich_post_tags_with_db_categories(booru_post, db)
+            except BooruRateLimitError as e:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"admin.media_management.booru_import.error_booru_api:::{safe_error_detail('Rate limited', e)}",
+                )
             except Exception as e:
                 logger.warning(f"Failed to fetch booru metadata for {req.url}, falling back to raw url import: {e}")
 

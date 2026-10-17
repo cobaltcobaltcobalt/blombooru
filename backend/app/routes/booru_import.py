@@ -15,7 +15,7 @@ from ..database import get_db
 from ..enums import RatingEnum
 from ..models import Media, User
 from ..services.booru import (BooruAuthenticationError, BooruNotFoundError,
-                              BooruPost, get_client_for_url,
+                              BooruPost, BooruRateLimitError, get_client_for_url,
                               get_user_agent_for_url)
 from ..utils.album_utils import set_media_albums
 from ..utils.cache import (invalidate_media_cache, invalidate_tag_cache)
@@ -81,6 +81,8 @@ async def fetch_booru_post(
         raise HTTPException(status_code=403, detail="admin.media_management.booru_import.error_access_denied_403")
     except BooruNotFoundError:
         raise HTTPException(status_code=404, detail="admin.media_management.booru_import.error_post_not_found")
+    except BooruRateLimitError as e:
+        raise HTTPException(status_code=429, detail=f"admin.media_management.booru_import.error_booru_api:::{safe_error_detail('Rate limited', e)}")
     except requests.HTTPError as e:
         if e.response.status_code in (401, 403):
             raise HTTPException(status_code=403, detail="admin.media_management.booru_import.error_access_denied_403")
@@ -135,6 +137,8 @@ async def download_and_import(
         raise HTTPException(status_code=403, detail="admin.media_management.booru_import.error_access_denied_403")
     except BooruNotFoundError:
         raise HTTPException(status_code=404, detail="admin.media_management.booru_import.error_post_not_found")
+    except BooruRateLimitError as e:
+        raise HTTPException(status_code=429, detail=f"admin.media_management.booru_import.error_booru_api:::{safe_error_detail('Rate limited', e)}")
     except requests.HTTPError as e:
         if e.response.status_code in (401, 403):
             raise HTTPException(status_code=403, detail="admin.media_management.booru_import.error_access_denied_403")
@@ -151,7 +155,13 @@ async def download_and_import(
     try:
         user_agent = get_user_agent_for_url(post.file_url, db=db)
         proxies = settings.get_booru_proxies()
-        session = client.session if (client and hasattr(client, "session")) else None
+        session = None
+        if client and hasattr(client, "session"):
+            from urllib.parse import urlparse
+            booru_host = (urlparse(client.base_url).hostname or "").lower()
+            file_host = (urlparse(post.file_url).hostname or "").lower()
+            if booru_host and file_host == booru_host:
+                session = client.session
 
         response = safe_request(
             "GET",

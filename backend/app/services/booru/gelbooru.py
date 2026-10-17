@@ -6,7 +6,8 @@ import html
 
 import requests
 
-from .base import BooruAuthenticationError, BooruClient, BooruNotFoundError
+from .base import (BooruAuthenticationError, BooruClient, BooruNotFoundError,
+                   BooruRateLimitError)
 from .types import BooruPost, BooruTag
 from ...utils.logger import logger
 
@@ -85,7 +86,7 @@ class GelbooruClient(BooruClient):
                     if attempt < self.MAX_RETRIES:
                         time.sleep(self.RETRY_DELAY * (attempt + 1))
                         continue
-                    raise Exception("Rate limited by booru API")
+                    raise BooruRateLimitError("Rate limited by booru API")
 
                 if response.status_code == 404:
                     raise BooruNotFoundError("Post not found")
@@ -110,10 +111,10 @@ class GelbooruClient(BooruClient):
                     if "authentication" in lowered or "api key" in lowered or "login" in lowered:
                         logger.warning(
                             f"Booru request rejected as unauthenticated by {self.api_base_url}: "
-                            f"{text[:200]} (credentials sent: {bool(self._auth_params)})"
+                            f"{self._redact(text[:200])} (credentials sent: {bool(self._auth_params)})"
                         )
                         raise BooruAuthenticationError("admin.media_management.booru_import.error_access_denied_403")
-                    raise Exception(f"Unexpected non-JSON response from booru: {text[:200]}")
+                    raise Exception(f"Unexpected non-JSON response from booru: {self._redact(text[:200])}")
                 if isinstance(data, list):
                     if not data:
                         return [] 
@@ -124,14 +125,14 @@ class GelbooruClient(BooruClient):
                 return data
 
             except requests.ConnectionError as e:
-                raise Exception(f"Failed to connect to booru API: {e}")
+                raise Exception(f"Failed to connect to booru API: {self._redact(e)}")
             except requests.RequestException as e:
                 last_error = e
                 if attempt < self.MAX_RETRIES:
                     time.sleep(self.RETRY_DELAY * (attempt + 1))
                     continue
 
-        raise Exception(f"Failed to fetch from booru after {self.MAX_RETRIES + 1} attempts: {last_error}")
+        raise Exception(f"Failed to fetch from booru after {self.MAX_RETRIES + 1} attempts: {self._redact(last_error)}")
 
     def _parse_tags_from_post(self, data: dict) -> List[BooruTag]:
         """
