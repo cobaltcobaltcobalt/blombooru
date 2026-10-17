@@ -120,6 +120,7 @@ def safe_request(
     current_url = validate_media_url(url)
     current_method = method.upper()
     active_session = session or _session
+    initial_host = (urlparse(current_url).hostname or "").lower()
 
     for hop in range(max_redirects + 1):
         req_headers = _request_headers(current_url)
@@ -152,6 +153,9 @@ def safe_request(
 
             next_url = urljoin(current_url, location)
             current_url = validate_media_url(next_url)
+            next_host = (urlparse(current_url).hostname or "").lower()
+            if next_host != initial_host:
+                active_session = _session
 
             if response.status_code == 303 and current_method != "HEAD":
                 current_method = "GET"

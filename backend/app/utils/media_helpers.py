@@ -926,13 +926,13 @@ def cleanup_dead_media_cache(db) -> int:
 
     return deleted
 
-def sanitize_filename(filename: str, fallback: str = "file") -> str:
-    """Sanitize filename to be safe for filesystem and web."""
+def sanitize_filename(filename: str, fallback: str = "file", max_bytes: int = 240) -> str:
+    """Sanitize filename to be safe for filesystem and web, truncating to prevent exceeding filesystem byte limits."""
     import re
     
     path = Path(filename)
     stem = path.stem
-    ext = path.suffix.lower()
+    ext = path.suffix.lower()[:32]
     
     stem = re.sub(r'[^\w\s\-\.]', '_', stem)
     stem = re.sub(r'[\s_]+', '_', stem)
@@ -940,7 +940,15 @@ def sanitize_filename(filename: str, fallback: str = "file") -> str:
     
     if not stem:
         stem = fallback
-    
+
+    ext_bytes = len(ext.encode("utf-8"))
+    max_stem_bytes = max(1, max_bytes - ext_bytes)
+    stem_encoded = stem.encode("utf-8")
+    if len(stem_encoded) > max_stem_bytes:
+        stem = stem_encoded[:max_stem_bytes].decode("utf-8", errors="ignore").rstrip("_-.")
+        if not stem:
+            stem = fallback
+
     return f"{stem}{ext}"
 
 def get_unique_filename(directory: Path, filename: str) -> str:
