@@ -54,12 +54,74 @@ span.checked:hover {
     background-color: var(--primary-hover);
 }
 
+/* Category filter buttons with respective category colors */
+.category-filter-label-general:hover {
+    border-color: var(--tag-general);
+}
+.category-filter-input:checked + .category-filter-label-general {
+    border-color: var(--tag-general);
+    background-color: var(--tag-general);
+    color: var(--tag-text);
+}
+.category-filter-input:checked + .category-filter-label-general:hover {
+    filter: brightness(1.1);
+}
+
+.category-filter-label-artist:hover {
+    border-color: var(--tag-artist);
+}
+.category-filter-input:checked + .category-filter-label-artist {
+    border-color: var(--tag-artist);
+    background-color: var(--tag-artist);
+    color: var(--tag-text);
+}
+.category-filter-input:checked + .category-filter-label-artist:hover {
+    filter: brightness(1.1);
+}
+
+.category-filter-label-character:hover {
+    border-color: var(--tag-character);
+}
+.category-filter-input:checked + .category-filter-label-character {
+    border-color: var(--tag-character);
+    background-color: var(--tag-character);
+    color: var(--tag-text);
+}
+.category-filter-input:checked + .category-filter-label-character:hover {
+    filter: brightness(1.1);
+}
+
+.category-filter-label-copyright:hover {
+    border-color: var(--tag-copyright);
+}
+.category-filter-input:checked + .category-filter-label-copyright {
+    border-color: var(--tag-copyright);
+    background-color: var(--tag-copyright);
+    color: var(--tag-text);
+}
+.category-filter-input:checked + .category-filter-label-copyright:hover {
+    filter: brightness(1.1);
+}
+
+.category-filter-label-meta:hover {
+    border-color: var(--tag-meta);
+}
+.category-filter-input:checked + .category-filter-label-meta {
+    border-color: var(--tag-meta);
+    background-color: var(--tag-meta);
+    color: var(--tag-text);
+}
+.category-filter-input:checked + .category-filter-label-meta:hover {
+    filter: brightness(1.1);
+}
+
 .filter-check-icon {
     display: none;
 }
 
 .rating-filter-input:checked+.rating-filter-label .filter-check-icon,
 .custom-filter-input:checked+.custom-filter-label .filter-check-icon,
+.category-filter-input:checked+.category-filter-label .filter-check-icon,
 span.checked .filter-check-icon {
     display: block;
 }
@@ -304,6 +366,24 @@ a.tag:hover {
 
 .tag.meta {
     background-color: var(--tag-meta);
+}
+
+/* Tag Gallery Item */
+.tag-card {
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.tag-card.selected {
+    border-color: var(--primary-color) !important;
+    background-color: color-mix(in srgb, var(--primary-color) 8%, var(--surface)) !important;
+}
+
+#tags-grid.selection-mode .tag-card {
+    cursor: pointer;
+}
+
+#tags-grid.selection-mode .tag-card:hover {
+    border-color: var(--primary-color);
 }
 
 /* Gallery styling */

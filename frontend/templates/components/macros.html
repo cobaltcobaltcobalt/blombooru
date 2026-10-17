@@ -207,6 +207,49 @@ location='desktop', is_admin=false) %}
 {{ select_arrow_icon(size=12) }}
 {% endmacro %}
 
+{# Category Filter Component for Tags Gallery #}
+{% macro category_filter(location='desktop') %}
+{% if location == 'mobile' %}
+<div class="surface p-3 mb-3 border block lg:hidden">
+    <details class="group">
+        <summary
+            class="flex items-center justify-between cursor-pointer font-bold text-xs uppercase tracking-wider hover:text-primary transition-colors list-none [&::-webkit-details-marker]:hidden select-none">
+            <span>{{ t('admin.tags_management.categories') }}</span>
+            {{ chevron_down_icon(size=14, class="transition-transform duration-200 group-open:rotate-180 flex-shrink-0")
+            }}
+        </summary>
+        <div class="mt-2.5 pt-2.5 border-t">
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {{ _category_options('py-2') }}
+            </div>
+        </div>
+    </details>
+</div>
+{% else %}
+<div class="hidden lg:block pt-3 border-t">
+    <h3 class="text-sm font-bold mb-3 pb-1 border-b">{{ t('admin.tags_management.categories') }}</h3>
+    <div id="category-filters-container" class="grid grid-cols-1 gap-2">
+        {{ _category_options('py-1') }}
+    </div>
+</div>
+{% endif %}
+{% endmacro %}
+
+{% macro _category_options(padding='py-1') %}
+{% for cat in ['general', 'artist', 'character', 'copyright', 'meta'] %}
+<label class="flex-1">
+    <input type="checkbox" name="tag_category" value="{{ cat }}"
+        class="hidden category-filter-input category-filter-checkbox" checked>
+    <span
+        class="relative block text-center px-3 {{ padding }} border-1 cursor-pointer bg transition-colors category-filter-label category-filter-label-{{ cat }} select-none"
+        data-category="{{ cat }}">
+        {{ check_icon(size=12, stroke_width=3, class="absolute left-2 top-1/2 -translate-y-1/2 filter-check-icon") }}
+        <span>{{ t('common.tag_category_' + cat) }}</span>
+    </span>
+</label>
+{% endfor %}
+{% endmacro %}
+
 {# Bulk Actions Component #}
 {% macro bulk_actions(buttons=['select_all', 'deselect_all', 'delete']) %}
 <div id="bulk-actions" style="display: none;" class="surface p-3 mb-4 border">
@@ -235,6 +278,26 @@ location='desktop', is_admin=false) %}
         {% if 'rating' in buttons %}
         <button id="bulk-rating-btn" class="btn px-3 py-1 flex items-center gap-1.5 cursor-pointer">
             {{ t('modal.bulk_rating.title') }}
+        </button>
+        {% endif %}
+        {% if 'tag_category' in buttons %}
+        <button id="bulk-tag-category-btn" class="btn px-3 py-1 cursor-pointer">
+            {{ t('admin.tags_management.tag_category') }}
+        </button>
+        {% endif %}
+        {% if 'tag_implies' in buttons %}
+        <button id="bulk-tag-implies-btn" class="btn px-3 py-1 cursor-pointer">
+            {{ t('admin.tags_implications.implies_tags') }}
+        </button>
+        {% endif %}
+        {% if 'tag_merge' in buttons %}
+        <button id="bulk-tag-merge-btn" class="btn px-3 py-1 cursor-pointer">
+            {{ t('admin.tags_management.merge_into') }}
+        </button>
+        {% endif %}
+        {% if 'tag_remove' in buttons %}
+        <button id="bulk-tag-remove-btn" class="btn-danger px-3 py-1 cursor-pointer">
+            {{ t('common.remove') }}
         </button>
         {% endif %}
         {% if 'remove' in buttons %}
@@ -294,8 +357,8 @@ location='desktop', is_admin=false) %}
 {% endmacro %}
 
 {# Sidebar Container #}
-{% macro sidebar_start() %}
-<div class="xl:col-span-1 lg:col-span-1">
+{% macro sidebar_start(class="") %}
+<div class="xl:col-span-1 lg:col-span-1{{ ' ' + class if class else '' }}">
     <div class="surface p-3 border top-4">
         {% endmacro %}
 

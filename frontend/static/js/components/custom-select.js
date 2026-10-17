@@ -14,21 +14,24 @@ class CustomSelect {
     }
 
     init() {
-        this.trigger.addEventListener('click', (e) => {
+        this._triggerClickHandler = (e) => {
             if (this.disabled) return;
             e.stopPropagation();
             this.toggle();
-        });
+        };
+        this.trigger.addEventListener('click', this._triggerClickHandler);
 
-        document.addEventListener('click', (e) => {
+        this._documentClickHandler = (e) => {
             if (!this.element.contains(e.target)) {
                 this.close();
             }
-        });
+        };
+        document.addEventListener('click', this._documentClickHandler);
 
-        this.element.addEventListener('keydown', (e) => {
+        this._keydownHandler = (e) => {
             this.handleKeyboard(e);
-        });
+        };
+        this.element.addEventListener('keydown', this._keydownHandler);
 
         this.dropdown.addEventListener('wheel', (e) => {
             e.stopPropagation();
@@ -288,6 +291,21 @@ class CustomSelect {
                     this.valueDisplay.textContent = '';
                 }
             }
+        }
+    }
+
+    destroy() {
+        if (this._documentClickHandler) {
+            document.removeEventListener('click', this._documentClickHandler);
+            this._documentClickHandler = null;
+        }
+        if (this._triggerClickHandler && this.trigger) {
+            this.trigger.removeEventListener('click', this._triggerClickHandler);
+            this._triggerClickHandler = null;
+        }
+        if (this._keydownHandler && this.element) {
+            this.element.removeEventListener('keydown', this._keydownHandler);
+            this._keydownHandler = null;
         }
     }
 }

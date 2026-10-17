@@ -10,6 +10,7 @@ class BaseGallery {
             enablePagination: true,
             enableRatingFilter: true,
             enableSorting: true,
+            itemSelector: '.gallery-item',
             defaultRating: 'explicit',
             defaultSort: 'uploaded_at',
             defaultOrder: 'desc',
@@ -154,7 +155,7 @@ class BaseGallery {
             window.autoScroll?.check(e.clientX, e.clientY, {
                 onScroll: (x, y) => {
                     const el = document.elementFromPoint(x, y);
-                    const item = el ? el.closest('.gallery-item') : null;
+                    const item = el ? el.closest(this.options.itemSelector) : null;
                     if (item && item.dataset && item.dataset.id) {
                         const id = parseInt(item.dataset.id);
                         if (id && id !== this.lastSelectedId) {
@@ -1092,7 +1093,7 @@ class BaseGallery {
     async handleSelectAll() {
         if (!app.isAdminMode) return;
 
-        const visibleItems = document.querySelectorAll('.gallery-item');
+        const visibleItems = document.querySelectorAll(this.options.itemSelector);
         const visibleIds = Array.from(visibleItems).map(item => parseInt(item.dataset.id));
 
         // Check if all visible items are already selected
@@ -1102,7 +1103,7 @@ class BaseGallery {
             // Logic 1: Fill the current page
             visibleItems.forEach(item => {
                 const id = parseInt(item.dataset.id);
-                const checkbox = item.querySelector('.checkbox, .album-item-checkbox');
+                const checkbox = item.querySelector('.select-checkbox, .checkbox, .album-item-checkbox');
 
                 if (checkbox && !checkbox.checked) {
                     checkbox.checked = true;
@@ -1121,7 +1122,7 @@ class BaseGallery {
     handleDeselectAll() {
         if (!app.isAdminMode) return;
 
-        const visibleItems = document.querySelectorAll('.gallery-item');
+        const visibleItems = document.querySelectorAll(this.options.itemSelector);
         const visibleIds = Array.from(visibleItems).map(item => parseInt(item.dataset.id));
 
         // Check if all visible items are selected
@@ -1133,7 +1134,7 @@ class BaseGallery {
                 const id = parseInt(item.dataset.id);
                 this.selectedItems.delete(id);
                 item.classList.remove('selected');
-                const checkbox = item.querySelector('.checkbox, .album-item-checkbox');
+                const checkbox = item.querySelector('.select-checkbox, .checkbox, .album-item-checkbox');
                 if (checkbox) checkbox.checked = false;
             });
         } else {
@@ -1166,7 +1167,7 @@ class BaseGallery {
 
             // Build params based on current URL (preserves filters, sorts, etc.)
             const params = new URLSearchParams(window.location.search);
-            params.set('limit', '100000'); // Fetch "all" (reasonable limit)
+            params.set('limit', '500000'); // Fetch "all" (reasonable limit)
             params.delete('page');
 
             if (this.options.enableRatingFilter !== false && this.currentRating) {
@@ -1204,11 +1205,11 @@ class BaseGallery {
             });
 
             // Visually update current page items to ensure they look selected
-            document.querySelectorAll('.gallery-item').forEach(item => {
+            document.querySelectorAll(this.options.itemSelector).forEach(item => {
                 const id = parseInt(item.dataset.id);
                 if (this.selectedItems.has(id)) {
                     item.classList.add('selected');
-                    const checkbox = item.querySelector('.checkbox, .album-item-checkbox');
+                    const checkbox = item.querySelector('.select-checkbox, .checkbox, .album-item-checkbox');
                     if (checkbox) checkbox.checked = true;
                 }
             });
@@ -1240,7 +1241,7 @@ class BaseGallery {
     }
 
     selectAll() {
-        document.querySelectorAll('.gallery-item').forEach(item => {
+        document.querySelectorAll(this.options.itemSelector).forEach(item => {
             const id = parseInt(item.dataset.id);
             const checkbox = item.querySelector('.select-checkbox');
 
@@ -1255,9 +1256,9 @@ class BaseGallery {
 
     clearSelection() {
         this.selectedItems.clear();
-        document.querySelectorAll('.gallery-item').forEach(item => {
+        document.querySelectorAll(this.options.itemSelector).forEach(item => {
             item.classList.remove('selected');
-            const checkbox = item.querySelector('.select-checkbox');
+            const checkbox = item.querySelector('.select-checkbox, .checkbox, .album-item-checkbox');
             if (checkbox) checkbox.checked = false;
         });
         this.updateBulkActionsUI();
@@ -1361,7 +1362,7 @@ class BaseGallery {
     }
 
     updateVisibleSelectionState() {
-        document.querySelectorAll('.gallery-item').forEach(item => {
+        document.querySelectorAll(this.options.itemSelector).forEach(item => {
             const id = parseInt(item.dataset.id);
             const checkbox = item.querySelector('.select-checkbox');
 
@@ -1376,7 +1377,7 @@ class BaseGallery {
     }
 
     applySelectionState(id, isSelected) {
-        const item = document.querySelector(`.gallery-item[data-id="${id}"]`);
+        const item = document.querySelector(`${this.options.itemSelector}[data-id="${id}"]`);
 
         if (isSelected) {
             this.selectedItems.add(id);
@@ -1396,7 +1397,7 @@ class BaseGallery {
     }
 
     getRange(itemA, itemB) {
-        const allItems = Array.from(document.querySelectorAll('.gallery-item'));
+        const allItems = Array.from(document.querySelectorAll(this.options.itemSelector));
         const indexA = allItems.indexOf(itemA);
         const indexB = allItems.indexOf(itemB);
 
@@ -1411,8 +1412,8 @@ class BaseGallery {
     getRangeFromLast(currentId) {
         if (!this.lastSelectedId) return [currentId];
 
-        const itemA = document.querySelector(`.gallery-item[data-id="${this.lastSelectedId}"]`);
-        const itemB = document.querySelector(`.gallery-item[data-id="${currentId}"]`);
+        const itemA = document.querySelector(`${this.options.itemSelector}[data-id="${this.lastSelectedId}"]`);
+        const itemB = document.querySelector(`${this.options.itemSelector}[data-id="${currentId}"]`);
 
         if (!itemA || !itemB) return [currentId];
 
