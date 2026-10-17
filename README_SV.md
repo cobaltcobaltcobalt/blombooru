@@ -23,24 +23,9 @@ Blombooru är ett privat, enanvändarorienterat alternativ till publika boorus s
 
 > [!NOTE]
 > Lokalisering till svenska: @mrblomblo  
-> Senast uppdaterad 2 maj 2026
+> Senast uppdaterad 3 oktober 2026
 
-<details>
-<summary>Visa skärmdumpar</summary>
-
-**Startsida**
-<img width="1920" alt="Startsida" src=".github/images/Gallery.png" />
-
-**Mediavisare**
-<img width="1920" alt="Mediavisare" src=".github/images/Media.png" />
-
-**Sida för delad media**
-<img width="1920" alt="Sida för delad media" src=".github/images/Shared.png" />
-
-**Adminpanel**
-<img width="1920" alt="Adminpanel" src=".github/images/Admin_Panel.png" />
-
-</details>
+**[Visa skärmdumpar](docs/Gallery.md)**
 
 ## Innehållsförteckning
 
@@ -55,6 +40,7 @@ Blombooru är ett privat, enanvändarorienterat alternativ till publika boorus s
   - [Docker *(Rekommenderas)*](#docker-rekommenderas)
     - [Driftsättningsalternativ](#driftsättningsalternativ)
     - [Snabbstart (Färdigbyggd avbildning)](#snabbstart-färdigbyggd-avbildning)
+    - [Hårdvaruacceleration](#hårdvaruacceleration)
     - [Använda förhandsversioner (Pre-release)](#använda-förhandsversioner-pre-release)
     - [Utvecklarversioner (Lokalt)](#utvecklarversioner-lokalt)
     - [Köra flera instanser](#köra-flera-instanser)
@@ -72,20 +58,18 @@ Blombooru är ett privat, enanvändarorienterat alternativ till publika boorus s
     - [3. Skanna filsystemet](#3-skanna-filsystemet)
     - [4. Import via extern URL](#4-import-via-extern-url)
   - [Taggning \& Sökning](#taggning--sökning)
-    - [Grundläggande taggar](#grundläggande-taggar)
-    - [Intervall (Ranges)](#intervall-ranges)
-    - [Meta-kvalifikatorer](#meta-kvalifikatorer)
-    - [Taggantal](#taggantal)
-    - [Sortering](#sortering)
   - [Dela media](#dela-media)
   - [Systemuppdaterare](#systemuppdaterare)
     - [Hur man uppdaterar](#hur-man-uppdaterar)
     - [Ändringar i beroenden](#ändringar-i-beroenden)
+  - [Kontoåterställning](#kontoåterställning)
   - [API \& Tredjepartsappar](#api--tredjepartsappar)
     - [Anslutningsdetaljer](#anslutningsdetaljer)
     - [Funktioner som stöds](#funktioner-som-stöds)
+    - [Internt API](#internt-api)
 - [Teman](#teman)
 - [Tekniska detaljer](#tekniska-detaljer)
+- [Dokumentation \& Gemenskap](#dokumentation--gemenskap)
 - [Ansvarsfriskrivning](#ansvarsfriskrivning)
 - [Licens](#licens)
 
@@ -95,21 +79,29 @@ Blombooru är ett privat, enanvändarorienterat alternativ till publika boorus s
 
 - **Taggning i Danbooru-stil:** Ett bekant och kraftfullt taggningssystem med kategorier (artist, character, copyright, etc.), tagg-baserad sökning och exkludering med negativa taggar.
 
+- **Taggalleri & Hantering:** Bläddra, sök och hantera dina taggar i ett dedikerat taggalleri.
+
 - **Enkel import av taggdatabaser:** Importera anpassade tagglistor via en enkel CSV-uppladdning i adminpanelen för att hålla ditt system uppdaterat.
 
-- **Album:** Organisera din media i album, som kan innehålla både mediaobjekt och underalbum för obegränsad nästling och organisering.
+- **Album:** Organisera din media i album, med stöd för underalbum, manuell sortering och automatiskt skapande av albumhierarkier från mappuppladdningar. *Album är Blomboorus motsvarighet till "pools" på andra boorus!*
 
-- **Mediarelationer:** Länka relaterad media med förälder-barn-relationer (parent-child). Gruppera bildvariationer, flersidiga serier och mer—vilket håller relaterat innehåll lättillgängligt.
+- **Mediarelationer & Likhet:** Länka relaterad media med förälder-barn-relationer (parent-child), eller upptäck liknande inlägg med hjälp av en konfigurerbar likhetsalgoritm (TF-IDF). Gruppera bildvariationer, flersidiga serier och mer (vilket håller relaterat innehåll lättillgängligt).
+
+- **Markdown-beskrivningar:** Lägg till rika, formaterade beskrivningar till inlägg med fullt Markdown-stöd.
 
 - **Import från externa Boorus:** Importera sömlöst inlägg från Danbooru och andra booru-sidor (som Danbooru, Gelbooru, etc.) genom att helt enkelt klistra in inläggets URL. Taggar, åldersgräns, källa och media hämtas och kartläggs automatiskt.
 
 ### AI & Automatisering
 
-- **AI-vänlig:** Visa enkelt medföljande AI-metadata för nästan all media genererad med SwarmUI, ComfyUI, A1111 med flera. Du kan till och med lägga till taggar i taggredigeraren direkt från AI-prompten.
+- **AI-vänlig:** Visa enkelt medföljande AI-metadata för media genererad med SwarmUI, ComfyUI, A1111, InvokeAI, NovelAI, Fooocus med flera. Du kan även lägga till taggar i taggredigeraren direkt från AI-prompten eller valfritt direkt till mediauppladdaren under import.
 
-- **Automatisk taggning:** Påskynda taggningen med WDv3 Auto Tagger-integrationen, som analyserar bilder och föreslår korrekta taggar med ett enda klick.
+- **Automatisk taggning:** Påskynda taggningen med WDv3- eller PixAI Auto Tagger-integrationen, som analyserar bilder och föreslår korrekta taggar med ett enda klick. Stöder valfri Nvidia GPU-acceleration för blixtsnabb batchbearbetning.
+
+- **Sidecar-metadata:** Importerar automatiskt metadata från sidecar-filer, perfekt för dig som använder externa nedladdare som gallery-dl eller imgbrd-grabber.
 
 - **Taggimplikationer:** Definiera relationer mellan taggar. När en måltagg (eller en uppsättning taggar) appliceras på ett mediaobjekt, läggs de implicerade taggarna automatiskt till.
+
+- **Taggalias:** Definiera alias för taggar för att hålla din tagglista ren och organiserad. Att använda ett alias applicerar automatiskt måltaggen istället.
 
 - **Automatiska taggar per mediatyp:** Lägg automatiskt till förkonfigurerade taggar för varje objekt i uppladdningskön baserat på dess mediatyp (bild, GIF eller video).
 
@@ -121,21 +113,35 @@ Blombooru är ett privat, enanvändarorienterat alternativ till publika boorus s
 
 - **Säker mediadelning:** Generera unika, permanenta länkar för att dela specifik media. Delade objekt presenteras i en avskalad, säker vy med valfri delning av AI-metadata.
 
+- **Blurrade miniatyrbilder:** Gör valfritt explicita miniatyrbilder blurrade i galleri- och mediavyer för säkrare surfning.
+
+- **Hantering av API-nycklar:** Skapa och hantera avgränsade (läs/skriv/admin-nivå) API-nycklar för skript och tredjepartsverktyg.
+
 ### Anpassning & Teman
 
 - **Modernt & responsivt gränssnitt:** Byggt med Tailwind CSS för en vacker och konsekvent upplevelse på både datorer och mobila enheter.
 
-- **Mycket anpassningsbara teman:** Skräddarsy utseendet med hjälp av enkla CSS-variabler. Släpp in nya `.css`-filer i `themes`-mappen, registrera dem i `themes.py` och starta om.
+- **Mycket anpassningsbara teman:** Skräddarsy utseendet med hjälp av enkla CSS-variabler. Skapa, redigera, importera och exportera anpassade teman direkt i adminpanelen.
 
 - **Många teman att välja mellan:** Blombooru levereras med de fyra färgpaletterna från Catppuccin, Gruvbox (ljus & mörk), Everforest (ljus & mörk), OLED och mer!
 
+- **Anpassningsbara snabbtangenter:** Helt omkonfigurerbara tangentbordsgenvägar med en inbyggd redigerare för snabb navigering.
+
+- **Stöd för flera språk:** Översatt gränssnitt tillgängligt på flera olika språk.
+
 ### Flexibilitet & Integration
 
-- **Flexibla mediauppladdningar:** Lägg till media via dra-och-släpp, genom att importera ett komprimerat arkiv, eller genom att placera filer i lagringsmappen och trycka på "Skanna efter ospårad media".
+- **Stöd för SOCKS5/HTTP-proxy:** Konfigurera en SOCKS5- eller HTTP-proxy via adminpanelen för att ladda ner extern media genom den. Perfekt för åtkomst till regionbegränsat innehåll eller av integritetsskäl.
+
+- **Flexibla mediauppladdningar:** Lägg till media via dra-och-släpp, komprimerade arkiv, filsystemsskanningar, import från externa booru- eller direkta media-URL:er, eller batchlistor med URL:er.
+
+- **Skapa taggar direkt (On-The-Fly):** Om en tagg du vill lägga till inte finns ännu, kan du skapa den direkt i valfritt taggfält utan att behöva gå till adminpanelen.
 
 - **Miniatyrbildshantering:** Reparera enkelt trasiga eller saknade miniatyrbilder i adminpanelen. Du kan generera saknade miniatyrer eller helt återskapa alla miniatyrer för stora bibliotek.
 
-- **Användarvänlig introduktion (Onboarding):** En enkel installationsprocess för första gången för att konfigurera ditt adminkonto, databasanslutning och varumärkesnamn.
+- **Säkerhetskopiering & Återställning:** Skapa fullständiga eller partiella säkerhetskopior (databas, mediafiler och taggar) direkt från adminpanelen.
+
+- **Användarvänlig Onboarding:** Enkel installationsprocess för att konfigurera ditt adminkonto, databasanslutning och instansnamn. Du kan även importera en fullständig säkerhetskopia under installationen.
 
 - **Högpresterande cachning:** Valfri Redis-integration ger blixtsnabba svarstider för tunga sökningar, autoslutförande (autocomplete) och Danbooru-kompatibla API-förfrågningar.
 
@@ -160,7 +166,9 @@ Detta är den rekommenderade metoden för att använda Blombooru. Färdigbyggda 
 | Alternativ | Image-tagg | Användningsområde |
 |:-------|:----------|:---------|
 | **Senaste stabila** | `latest` (standard) | Produktionsanvändning, följer den senaste GitHub-releasen |
+| **Senaste stabila (CUDA)** | `latest-cuda` | Produktionsanvändning med CUDA-acceleration |
 | **Förhandsversion** | `pre` | Testa kommande versioner, följer den senaste förhandsversionen (pre-release) |
+| **Förhandsversion (CUDA)** | `pre-cuda` | Testa kommande versioner med CUDA-acceleration |
 | **Låst version** | `1.2.3` / `1.2` / `1` | Låsa till en specifik stabil version |
 | **Låst förhandsversion** | `1.2.3-rc.1` | Låsa till en specifik förhandsversion |
 | **Utvecklarversion** | Lokal build | För bidragsgivare, ändra källkoden |
@@ -169,7 +177,7 @@ Detta är den rekommenderade metoden för att använda Blombooru. Färdigbyggda 
 
 1. **Ladda ner nödvändiga filer**
 
-    Skapa en mapp för Blombooru (t.ex. `blombooru`), ladda sedan ner filerna `docker-compose.yml` och `example.env` från den [senaste releasen](https://github.com/mrblomblo/blombooru/releases/latest) och placera dem i mappen.
+    Skapa en mapp för Blombooru (t.ex. `blombooru`), ladda sedan ner filerna `docker-compose.yml` och `example.env` från den [senaste releasen](https://github.com/mrblomblo/blombooru/releases/latest) och placera dem i mappen. (Valfritt: om du planerar att använda GPU-acceleration, ladda även ner hwaccel.yml).
 
 2. **Anpassa miljövariablerna**  
     Skapa en kopia av `example.env` och döp den till `.env`. Öppna sedan den nyskapade filen med din favorittextredigerare och redigera värdena efter `=` på varje rad. Det viktigaste att ändra är exempellösenordet som tilldelats `POSTGRES_PASSWORD`. De andra *kan* förbli som de är, såvida inte till exempel port 8000 redan används av ett annat program.
@@ -207,6 +215,53 @@ Detta är den rekommenderade metoden för att använda Blombooru. Färdigbyggda 
     ```bash
     docker compose down
     ```
+
+#### Hårdvaruacceleration
+
+Om du har en Nvidia-GPU och vill kraftigt snabba upp WDv3 Auto Taggern kan du använda den CUDA-accelererade Docker-versionen.
+
+> [!IMPORTANT]
+> Du måste ha Nvidia Container Toolkit installerat på din dator, och dina GPU-drivrutiner måste vara uppdaterade. Det förutsätts också att du använder en någorlunda modern GPU.
+
+Installering:
+
+1. **Ladda ner hwaccel.yml**  
+    Ladda ner filen `hwaccel.yml` från den senaste releasen och placera den i samma mapp som dina `docker-compose.yml`- och `.env`-filer.
+
+2. **Redigera docker-compose.yml**  
+    Öppna din `docker-compose.yml`-fil, hitta webbtjänsten och avkommentera (ta bort de tre `#`-tecknen i början av) blocket `extends:`:
+
+    ```yaml
+    services:
+      web:
+        image: ghcr.io/mrblomblo/blombooru:${BLOMBOORU_TAG:-latest}
+        extends:
+          file: hwaccel.yml
+          service: cuda
+    ```
+
+3. **Konfigurera miljövariabeln**  
+    Se till att taggerenheten i din `.env`-fil är inställd på `auto` (standard) eller `cuda`:
+
+    ```env
+    BLOMBOORU_WD_TAGGER_DEVICE=auto # Options: auto, cuda, cpu
+    ```
+
+4. **Starta containern**  
+    Hämta den nya CUDA-avbildningen och starta containern:
+
+    ```bash
+    docker compose up -d
+    ```
+
+> [!WARNING]
+> Om du använder `latest-cuda`-avbildningen måste du avkommentera `extends:`-blocket i din `docker-compose.yml`. Om du använder CUDA-avbildningen utan att skicka GPU:n till containern kraschar Blombooru när AI-modellen försöker laddas.
+
+Miljövariabeln `BLOMBOORU_WD_TAGGER_DEVICE` styr hur taggaren initieras:
+
+- `auto` (standard): Använder GPU om paketet `onnxruntime-gpu` är installerat, annars CPU.
+- `cuda`: Tvingar strikt GPU-användning. Om paketet inte är installerat ger Blombooru ett felmeddelande och vägrar starta.
+- `cpu`: Tvingar CPU-användning, även om en GPU är tillgänglig.
 
 #### Använda förhandsversioner (Pre-release)
 
@@ -326,12 +381,11 @@ Om du behöver köra flera oberoende Blombooru-instanser (till exempel separata 
     ```
 
 - **Uppdatera en specifik instans:**  
-    Navigera till instanskatalogen och använd den inbyggda uppdateraren via adminpanelen, eller manuellt:
+    Navigera till instanskatalogen och uppdatera via Docker Compose:
 
     ```bash
     cd ~/blombooru-instans1
-    git pull
-    docker compose down && docker compose up --build -d
+    docker compose up -d --pull always
     ```
 
 **Datasisolering:**
@@ -441,10 +495,11 @@ Navigera till webbplatsen och klicka på knappen **Admin Panel** i navigeringsf�
 För att göra några ändringar måste du logga in som admin. Detta skyddar dig från att oavsiktligt radera eller redigera media. När du är inloggad som administratör kan du:
 
 - Ladda upp, redigera eller radera media
-- Lägga till eller ta bort taggar
+- Lägga till, redigera eller ta bort taggar, alias och implikationer
+- Organisera och manuellt ordna om album
 - Dela media
-- Utföra massåtgärder som att radera flera objekt från galleriet samtidigt
-- Hantera systeminställningar, inklusive varumärke, säkerhet, inloggningsuppgifter för externa boorus och valfri Redis-cachning
+- Utföra massåtgärder som att mass-tagga, justera medie åldersrating och radera flera objekt från galleriet samtidigt
+- Hantera systeminställningar, inklusive instansnamn, teman, säkerhet, säkerhetskopior, inloggningsuppgifter för externa boorus och valfri Redis-cachning
 
 ### Lägga till taggar
 
@@ -498,80 +553,7 @@ Klistra in en URL från en booru-sida som stöds (t.ex. de som använder Danboor
 
 - **Taggvisning:** På en mediasida sorteras taggar automatiskt efter kategori (Artist, Character, Copyright, General, Meta) och därefter alfabetiskt inom varje kategori.
 
-- **Söksyntax:** Blombooru stöder en kraftfull Danbooru-kompatibel söksyntax.
-
-#### Grundläggande taggar
-
-| Syntax | Beskrivning |
-|:-------|:------------|
-| `tag1 tag2` | Hitta media med både `tag1` OCH `tag2` |
-| `-tag1` | Exkludera media med `tag1` |
-| `tag*` | Sökning med jokertecken (hittar `tag_name`, `tag_stuff`, etc.) |
-| `?tag` | Hitta media med noll eller ett tecken framför `tag` |
-
-#### Intervall (Ranges)
-
-De flesta numeriska och datum-kvalifikatorer stöder intervalloperatorer:
-
-| Syntax | Beskrivning |
-|:-------|:------------|
-| `id:100` | Exakt matchning (`x == 100`) |
-| `id:100..200` | Mellan, inklusive (`100 <= x <= 200`) |
-| `id:>=100` | Större än eller lika med (`x >= 100`) |
-| `id:>100` | Större än (`x > 100`) |
-| `id:<=100` | Mindre än eller lika med (`x <= 100`) |
-| `id:<100` | Mindre än (`x < 100`) |
-| `id:1,2,3` | I lista (`x` är 1, 2 eller 3) |
-
-#### Meta-kvalifikatorer
-
-| Kvalifikator | Beskrivning | Exempel |
-|:----------|:------------|:-----------|
-| `id` | Sök via internt ID | `id:100..200`, `id:>500` |
-| `width`, `height` | Sök via bilddimensioner (pixlar) | `width:>=1920`, `height:1080` |
-| `filesize` | Sök via filstorlek med enheterna `kb`, `mb`, `gb`, `b`. Stöder "luddig" (fuzzy) matchning: `filesize:52MB` hittar `52.0MB` till `52.99MB`. | `filesize:1mb..5mb`, `filesize:52MB` |
-| `date` | Sök på uppladdningsdatum (`ÅÅÅÅ-MM-DD`) | `date:2024-01-01` |
-| `age` | Sök på ålder relativt till nu (`s`, `mi`, `h`, `d`, `w`, `mo`, `y`). Obs: `<` betyder "nyare än" (lägre ålder). | `age:<24h` (mindre än 1 dag gammal), `age:1w..1mo` |
-| `rating` | Filtrera på åldersgräns: `s`/`safe`, `q`/`questionable`, `e`/`explicit`. Stöder listor. | `rating:s,q`, `-rating:e` |
-| `source` | Sök källa. Använd `none` för saknade källor, `http` för webb-URL:er. | `source:none`, `source:http`, `source:twitter` |
-| `filetype` | Sök på filändelse | `filetype:png`, `filetype:gif` |
-| `md5` | Sök på fil-hash (exakt) | `md5:d34e4c...` |
-| `pool`, `album` | Sök via album/pool-ID eller namn. `any`/`none` stöds. | `album:any`, `pool:favorites`, `pool:5` |
-| `parent` | Sök på föräldra-ID (parent). `any`/`none` stöds. | `parent:none`, `parent:123` |
-| `child` | Filtrera föräldrainlägg på barn (children). `any`/`none` stöds. | `child:any` (har barn), `child:none` |
-| `duration` | Sök längd på video/gif i sekunder | `duration:>60` |
-
-> [!NOTE]
-> `duration` kanske inte är satt på alla GIF:ar.
-
-#### Taggantal
-
-Filtrera på antalet taggar ett inlägg har:
-
-| Kvalifikator | Beskrivning |
-|:----------|:------------|
-| `tagcount` | Totalt antal taggar |
-| `gentags` | Allmänna taggar (General) |
-| `arttags` | Artist-taggar |
-| `chartags` | Karaktärstaggar (Character) |
-| `copytags` | Upphovsrättstaggar (Copyright) |
-| `metatags` | Meta-taggar |
-
-**Exempel:** `tagcount:<10` (inlägg med få taggar), `arttags:>=1` (inlägg med minst 1 artist-tagg)
-
-#### Sortering
-
-Sortera resultat med `order:{värde}`. Lägg till suffixet `_asc` eller `_desc` där det är tillämpligt (standard är oftast fallande/descending).
-
-| Värde | Beskrivning |
-|:------|:------------|
-| `id` / `id_desc` | Nyaste uppladdningarna först (standard) |
-| `id_asc` | Äldsta uppladdningarna först |
-| `filesize` | Största filerna först |
-| `landscape` | Bredaste bildförhållandet (aspect ratio) först |
-| `portrait` | Högsta bildförhållandet först |
-| `md5` | Sortera med MD5-hash (deterministisk, slumpmässig blandning) |
-| `custom` | Sortera efter ordningen som ges i `id:list`. Exempel: `id:3,1,2 order:custom` |
+- **Söksyntax:** Blombooru stöder en kraftfull Danbooru-kompatibel söksyntax. För en fullständig guide som täcker alla operatorer och kvalifikatorer, se [Söksyntax-guiden](docs/Search%20Syntax%20Guide/syntax_guide-sv.md).
 
 ### Dela media
 
@@ -585,34 +567,74 @@ Sortera resultat med `order:{värde}`. Lägg till suffixet `_asc` eller `_desc` 
 Blombooru inkluderar en inbyggd systemuppdaterare i adminpanelen som gör att du enkelt kan uppdatera din installation till den senaste versionen.
 
 > [!WARNING]
-> Säkerhetskopiera alltid dina data innan du uppdaterar! Även om uppdateringar är utformade för att vara säkra, kan oväntade problem uppstå, särskilt om du uppdaterar till en ny huvudversion eller den senaste utvecklarversionen (dev build).
+> Säkerhetskopiera alltid din data innan du uppdaterar! Även om uppdateringar är utformade för att vara säkra, kan oväntade problem uppstå, särskilt om du uppdaterar till en ny pre-release eller dev-versionen.
 
 #### Hur man uppdaterar
+
+> [!NOTE]
+> Uppdatering via webbgränssnittet stöds endast för direkta Python-installationer. För Docker-instanser uppdaterar du direkt:
+> - **Färdigbyggd (GHCR):** `docker compose up -d --pull always`
+> - **Lokalt byggd:** `docker compose down && git pull && docker compose -f docker-compose.dev.yml up -d --build`
 
 1. Logga in som admin och navigera till **Adminpanelen**.
 2. Välj fliken **System**.
 3. Rulla ner till sektionen **System Update**.
 4. Klicka på **Check for Updates** för att hämta den senaste versionsinformationen från GitHub.
 5. Granska ändringsloggen genom att klicka på **View Changelog** för att se vad som är nytt.
-6. Om uppdateringar finns tillgängliga, klicka på antingen:
-   - **Update to Latest Dev** - Uppdaterar till den senaste commiten på `main`-grenen (bleeding edge)
-   - **Update to Latest Stable** - Uppdaterar till den senaste taggade releasen (rekommenderas)
+6. Om en uppdatering finns tillgänglig, klicka på **Update to Latest Stable** för att starta uppdateringen.
 
-Uppdateraren kommer automatiskt att köra `git pull` (eller `git checkout <tag>`) och visa utdata. Efter uppdateringen, **starta om Blombooru** för att tillämpa ändringarna:
-
-- **Docker:** `docker compose down && docker compose up -d`
-
-> [!NOTE]
-> Docker-uppdateringar stöds inte för tillfället inifrån webbgränssnittet. När Blombooru körs i Docker visas en varning som ber dig att manuellt köra `git pull` på värddatorn och bygga om containern.
-
-- **Python:** Stoppa servern (Ctrl+C) och kör `python run.py` igen
+Uppdateraren hämtar automatiskt den senaste releasetaggen och checkar ut den. Efter uppdateringen, **starta om Blombooru** för att tillämpa ändringarna.
 
 #### Ändringar i beroenden
 
-Om uppdateringen innehåller ändringar i `requirements.txt` eller `docker-compose.yml` kommer uppdateraren att visa ett meddelande. Du behöver då:
+För direkta Python-installationer installerar uppdateraren automatiskt uppdaterade beroenden om `requirements.txt` har ändrats. Om den automatiska installationen misslyckas kör du manuellt `pip install -r requirements.txt` i din virtuella miljö.
 
-- **Docker:** Köra `docker compose down && docker compose up --build -d` för att bygga om containern.
-- **Python:** Stoppa servern (Ctrl+C) och köra `pip install -r requirements.txt` innan du kör `python run.py` igen.
+Om konfigurationsfiler (som `docker-compose.yml` eller `example.env`) har ändrats visar uppdateraren ett meddelande med nedladdningslänkar till uppdaterade filer från releasen.
+
+### Kontoåterställning
+
+> [!WARNING]
+> Att återställa lösenordet ogiltigförklarar inte befintliga inloggningssessioner (tokens förblir giltiga tills de löper ut, upp till 30 dagar). Om du misstänker att kontot har komprometterats bör du även överväga att rotera din `SECRET_KEY` (sparad i `data/settings.json` eller konfigurerad via `BLOMBOORU_SECRET_KEY`) och starta om instansen, vilket omedelbart ogiltigförklarar alla aktiva sessioner.
+
+Om du har glömt ditt adminlösenord eller behöver ändra administratörens användarnamn kan du använda skriptet `pass_reset.py`.
+
+Minst ett av alternativen `--reset-password`, `--password` eller `--username` måste anges.
+
+**Återställ lösenord interaktivt (rekommenderas):**
+
+Frågar säkert efter lösenord och bekräftelse utan att exponera det i shell-historiken eller processlistan:
+
+```bash
+docker compose exec -it web python pass_reset.py --reset-password
+```
+
+**Återställ lösenord icke-interaktivt:**
+
+```bash
+docker compose exec web python pass_reset.py --password "mynewpassword"
+```
+
+**Ändra endast användarnamn:**
+
+```bash
+docker compose exec web python pass_reset.py --username "newadmin"
+```
+
+**Återställ båda samtidigt:**
+
+```bash
+docker compose exec -it web python pass_reset.py --username "newadmin" --reset-password
+```
+
+Samma valideringsregler som i webbgränssnittet gäller:
+
+| Fält | Minsta längd | Maxlängd |
+|:------|:-----------|:-----------|
+| Lösenord | 6 | 50 |
+| Användarnamn | 1 | 50 |
+
+> [!NOTE]
+> Om du kör Blombooru direkt med Python utelämnar du `docker compose exec web` (eller `docker compose exec -it web`) från kommandona ovan och använder den virtuella miljön för att köra skriptet istället.
 
 ### API & Tredjepartsappar
 
@@ -643,15 +665,17 @@ Blombooru implementerar ett **Danbooru v2-kompatibelt API**, vilket gör att du 
 > [!NOTE]
 > Skrivoperationer (uppladdning, redigering, etc.) via API:et är skrivskyddade eller simulerade (stubbed) för att förhindra fel i tredjepartsappar. Sociala funktioner såsom röstning, favoriter, kommentarer, forum, DM och wiki-sidor returnerar tomma resultat.
 
+#### Internt API
+
+Blombooru har även ett internt REST-API för administrativa uppgifter, innehållshantering och anpassade automatiseringar. För detaljer om tillgängliga endpoints och autentisering, se den [interna API-dokumentationen](docs/Internal%20API/Introduction.md). Observera att det interna API:et inte har några stabilitetsgarantier och kan ändras mellan versioner, samt att API-dokumentationen endast finns tillgänglig på engelska.
+
 ## Teman
 
 Blombooru är designat för att vara enkelt att byta tema på.
 
-- **CSS-variabler:** Kärnfärgerna styrs av CSS-variabler definierade i standardtemat/-teman.
+- **Temahantering:** Anpassade teman kan skapas, redigeras, exporteras och importeras direkt i adminpanelen utan att behöva starta om servern.
 
-- **Anpassade teman:** För att skapa ditt eget tema, skapa helt enkelt en ny `.css`-fil i katalogen `frontend/static/themes/`, kopiera hela innehållet från temat `default_dark.css` och börja anpassa! Registrera det sedan i filen `backend/app/themes.py` för att kunna använda det.
-
-Ditt nya tema kommer automatiskt att dyka upp i rullgardinsmenyn för temaval i adminpanelen.
+- **CSS-variabler:** Kärnfärgerna styrs av CSS-variabler definierade i varje tema.
 
 ## Tekniska detaljer
 
@@ -663,7 +687,18 @@ Ditt nya tema kommer automatiskt att dyka upp i rullgardinsmenyn för temaval i 
 | **Cachning** | Redis 7+ (Valfritt) |
 | **Delade taggar** | Valfri extern PostgreSQL-instans för att dela taggar mellan instanser |
 | **Medialagring** | Lokalt filsystem med sökvägar refererade i databasen. Original-metadata bevaras alltid men kan valfritt rensas bort "on-the-fly" i delad media. |
-| **Format som stöds** | JPG, PNG, WEBP, GIF, MP4, WEBM |
+| **Stödda Bildformat** | JPG, PNG, WEBP, GIF, AVIF, JXL, BMP, TIFF, HEIC/HEIF |
+| **Stödda Videoformat** | MP4, WEBM, MOV, M4V, MKV, AVI |
+
+## Dokumentation & Gemenskap
+
+- [Söksyntax-guide](docs/Search%20Syntax%20Guide/syntax_guide-sv.md): Fullständig syntaxreferens med exempel.
+- [Intern API-dokumentation](docs/Internal%20API/Introduction.md): Endpoints för utvecklare och automatiseringsskript (på engelska).
+- [Skärmbildsgalleri](docs/Gallery.md): Visuell översikt av användargränssnittet och funktioner.
+- [Ändringslogg](CHANGELOG.md): Sammanfattning av release notes för varje version.
+- [Bidra](CONTRIBUTING.md): Riktlinjer för kod- och översättningsbidrag.
+- [Säkerhetspolicy](SECURITY.md): Sårbarhetsrapportering och säkerhetsinformation.
+- [Tack & Erkännanden](ACKNOWLEDGEMENTS.md): Erkännanden för tredjepartsbibliotek och resurser.
 
 ## Ansvarsfriskrivning
 

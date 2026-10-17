@@ -1,6 +1,22 @@
 class AdminContent {
     constructor(adminPanel) {
         this.app = adminPanel;
+        this.isScanning = false;
+        this.scanAbortController = null;
+        this._scanOriginalText = null;
+    }
+
+    cancelScan() {
+        if (this.scanAbortController) {
+            this.scanAbortController.abort();
+            this.scanAbortController = null;
+        }
+        this.isScanning = false;
+        const scanBtn = document.getElementById('scan-media-btn');
+        if (scanBtn && this._scanOriginalText) {
+            scanBtn.disabled = false;
+            scanBtn.textContent = this._scanOriginalText;
+        }
     }
 
     parseTagWithCategory(tagString) {
@@ -359,6 +375,11 @@ class AdminContent {
     async scanMedia() {
         const scanBtn = document.getElementById('scan-media-btn');
         const originalText = scanBtn.textContent;
+        this._scanOriginalText = originalText;
+        this.isScanning = true;
+        this.scanAbortController = new AbortController();
+        const signal = this.scanAbortController.signal;
+
         scanBtn.disabled = true;
         scanBtn.textContent = window.i18n.t('admin.actions.scanning');
 
@@ -366,6 +387,10 @@ class AdminContent {
             const result = await app.apiCall('/api/admin/scan-media', {
                 method: 'POST'
             });
+
+            if (signal.aborted || (window.uploaderInstance?.isAborted?.())) {
+                return;
+            }
 
             if (result.new_files === 0) {
                 app.showNotification(window.i18n.t('notifications.admin.no_untracked_media'), 'info');
@@ -388,69 +413,82 @@ class AdminContent {
 
             // Fetch and add each file to the uploader
             let loadedCount = 0;
-            let skippedCount = 0;
+            let queuedCount = 0;
             let duplicateCount = 0;
+            let skippedCount = 0;
 
             for (const filePath of result.files) {
+                if (signal.aborted || uploader.isAborted?.()) {
+                    break;
+                }
                 try {
                     // Check if file is already in the upload queue
                     if (uploader.isFileQueued(filePath)) {
-                        duplicateCount++;
+                        queuedCount++;
                         continue;
                     }
 
                     scanBtn.textContent = window.i18n.t('admin.messages.scan_progress', { current: loadedCount + 1, total: result.new_files });
 
-                    // Fetch the file metadata from the server
-                    const infoResponse = await fetch(`/api/admin/get-untracked-file-info?path=${encodeURIComponent(filePath)}`);
-
-                    if (!infoResponse.ok) {
-                        console.error(`Failed to fetch file info: ${filePath}`);
-                        skippedCount++;
-                        continue;
-                    }
-
-                    const info = await infoResponse.json();
-
-                    const file = new File([], info.name, {
-                        type: info.mime_type,
-                        lastModified: Date.now(),
-                    });
-
-                    file._scannedSize = info.size;
-
                     // Add to uploader
-                    await uploader.addScannedFile(file, filePath);
+                    await uploader.addScannedFile(filePath, null, { signal });
+                    if (signal.aborted || uploader.isAborted?.()) {
+                        break;
+                    }
                     loadedCount++;
 
                 } catch (error) {
-                    console.error(`Error loading file ${filePath}:`, error);
-                    skippedCount++;
+                    if (error.name === 'AbortError' || signal.aborted || uploader.isAborted?.()) {
+                        break;
+                    }
+                    if (uploader.isDuplicateError?.(error)) {
+                        console.warn(`File ${filePath} is a duplicate, skipping:`, error);
+                        duplicateCount++;
+                    } else {
+                        console.error(`Error loading file ${filePath}:`, error);
+                        skippedCount++;
+                        if (uploader.isSystemicError?.(error)) {
+                            break;
+                        }
+                    }
                 }
             }
 
-            // Show results
-            let message = '';
-            if (loadedCount > 0) {
-                message = `Loaded ${loadedCount} file(s) into the editor.`;
-            }
-            if (duplicateCount > 0) {
-                message += `${message ? '\n' : ''}${duplicateCount} file(s) already in queue.`;
-            }
-            if (skippedCount > 0) {
-                message += `${message ? '\n' : ''}${skippedCount} file(s) skipped due to errors.`;
-            }
-            if (loadedCount > 0) {
-                message += '\n\nYou can now edit tags and ratings before submitting.';
+            if (signal.aborted || uploader.isAborted?.()) {
+                return;
             }
 
-            const notificationType = loadedCount > 0 ? 'success' : (duplicateCount > 0 ? 'info' : 'warning');
+            // Show results
+            const messages = [];
+            if (loadedCount > 0) {
+                messages.push(window.i18n.t('admin.messages.scan_loaded', { count: loadedCount }));
+            }
+            if (queuedCount > 0) {
+                messages.push(window.i18n.t('admin.messages.scan_queued', { count: queuedCount }));
+            }
+            if (duplicateCount > 0) {
+                messages.push(window.i18n.t('upload.progress.duplicates_skipped', { count: duplicateCount }));
+            }
+            if (skippedCount > 0) {
+                messages.push(window.i18n.t('admin.messages.scan_skipped', { count: skippedCount }));
+            }
+            if (loadedCount > 0) {
+                messages.push('\n' + window.i18n.t('admin.messages.scan_ready_hint'));
+            }
+
+            const message = messages.join('\n');
+            const notificationType = loadedCount > 0 ? 'success' : ((duplicateCount > 0 || queuedCount > 0) ? 'info' : 'warning');
             app.showNotification(message, notificationType);
 
         } catch (error) {
+            if (error.name === 'AbortError' || signal.aborted || (window.uploaderInstance?.isAborted?.())) {
+                return;
+            }
             console.error('Scan error:', error);
             app.showNotification(error.message, 'error', window.i18n.t('notifications.admin.error_scanning_media'));
         } finally {
+            this.isScanning = false;
+            this.scanAbortController = null;
             scanBtn.disabled = false;
             scanBtn.textContent = originalText;
         }
@@ -671,6 +709,9 @@ class AdminContent {
 
         // Setup Media Type Tags
         this.setupMediaTypeTags();
+
+        // Setup Automatic AI Metadata Tags
+        this.setupAutoApplyAITags();
     }
 
     setupMediaTypeTags() {
@@ -690,6 +731,32 @@ class AdminContent {
                 e.preventDefault();
                 this.saveMediaTypeTags();
             });
+        }
+    }
+
+    setupAutoApplyAITags() {
+        const autoApplyAITagsForm = document.getElementById('auto-apply-ai-tags-form');
+        if (autoApplyAITagsForm) {
+            autoApplyAITagsForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.saveAutoApplyAITags();
+            });
+        }
+    }
+
+    async saveAutoApplyAITags() {
+        const el = document.getElementById('auto-apply-ai-tags');
+        const enabled = el ? el.checked : false;
+
+        try {
+            await app.apiCall('/api/admin/settings', {
+                method: 'PATCH',
+                body: JSON.stringify({ auto_apply_ai_tags: enabled })
+            });
+
+            app.showNotification(window.i18n.t('notifications.admin.auto_apply_ai_tags_saved') || window.i18n.t('notifications.admin.settings_updated'), 'success');
+        } catch (error) {
+            app.showNotification(error.message, 'error', window.i18n.t('notifications.admin.error_saving_settings'));
         }
     }
 
@@ -726,9 +793,11 @@ class AdminContent {
 
             const totalTagsEl = document.getElementById('total-tags');
             const totalAliasesEl = document.getElementById('total-aliases');
+            const totalImplicationsEl = document.getElementById('total-implications');
 
             if (totalTagsEl) totalTagsEl.textContent = stats.total_tags;
             if (totalAliasesEl) totalAliasesEl.textContent = stats.total_aliases;
+            if (totalImplicationsEl) totalImplicationsEl.textContent = stats.total_implications;
         } catch (error) {
             console.error('Error loading tag stats:', error);
         }
@@ -891,7 +960,7 @@ class AdminContent {
                     <div class="flex items-center gap-2 min-w-0">
                         <button class="manage-tag-btn flex-shrink-0 flex items-center justify-center w-7 h-7 bg-primary primary-text hover:bg-primary border-primary hover:border-primary transition-colors cursor-pointer"
                             data-tag-id="${tag.id}"
-                            data-tag-name="${this.app.escapeHtml(tag.name)}"
+                            data-tag-name="${escapeHtml(tag.name)}"
                             data-tag-category="${tag.category}"
                             data-tag-rating="${tag.rating}"
                             title="${window.i18n.t('admin.tags_management.manage_tag')}">
@@ -929,33 +998,16 @@ class AdminContent {
     }
 
     async deleteTag(tagId, tagName, tagCategory, tagRating) {
-        const modal = new ModalHelper({
-            id: 'delete-tag-modal',
-            type: 'danger',
-            title: window.i18n.t('modal.delete_tag.title'),
-            message: window.i18n.t('modal.delete_tag.message'),
-            confirmText: window.i18n.t('common.yes_delete'),
-            cancelText: window.i18n.t('common.cancel'),
-            confirmId: 'delete-tag-confirm-yes',
-            cancelId: 'delete-tag-confirm-no',
-            onConfirm: async () => {
-                try {
-                    const result = await app.apiCall(`/api/admin/tags/${tagId}`, { method: 'DELETE' });
-                    app.showNotification(window.i18n.t('notifications.admin.tag_deleted', { tag_name: result.tag_name }), 'success');
-                    await this.searchTags();
-                    await this.app.content.loadTagStats();
-                } catch (e) {
-                    app.showNotification(e.message, 'error', window.i18n.t('notifications.admin.error_deleting_tag'));
-                }
-            },
-            onCancel: () => {
-                if (tagName && tagCategory && tagRating) {
-                    this.showTagManageModal(tagId, tagName, tagCategory, tagRating);
-                }
-            }
+        TagManageModals.remove({
+            tagId, tagName, tagCategory, tagRating,
+            onCancel: () => this.showTagManageModal(tagId, tagName, tagCategory, tagRating),
+            onDeleted: () => this.refreshTagViews()
         });
+    }
 
-        modal.show();
+    async refreshTagViews() {
+        await this.searchTags();
+        await this.app.content.loadTagStats();
     }
 
     showTagManageModal(tagId, tagName, tagCategory, tagRating) {
@@ -970,7 +1022,7 @@ class AdminContent {
         modal.innerHTML = `
             <div class="surface border-2 border-primary p-8 max-w-md w-full text-center">
                 <h2 class="text-xl font-bold mb-2 text-primary">${window.i18n.t('admin.tags_management.manage_tag')}</h2>
-                <p class="text-base mb-6 text font-medium">${this.app.escapeHtml(tagName)}</p>
+                <p class="text-base mb-6 text font-medium">${escapeHtml(tagName)}</p>
                 <div class="flex flex-col gap-3">
                     <button id="tag-manage-edit" class="btn-dark px-6 py-3 font-bold text-sm flex items-center justify-center gap-2 cursor-pointer">
                         ${window.Icons.edit({ size: 16 })}
@@ -1027,463 +1079,21 @@ class AdminContent {
     }
 
     showTagMergeModal(tagId, tagName, tagCategory, tagRating) {
-        const existingModal = document.getElementById('tag-merge-modal');
-        if (existingModal) existingModal.remove();
-
-        const modal = document.createElement('div');
-        modal.id = 'tag-merge-modal';
-        modal.className = 'age-verification-overlay';
-        modal.style.display = 'flex';
-
-        modal.innerHTML = `
-            <div class="surface border-2 border-primary p-8 max-w-md w-full text-left">
-                <h2 class="text-xl font-bold mb-6 text-primary text-center">
-                    ${window.i18n.t('admin.tags_management.merge_tag')}
-                </h2>
-
-                <div class="relative mb-6">
-                    <label class="block text-xs font-bold mb-2">
-                        ${window.i18n.t('admin.tags_management.target_tag_name')}
-                    </label>
-                    <input type="text" id="tag-merge-target-input"
-                        class="w-full bg px-3 py-2 border text-xs focus:outline-none hover:border-primary transition-colors focus:border-primary"
-                        placeholder="cat_ears" autocomplete="off" spellcheck="false">
-                    <p id="tag-merge-target-error" class="text-xs text-danger mt-1" style="display:none;"></p>
-                </div>
-
-                <div class="flex gap-3 justify-center">
-                    <button id="tag-merge-submit" class="btn-primary px-6 py-3 font-bold text-sm flex-1 cursor-pointer">
-                        ${window.i18n.t('admin.tags_management.merge_into')}
-                    </button>
-                    <button id="tag-merge-cancel" class="btn px-6 py-3 font-bold text-sm flex-1 cursor-pointer">
-                        ${window.i18n.t('common.cancel')}
-                    </button>
-                </div>
-            </div>
-        `;
-
-        document.body.appendChild(modal);
-
-        const input = document.getElementById('tag-merge-target-input');
-        const errorEl = document.getElementById('tag-merge-target-error');
-
-        const validateTargetTag = () => {
-            const val = input.value.trim().toLowerCase().replace(/\s+/g, '_');
-            if (!val) {
-                input.classList.add('border-danger');
-                errorEl.textContent = window.i18n.t('admin.tags_management.target_tag_name');
-                errorEl.style.display = '';
-                return false;
-            }
-            if (val === tagName.toLowerCase()) {
-                input.classList.add('border-danger');
-                errorEl.textContent = window.i18n.t('notifications.admin.cannot_merge_self');
-                errorEl.style.display = '';
-                return false;
-            }
-            input.classList.remove('border-danger');
-            errorEl.style.display = 'none';
-            return true;
-        };
-
-        if (typeof TagAutocomplete !== 'undefined') {
-            new TagAutocomplete(input, {
-                multipleValues: false,
-                appendSpace: false,
-                allowCreate: false,
-                onSelect: () => {
-                    validateTargetTag();
-                }
-            });
-        }
-
-        input.addEventListener('input', () => {
-            const pos = input.selectionStart;
-            input.value = input.value.replace(/ /g, '_');
-            input.setSelectionRange(pos, pos);
-            validateTargetTag();
-        });
-
-        input.focus();
-
-        const handleEscape = (e) => {
-            if (e.key === 'Escape') {
-                closeModal();
-                this.showTagManageModal(tagId, tagName, tagCategory, tagRating);
-            }
-        };
-
-        const closeModal = () => {
-            modal.remove();
-            document.removeEventListener('keydown', handleEscape);
-        };
-
-        document.getElementById('tag-merge-cancel').addEventListener('click', () => {
-            closeModal();
-            this.showTagManageModal(tagId, tagName, tagCategory, tagRating);
-        });
-
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                closeModal();
-                this.showTagManageModal(tagId, tagName, tagCategory, tagRating);
-            }
-        });
-
-        document.addEventListener('keydown', handleEscape);
-
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                document.getElementById('tag-merge-submit').click();
-            }
-        });
-
-        document.getElementById('tag-merge-submit').addEventListener('click', async () => {
-            if (!validateTargetTag()) return;
-            const targetTag = input.value.trim().toLowerCase().replace(/\s+/g, '_');
-
-            closeModal();
-
-            const tagParams = {
-                source_tag: this.app.escapeHtml(tagName),
-                target_tag: this.app.escapeHtml(targetTag)
-            };
-
-            const subtitle = window.i18n.t('admin.tags_management.confirm_merge_subtitle', tagParams);
-            const applyAction = window.i18n.t('admin.tags_management.confirm_merge_apply', tagParams);
-            const deleteAction = window.i18n.t('admin.tags_management.confirm_merge_delete', tagParams);
-            const aliasAction = window.i18n.t('admin.tags_management.confirm_merge_alias', tagParams);
-
-            const messageHTML = `
-                <div class="text-base font-semibold text mb-2">${subtitle}</div>
-                <ul class="text-left text-sm space-y-2 text list-disc px-6">
-                    <li>${applyAction}</li>
-                    <li>${deleteAction}</li>
-                    <li>${aliasAction}</li>
-                </ul>
-            `;
-
-            const confirmModal = new ModalHelper({
-                id: 'confirm-merge-tag-modal',
-                type: 'warning',
-                title: window.i18n.t('admin.tags_management.confirm_merge_title'),
-                message: messageHTML,
-                confirmText: window.i18n.t('admin.tags_management.merge_tag'),
-                cancelText: window.i18n.t('common.cancel'),
-                confirmId: 'confirm-merge-yes',
-                cancelId: 'confirm-merge-no',
-                onConfirm: async () => {
-                    try {
-                        const result = await app.apiCall(`/api/admin/tags/${tagId}/merge-into`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ target_tag_name: targetTag })
-                        });
-                        app.showNotification(
-                            window.i18n.t('notifications.admin.tag_merged', {
-                                source_tag: result.source_tag_name,
-                                target_tag: result.target_tag_name
-                            }),
-                            'success'
-                        );
-                        await this.searchTags();
-                        await this.app.content.loadTagStats();
-                    } catch (e) {
-                        app.showNotification(e.message, 'error', window.i18n.t('notifications.admin.error_merging_tag'));
-                    }
-                },
-                onCancel: () => {
-                    this.showTagManageModal(tagId, tagName, tagCategory, tagRating);
-                }
-            });
-
-            confirmModal.show();
+        TagManageModals.merge({
+            tagId, tagName,
+            onCancel: () => this.showTagManageModal(tagId, tagName, tagCategory, tagRating),
+            onMerged: () => this.refreshTagViews()
         });
     }
 
 
     async showTagEditModal(tagId, tagName, tagCategory, tagRating) {
-        const existingModal = document.getElementById('tag-edit-modal');
-        if (existingModal) existingModal.remove();
-
-        // Fetch tag details including aliases
-        let currentAliases = [];
-        try {
-            const res = await fetch(`/api/admin/tags/${tagId}`);
-            if (res.ok) {
-                const data = await res.json();
-                if (Array.isArray(data.aliases)) {
-                    currentAliases = data.aliases;
-                }
-            }
-        } catch (e) {
-            console.error('Error fetching tag details:', e);
-        }
-
-        const categories = [
-            { value: 'general', label: window.i18n.t('common.tag_category_general') },
-            { value: 'artist', label: window.i18n.t('common.tag_category_artist') },
-            { value: 'character', label: window.i18n.t('common.tag_category_character') },
-            { value: 'copyright', label: window.i18n.t('common.tag_category_copyright') },
-            { value: 'meta', label: window.i18n.t('common.tag_category_meta') },
-        ];
-
-        const categoryOptions = categories.map(c =>
-            `<div class="custom-select-option px-3 py-2 cursor-pointer hover:surface text-xs" data-value="${c.value}">${c.label}</div>`
-        ).join('');
-
-        const currentCatLabel = (categories.find(c => c.value === tagCategory) || categories[0]).label;
-
-        const ratings = [
-            { value: 'none', label: window.i18n.t('common.none')},
-            { value: 'safe', label: window.i18n.t('common.safe') },
-            { value: 'questionable', label: window.i18n.t('common.questionable') },
-            { value: 'explicit', label: window.i18n.t('common.explicit') },
-        ];
-
-        const ratingOptions = ratings.map(c =>
-            `<div class="custom-select-option px-3 py-2 cursor-pointer hover:surface text-xs" data-value="${c.value}">${c.label}</div>`
-        ).join('');
-
-        const currentRatingLabel = (ratings.find(c => c.value === tagRating) || ratings[0]).label;
-
-        const modal = document.createElement('div');
-        modal.id = 'tag-edit-modal';
-        modal.className = 'age-verification-overlay';
-        modal.style.display = 'flex';
-
-        modal.innerHTML = `
-            <div class="surface border-2 border-primary p-8 max-w-md w-full">
-                <h2 class="text-xl font-bold mb-6 text-primary text-center">${window.i18n.t('admin.tags_management.edit_tag')}</h2>
-
-                <div class="mb-4">
-                    <label class="block text-xs font-bold mb-2">${window.i18n.t('admin.tags_management.tag_name')}</label>
-                    <input type="text" id="tag-edit-name" value="${this.app.escapeHtml(tagName)}"
-                        class="w-full bg px-3 py-2 border text-xs focus:outline-none hover:border-primary transition-colors focus:border-primary"
-                        autocomplete="off" spellcheck="false">
-                    <p id="tag-edit-name-error" class="text-xs text-danger mt-1" style="display:none;"></p>
-                </div>
-
-                <div class="mb-4">
-                    <label class="block text-xs font-bold mb-2">${window.i18n.t('admin.tags_management.tag_category')}</label>
-                    <div id="tag-edit-category-select" class="custom-select w-full" data-value="${tagCategory}">
-                        <button class="custom-select-trigger w-full flex items-center justify-between gap-3 px-3 py-2 bg border text-xs cursor-pointer focus:outline-none hover:border-primary transition-colors focus:border-primary" type="button">
-                            <span class="custom-select-value text">${currentCatLabel}</span>
-                            ${window.Icons.selectArrow({ size: 12 })}
-                        </button>
-                        <div class="custom-select-dropdown bg border border-primary max-h-60 overflow-y-auto shadow-lg">
-                            ${categoryOptions}
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="mb-4">
-                    <label class="block text-xs font-bold mb-2">${window.i18n.t('admin.tags_management.tag_rating')}</label>
-                    <div id="tag-edit-rating-select" class="custom-select w-full" data-value="${tagRating}">
-                        <button class="custom-select-trigger w-full flex items-center justify-between gap-3 px-3 py-2 bg border text-xs cursor-pointer focus:outline-none hover:border-primary transition-colors focus:border-primary" type="button">
-                            <span class="custom-select-value text">${currentRatingLabel}</span>
-                            ${window.Icons ? window.Icons.selectArrow({ size: 12 }) : ''}
-                        </button>
-                        <div class="custom-select-dropdown bg border border-primary max-h-60 overflow-y-auto shadow-lg">
-                            ${ratingOptions}
-                        </div>
-                    </div>
-                </div>
-
-                <div class="mb-6">
-                    <label class="block text-xs font-bold mb-2">${window.i18n.t('admin.tags_management.tag_aliases')}</label>
-                    <div id="tag-edit-aliases" contenteditable="true" spellcheck="false"
-                        class="w-full bg px-3 py-2 border text-xs min-h-[60px] max-h-[120px] overflow-y-auto focus:outline-none hover:border-primary transition-colors focus:border-primary"></div>
-                    <p class="text-xs text-secondary mt-1">${window.i18n.t('admin.tags_management.tag_aliases_hint')}</p>
-                </div>
-
-                <div class="flex gap-3 justify-center">
-                    <button id="tag-edit-save" class="btn-primary px-6 py-3 font-bold text-sm flex-1 cursor-pointer">
-                        ${window.i18n.t('common.save')}
-                    </button>
-                    <button id="tag-edit-cancel" class="btn px-6 py-3 font-bold text-sm flex-1 cursor-pointer">
-                        ${window.i18n.t('common.cancel')}
-                    </button>
-                </div>
-            </div>
-        `;
-
-        document.body.appendChild(modal);
-
-        const categorySelectEl = document.getElementById('tag-edit-category-select');
-        const categorySelect = new CustomSelect(categorySelectEl);
-        categorySelect.setValue(tagCategory);
-
-        const ratingSelectEl = document.getElementById('tag-edit-rating-select');
-        const ratingSelect = new CustomSelect(ratingSelectEl);
-        ratingSelect.setValue(tagRating);
-
-        const aliasesInput = document.getElementById('tag-edit-aliases');
-        const currentAliasSet = new Set(currentAliases.map(a => a.toLowerCase()));
-
-        // Prepopulate aliases input
-        if (currentAliases.length > 0) {
-            aliasesInput.textContent = currentAliases.join(' ') + ' ';
-        }
-
-        // Setup alias validation using TagInputHelper in inverted mode
-        const aliasValidationCache = new Map();
-        const checkAliasConflict = async (alias) => {
-            const normalized = alias.toLowerCase().trim();
-            // If it's one of this tag's own aliases or the tag's current/new name, it's not a conflict
-            if (currentAliasSet.has(normalized) || normalized === tagName.toLowerCase()) {
-                return false;
-            }
-            return await this.app.tagInputHelper.checkTagOrAliasExists(normalized);
-        };
-
-        if (this.app.tagInputHelper) {
-            this.app.tagInputHelper.setupTagInput(aliasesInput, 'tag-edit-aliases', {
-                validationCache: aliasValidationCache,
-                checkFunction: checkAliasConflict,
-                invertLogic: true,
-                expandImplications: false
-            });
-            // Initial styling pass
-            await this.app.tagInputHelper.validateAndStyleTags(aliasesInput, {
-                validationCache: aliasValidationCache,
-                checkFunction: checkAliasConflict,
-                invertLogic: true
-            });
-        }
-
-        // Inverse validation with current tag's own name seeded as "not a conflict"
-        const nameInput = document.getElementById('tag-edit-name');
-        const nameError = document.getElementById('tag-edit-name-error');
-        let nameConflict = false;
-        let validationTimer = null;
-
-        const validateName = async () => {
-            const val = nameInput.value.trim().toLowerCase().replace(/\s+/g, '_');
-            if (!val || val === tagName.toLowerCase()) {
-                nameConflict = false;
-                nameInput.classList.remove('border-danger');
-                nameError.style.display = 'none';
-                return;
-            }
-            // Check if name conflicts with an existing tag or alias
-            try {
-                const res = await fetch(`/api/tags/${encodeURIComponent(val)}`);
-                if (res.ok) {
-                    nameConflict = true;
-                    nameInput.classList.add('border-danger');
-                    nameError.textContent = window.i18n.t('notifications.admin.tag_name_conflict');
-                    nameError.style.display = '';
-                    return;
-                }
-                const aliasRes = await fetch(`/api/admin/check-alias?name=${encodeURIComponent(val)}`);
-                if (aliasRes.ok) {
-                    const aliasData = await aliasRes.json();
-                    if (aliasData.exists) {
-                        nameConflict = true;
-                        nameInput.classList.add('border-danger');
-                        nameError.textContent = window.i18n.t('notifications.admin.tag_name_conflict');
-                        nameError.style.display = '';
-                        return;
-                    }
-                }
-            } catch (e) { /* network error: allow save */ }
-            nameConflict = false;
-            nameInput.classList.remove('border-danger');
-            nameError.style.display = 'none';
-        };
-
-        nameInput.addEventListener('input', () => {
-            // Replace spaces with underscores as user types
-            const pos = nameInput.selectionStart;
-            nameInput.value = nameInput.value.replace(/ /g, '_');
-            nameInput.setSelectionRange(pos, pos);
-            clearTimeout(validationTimer);
-            validationTimer = setTimeout(validateName, 400);
+        await TagManageModals.edit({
+            tagId, tagName, tagCategory, tagRating,
+            tagInputHelper: this.app.tagInputHelper,
+            onCancel: () => this.showTagManageModal(tagId, tagName, tagCategory, tagRating),
+            onSaved: () => this.refreshTagViews()
         });
-
-        nameInput.focus();
-        nameInput.select();
-
-        const handleEscape = (e) => {
-            if (e.key === 'Escape') {
-                closeModal();
-                this.showTagManageModal(tagId, tagName, tagCategory, tagRating);
-            }
-        };
-
-        const closeModal = () => {
-            modal.remove();
-            document.removeEventListener('keydown', handleEscape);
-        };
-
-        const doSave = async () => {
-            const newName = nameInput.value.trim().toLowerCase().replace(/\s+/g, '_');
-            if (!newName) {
-                nameInput.classList.add('border-danger');
-                nameError.textContent = window.i18n.t('admin.tags_management.tag_name');
-                nameError.style.display = '';
-                return;
-            }
-            if (nameConflict) {
-                nameInput.focus();
-                return;
-            }
-
-            // Collect non-conflicting aliases from aliasesInput
-            const aliasText = this.app.tagInputHelper ? this.app.tagInputHelper.getPlainTextFromDiv(aliasesInput) : (aliasesInput.textContent || '');
-            const rawAliasTokens = aliasText.split(/\s+/).filter(t => t.length > 0);
-            const validAliases = [];
-            let aliasConflictFound = false;
-
-            for (const token of rawAliasTokens) {
-                const norm = token.toLowerCase().trim();
-                // Check if marked invalid in cache
-                if (aliasValidationCache.get(norm) === true) {
-                    // In invertLogic, true means exists (conflict)
-                    aliasConflictFound = true;
-                } else {
-                    validAliases.push(norm);
-                }
-            }
-
-            if (aliasConflictFound) {
-                aliasesInput.focus();
-                app.showNotification(window.i18n.t('notifications.admin.tag_name_conflict') || 'Some aliases conflict with existing tags or aliases', 'error');
-                return;
-            }
-
-            const newCategory = categorySelect.getValue();
-            const newRating = ratingSelect.getValue();
-            closeModal();
-            try {
-                const result = await app.apiCall(`/api/admin/tags/${tagId}`, {
-                    method: 'PUT',
-                    body: JSON.stringify({ name: newName, category: newCategory, aliases: validAliases, rating: newRating })
-                });
-                app.showNotification(
-                    window.i18n.t('notifications.admin.tag_updated', { old_name: result.old_name }),
-                    'success'
-                );
-                await this.searchTags();
-                await this.app.content.loadTagStats();
-            } catch (e) {
-                app.showNotification(e.message, 'error', window.i18n.t('notifications.admin.error_updating_tag'));
-            }
-        };
-
-        document.getElementById('tag-edit-save').addEventListener('click', doSave);
-        document.getElementById('tag-edit-cancel').addEventListener('click', () => {
-            closeModal();
-            this.showTagManageModal(tagId, tagName, tagCategory, tagRating);
-        });
-
-        nameInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') { e.preventDefault(); doSave(); }
-        });
-
-        document.addEventListener('keydown', handleEscape);
     }
 
     async clearAllTags() {
@@ -1630,38 +1240,146 @@ class AdminContent {
             }
         });
 
+        // Setup Album Tree for search
+        const resultsDiv = document.getElementById('album-search-results');
+        if (resultsDiv && typeof window.AlbumTree !== 'undefined') {
+            this.albumTree = new window.AlbumTree({
+                container: resultsDiv,
+                isSelectable: false,
+                expandOnRowClick: true,
+                renderExtraActions: (album) => {
+                    let dateStr = '';
+                    const dateVal = album.created_at || album.last_modified;
+                    if (dateVal) {
+                        const d = new Date(dateVal);
+                        if (!isNaN(d.getTime())) {
+                            dateStr = `${new Intl.DateTimeFormat(undefined, { dateStyle: "short" }).format(d)} ${new Intl.DateTimeFormat(undefined, { timeStyle: "short", hour12: false }).format(d)}`;
+                        }
+                    }
+                    const parentId = album.parents && album.parents.length > 0 ? album.parents[album.parents.length - 1].id : '';
+
+                    return `
+                        <div class="flex items-center gap-2">
+                            ${dateStr ? `<span class="text-xs text-secondary text-center hidden sm:block">${dateStr}</span>` : ''}
+                            <button class="manage-album-btn flex-shrink-0 flex items-center justify-center w-7 h-7 bg-primary primary-text hover:bg-primary border-primary hover:border-primary transition-colors cursor-pointer"
+                                data-album-id="${album.id}"
+                                data-album-name="${escapeHtml(album.name)}"
+                                data-parent-id="${parentId}"
+                                title="${window.i18n.t('admin.albums_management.manage_album')}">
+                                ${window.Icons.tagMenu({ size: 14 })}
+                            </button>
+                        </div>
+                    `;
+                }
+            });
+
+            // Event delegation for manage buttons
+            resultsDiv.addEventListener('click', (e) => {
+                const btn = e.target.closest('.manage-album-btn');
+                if (btn) {
+                    const albumId = btn.dataset.albumId;
+                    const albumName = btn.dataset.albumName;
+                    const parentId = btn.dataset.parentId || null;
+                    this.showAlbumManageModal(albumId, albumName, parentId);
+                }
+            });
+
+            // Initial load
+            this.albumTree.loadAlbums().then(() => this.albumTree.render());
+        }
+
         // Setup parent album select
         const parentAlbumSelectElement = document.getElementById('parent-album-select');
         if (parentAlbumSelectElement) {
             this.parentAlbumSelect = new CustomSelect(parentAlbumSelectElement);
         }
 
+        // Recalculate album metrics button
+        const recalculateBtn = document.getElementById('recalculate-album-metrics-btn');
+        recalculateBtn?.addEventListener('click', () => this.recalculateAlbumMetrics());
+
+        // Prune albums button
+        const pruneBtn = document.getElementById('prune-albums-btn');
+        pruneBtn?.addEventListener('click', () => this.pruneAlbums());
+
         // Load albums for parent select
         this.loadAlbums();
     }
 
+    async recalculateAlbumMetrics() {
+        const btn = document.getElementById('recalculate-album-metrics-btn');
+        if (!btn) return;
+
+        btn.disabled = true;
+
+        try {
+            await app.apiCall('/api/albums/recalculate', { method: 'POST' });
+            app.showNotification(
+                window.i18n.t('admin.albums_management.maintenance.metrics_recalculated'),
+                'success'
+            );
+            await this.loadAlbumStats();
+            if (this.albumTree) {
+                await this.albumTree.loadAlbums();
+                this.albumTree.render();
+            }
+        } catch (error) {
+            app.showNotification(error.message, 'error');
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    pruneAlbums() {
+        const btn = document.getElementById('prune-albums-btn');
+        if (!btn) return;
+
+        const modal = new ModalHelper({
+            id: 'prune-albums-modal',
+            type: 'warning',
+            title: window.i18n.t('common.confirm_1_title'),
+            message: window.i18n.t('admin.albums_management.maintenance.prune_albums_description'),
+            confirmText: window.i18n.t('common.yes'),
+            cancelText: window.i18n.t('common.no'),
+            confirmId: 'prune-albums-confirm-yes',
+            cancelId: 'prune-albums-confirm-no',
+            onConfirm: async () => {
+                btn.disabled = true;
+
+                try {
+                    const response = await app.apiCall('/api/albums/prune', { method: 'POST' });
+                    app.showNotification(
+                        window.i18n.t('admin.albums_management.maintenance.albums_pruned', {
+                            count: response.count
+                        }),
+                        'success'
+                    );
+                    await this.loadAlbumStats();
+                    if (this.albumTree) {
+                        await this.albumTree.loadAlbums();
+                        this.albumTree.render();
+                    }
+                    await this.loadAlbums();
+                } catch (error) {
+                    app.showNotification(error.message, 'error');
+                } finally {
+                    btn.disabled = false;
+                }
+            }
+        });
+        modal.show();
+    }
+
     async loadAlbumStats() {
         try {
-            const response = await fetch('/api/albums?limit=1000');
+            const response = await fetch('/api/albums/stats');
             const data = await response.json();
 
             const totalAlbumsEl = document.getElementById('total-albums');
             const rootAlbumsEl = document.getElementById('root-albums');
 
-            if (totalAlbumsEl) totalAlbumsEl.textContent = data.total || 0;
-
-            // Count root albums (albums with no parents)
-            let rootCount = 0;
-            if (data.items) {
-                for (const album of data.items) {
-                    const parentsResponse = await fetch(`/api/albums/${album.id}/parents`);
-                    const parentsData = await parentsResponse.json();
-                    if (!parentsData.parents || parentsData.parents.length === 0) {
-                        rootCount++;
-                    }
-                }
-            }
-            if (rootAlbumsEl) rootAlbumsEl.textContent = rootCount;
+            if (totalAlbumsEl) totalAlbumsEl.textContent = data.total_albums || 0;
+            if (rootAlbumsEl) rootAlbumsEl.textContent = data.root_albums || 0;
         } catch (error) {
             console.error('Error loading album stats:', error);
         }
@@ -1669,7 +1387,7 @@ class AdminContent {
 
     async loadAlbums() {
         try {
-            const response = await fetch('/api/albums?limit=1000&sort=name&order=asc');
+            const response = await fetch('/api/albums/tree');
             const data = await response.json();
 
             // Update parent album select dropdown
@@ -1745,117 +1463,8 @@ class AdminContent {
     async searchAlbums() {
         const searchInput = document.getElementById('album-search-input');
         const query = searchInput ? searchInput.value.trim() : '';
-        const resultsDiv = document.getElementById('album-search-results');
-
-        if (this._albumSearchAbortController) {
-            this._albumSearchAbortController.abort();
-            this._albumSearchAbortController = null;
-        }
-
-        if (!query) {
-            if (resultsDiv) resultsDiv.innerHTML = '';
-            return;
-        }
-
-        const abortController = new AbortController();
-        this._albumSearchAbortController = abortController;
-
-        try {
-            const response = await fetch('/api/albums?limit=100&sort=name&order=asc', {
-                signal: abortController.signal
-            });
-            if (!response.ok) return;
-            const data = await response.json();
-
-            // Guard against stale response if query changed in the meantime
-            const currentQuery = document.getElementById('album-search-input')?.value.trim();
-            if (!currentQuery) {
-                if (resultsDiv) resultsDiv.innerHTML = '';
-                return;
-            }
-
-            // Filter albums by name
-            const filtered = (data.items || []).filter(album =>
-                album.name.toLowerCase().includes(query.toLowerCase())
-            );
-
-            if (filtered.length === 0) {
-                resultsDiv.innerHTML = '<p class="bg text-xs text-secondary p-3">' + window.i18n.t('album_picker.no_albums') + '</p>';
-                resultsDiv.scrollTop = 0;
-                return;
-            }
-
-            // Fetch parent chains in parallel with abort signal
-            const albumItems = await Promise.all(
-                filtered.map(async (album) => {
-                    try {
-                        const parentsResponse = await fetch(`/api/albums/${album.id}/parents`, {
-                            signal: abortController.signal
-                        });
-                        if (parentsResponse.ok) {
-                            const parentsData = await parentsResponse.json();
-                            const parentChain = (parentsData.parents || []).map(p => p.name).join(' > ');
-                            const immediateParentId = parentsData.parents && parentsData.parents.length > 0
-                                ? parentsData.parents[parentsData.parents.length - 1].id
-                                : null;
-                            return { album, parentChain, immediateParentId };
-                        }
-                    } catch (e) {
-                        if (e.name === 'AbortError') throw e;
-                    }
-                    return { album, parentChain: '', immediateParentId: null };
-                })
-            );
-
-            resultsDiv.innerHTML = albumItems.map((item, i, arr) => {
-                const { album, parentChain, immediateParentId } = item;
-                let dateStr = '';
-                const dateVal = album.created_at || album.last_modified;
-                if (dateVal) {
-                    const d = new Date(dateVal);
-                    if (!isNaN(d.getTime())) {
-                        dateStr = `${new Intl.DateTimeFormat(undefined, { dateStyle: "short" }).format(d)} ${new Intl.DateTimeFormat(undefined, { timeStyle: "short", hour12: false }).format(d)}`;
-                    }
-                }
-
-                const pathDisplay = parentChain || window.i18n.t('albums.root_album');
-
-                return `
-                <div class="bg px-2 py-1.5 ${i === arr.length - 1 ? '' : 'border-b'} flex flex-wrap items-center gap-2">
-                    <div class="flex items-center gap-2 min-w-0">
-                        <button class="manage-album-btn flex-shrink-0 flex items-center justify-center w-7 h-7 bg-primary primary-text hover:bg-primary border-primary hover:border-primary transition-colors cursor-pointer"
-                            data-album-id="${album.id}"
-                            data-album-name="${this.app.escapeHtml(album.name)}"
-                            data-parent-id="${immediateParentId || ''}"
-                            title="${window.i18n.t('admin.albums_management.manage_album')}">
-                            ${window.Icons.tagMenu({ size: 14 })}
-                        </button>
-                        <a href="/album/${album.id}" class="tag general tag-text overflow-hidden whitespace-nowrap text-ellipsis">${this.app.escapeHtml(album.name)}</a>
-                    </div>
-                    <div class="flex justify-between items-center gap-2 flex-1">
-                        <span class="text-xs text-secondary">(${album.media_count || 0})</span>
-                        ${dateStr ? `<span class="text-xs text-secondary text-center">${dateStr}</span>` : ''}
-                        <span class="text-xs text-secondary uppercase flex-1 text-right truncate" title="${this.app.escapeHtml(pathDisplay)}">${this.app.escapeHtml(pathDisplay)}</span>
-                    </div>
-                </div>
-                `;
-            }).join('');
-            resultsDiv.scrollTop = 0;
-
-            // Add event listeners for Manage buttons
-            resultsDiv.querySelectorAll('.manage-album-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const albumId = btn.dataset.albumId;
-                    const albumName = btn.dataset.albumName;
-                    const parentId = btn.dataset.parentId || null;
-                    this.showAlbumManageModal(albumId, albumName, parentId);
-                });
-            });
-
-        } catch (error) {
-            if (error.name === 'AbortError') return;
-            console.error('Error searching albums:', error);
-            resultsDiv.innerHTML = '<p class="text-xs text-danger p-3">Error searching albums</p>';
+        if (this.albumTree) {
+            this.albumTree.handleSearch(query);
         }
     }
 
@@ -1875,7 +1484,7 @@ class AdminContent {
             <div class="surface border-2 border-primary p-8 max-w-md w-full text-center">
                 ${window.Icons.folder({ size: 48, class: 'mx-auto mb-4 text-primary' })}
                 <h2 class="text-xl font-bold mb-2 text-primary">${window.i18n.t('admin.albums_management.manage_album')}</h2>
-                <p class="text-base mb-6 text font-medium">${this.app.escapeHtml(albumName)}</p>
+                <p class="text-base mb-6 text font-medium">${escapeHtml(albumName)}</p>
                 <div class="flex flex-col gap-3">
                     <button id="album-manage-rename" class="btn-dark px-6 py-3 font-bold text-sm flex items-center justify-center gap-2 cursor-pointer">
                         ${window.Icons.edit({ size: 16 })}
@@ -1952,7 +1561,7 @@ class AdminContent {
                 <h2 class="text-xl font-bold mb-4 text-primary text-center">Rename Album</h2>
                 <div class="mb-6">
                     <label class="block text-xs font-bold mb-2">New Name</label>
-                    <input type="text" id="new-album-name" value="${this.app.escapeHtml(currentName)}"
+                    <input type="text" id="new-album-name" value="${escapeHtml(currentName)}"
                         class="w-full bg px-3 py-2 border text-sm focus:outline-none focus:border-primary">
                 </div>
                 <div class="flex gap-4 justify-center">
@@ -2046,25 +1655,41 @@ class AdminContent {
         document.addEventListener('keydown', handleEscape);
     }
 
-    async getAlbumDescendantIds(albumId) {
-        const descendantIds = new Set();
-
-        const fetchChildren = async (parentId) => {
+    async getAlbumDescendantIds(albumId, allAlbums = null) {
+        if (!allAlbums) {
             try {
-                const response = await fetch(`/api/albums/${parentId}/children`);
-                if (!response.ok) return;
-                const children = await response.json();
-
-                for (const child of children) {
-                    descendantIds.add(child.id.toString());
-                    await fetchChildren(child.id);
+                const response = await fetch('/api/albums/tree');
+                if (response.ok) {
+                    const data = await response.json();
+                    allAlbums = data.items || [];
                 }
-            } catch (error) {
-                console.error('Error fetching children:', error);
+            } catch (e) {
+                console.error('Error fetching albums tree:', e);
+                allAlbums = [];
             }
-        };
+        }
 
-        await fetchChildren(albumId);
+        const childMap = new Map();
+        for (const a of (allAlbums || [])) {
+            if (a.parent_id) {
+                const pid = a.parent_id.toString();
+                if (!childMap.has(pid)) childMap.set(pid, []);
+                childMap.get(pid).push(a.id.toString());
+            }
+        }
+
+        const descendantIds = new Set();
+        const stack = [albumId.toString()];
+        while (stack.length > 0) {
+            const curr = stack.pop();
+            const children = childMap.get(curr) || [];
+            for (const cid of children) {
+                if (!descendantIds.has(cid)) {
+                    descendantIds.add(cid);
+                    stack.push(cid);
+                }
+            }
+        }
         return descendantIds;
     }
 
@@ -2078,7 +1703,7 @@ class AdminContent {
         // Load all albums for the dropdown
         let albums = [];
         try {
-            const response = await fetch('/api/albums?limit=1000&sort=name&order=asc');
+            const response = await fetch('/api/albums/tree');
             const data = await response.json();
             albums = data.items || [];
         } catch (error) {
@@ -2089,7 +1714,7 @@ class AdminContent {
         }
 
         // Get all descendant IDs to prevent circular references
-        const descendantIds = await this.getAlbumDescendantIds(albumId);
+        const descendantIds = await this.getAlbumDescendantIds(albumId, albums);
 
         // Filter out the current album and all its descendants
         const validAlbums = albums.filter(a => {
@@ -2111,7 +1736,7 @@ class AdminContent {
             const isSelected = currentParentId && album.id.toString() === currentParentId.toString();
             optionsHtml += `
                 <div class="custom-select-option px-3 py-2 cursor-pointer hover:surface text-xs ${isSelected ? 'selected' : ''}"
-                    data-value="${album.id}">${this.app.escapeHtml(album.name)}</div>
+                    data-value="${album.id}">${escapeHtml(album.name)}</div>
             `;
         }
 
@@ -2127,14 +1752,14 @@ class AdminContent {
         modal.innerHTML = `
             <div class="surface border-2 border-primary p-8 max-w-md w-full">
                 <h2 class="text-xl font-bold mb-2 text-primary text-center">Change Parent Album</h2>
-                <p class="text-sm mb-4 text-secondary text-center">Album: <span class="text font-medium">${this.app.escapeHtml(albumName)}</span></p>
+                <p class="text-sm mb-4 text-secondary text-center">Album: <span class="text font-medium">${escapeHtml(albumName)}</span></p>
                 <div class="mb-6">
                     <label class="block text-xs font-bold mb-2">New Parent Album</label>
                     <div id="change-parent-select" class="custom-select" data-value="${currentParentId || ''}">
                         <button
                             class="custom-select-trigger w-full flex items-center justify-between gap-3 px-3 py-2 bg border text-xs cursor-pointer focus:outline-none focus:border-primary"
                             type="button">
-                            <span class="custom-select-value text">${this.app.escapeHtml(initialDisplayText)}</span>
+                            <span class="custom-select-value text">${escapeHtml(initialDisplayText)}</span>
                             ${window.Icons.selectArrow({ size: 12 })}
                         </button>
                         <div class="custom-select-dropdown bg border border-primary max-h-60 overflow-y-auto shadow-lg">
@@ -2227,7 +1852,7 @@ class AdminContent {
             id: 'delete-album-modal',
             type: 'danger',
             title: window.i18n.t('common.delete_album'),
-            message: window.i18n.t('modal.delete_album.message', { albumName: this.app.escapeHtml(albumName) }),
+            message: window.i18n.t('modal.delete_album.message', { albumName: escapeHtml(albumName) }),
             confirmText: window.i18n.t('common.yes_delete'),
             cancelText: window.i18n.t('common.cancel'),
             confirmId: 'delete-album-confirm-yes',

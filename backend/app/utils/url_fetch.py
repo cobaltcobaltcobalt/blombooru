@@ -3,10 +3,13 @@ import re
 import tempfile
 from pathlib import Path
 from typing import Optional, Tuple
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
+from ..config import settings
 from ..enums import FileTypeEnum
 from .format_registry import format_registry, FormatCategory
 from .media_processor import determine_file_type
@@ -17,7 +20,19 @@ SUPPORTED_MIME_TYPES = set(
     + format_registry.get_supported_mime_types(FormatCategory.VIDEO)
 )
 
-DEFAULT_TIMEOUT = 60
+DEFAULT_PROBE_TIMEOUT = (5, 10)
+DEFAULT_DOWNLOAD_TIMEOUT = (10, 60)
+MAX_REDIRECTS = 10
+REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
+
+_session = requests.Session()
+_adapter = HTTPAdapter(
+    pool_connections=10,
+    pool_maxsize=20,
+    max_retries=Retry(total=0, raise_on_status=False),
+)
+_session.mount("https://", _adapter)
+_session.mount("http://", _adapter)
 
 class UrlFetchError(Exception):
     def __init__(self, message: str, status_code: int = 400):
@@ -89,6 +104,68 @@ def _request_headers(url: str) -> dict:
         "Referer": referer,
     }
 
+def safe_request(
+    method: str,
+    url: str,
+    timeout: Tuple[int, int] | int = DEFAULT_PROBE_TIMEOUT,
+    stream: bool = False,
+    headers: Optional[dict] = None,
+    extra_headers: Optional[dict] = None,
+    proxies: Optional[dict] = None,
+    max_redirects: int = MAX_REDIRECTS,
+    session: Optional[requests.Session] = None,
+    user_agent: Optional[str] = None,
+) -> requests.Response:
+    """Execute an HTTP request with per-hop SSRF validation, manual redirect handling, and timeout enforcement."""
+    current_url = validate_media_url(url)
+    current_method = method.upper()
+    active_session = session or _session
+    initial_host = (urlparse(current_url).hostname or "").lower()
+
+    for hop in range(max_redirects + 1):
+        req_headers = _request_headers(current_url)
+        if user_agent:
+            req_headers["User-Agent"] = user_agent
+        if headers:
+            req_headers.update(headers)
+        if extra_headers:
+            req_headers.update(extra_headers)
+
+        response = active_session.request(
+            current_method,
+            current_url,
+            timeout=timeout,
+            allow_redirects=False,
+            headers=req_headers,
+            stream=stream,
+            proxies=proxies,
+        )
+
+        if response.status_code in REDIRECT_STATUS_CODES:
+            if hop >= max_redirects:
+                response.close()
+                raise UrlFetchError("admin.media_management.url_import.error_request:::Too many redirects", 400)
+
+            location = response.headers.get("Location") or response.headers.get("location")
+            response.close()
+            if not location:
+                raise UrlFetchError("admin.media_management.url_import.error_invalid_url")
+
+            next_url = urljoin(current_url, location)
+            current_url = validate_media_url(next_url)
+            next_host = (urlparse(current_url).hostname or "").lower()
+            if next_host != initial_host:
+                active_session = _session
+
+            if response.status_code == 303 and current_method != "HEAD":
+                current_method = "GET"
+
+            continue
+
+        return response
+
+    raise UrlFetchError("admin.media_management.url_import.error_request:::Too many redirects", 400)
+
 def _probe_response_metadata(response: requests.Response, original_url: str) -> dict:
     final_url = response.url or original_url
     _check_ssrf(final_url)
@@ -134,23 +211,25 @@ def probe_media_url(url: str) -> dict:
     """Probe a direct media URL and return metadata without downloading the full file."""
     url = validate_media_url(url)
     response: Optional[requests.Response] = None
+    proxies = settings.get_booru_proxies()
 
     try:
         try:
-            response = requests.head(
+            response = safe_request(
+                "HEAD",
                 url,
-                timeout=DEFAULT_TIMEOUT,
-                allow_redirects=True,
-                headers=_request_headers(url),
+                timeout=DEFAULT_PROBE_TIMEOUT,
+                proxies=proxies,
             )
             if response.status_code == 405 or response.status_code >= 500:
                 response.close()
-                response = requests.get(
+                response = safe_request(
+                    "GET",
                     url,
-                    timeout=DEFAULT_TIMEOUT,
-                    allow_redirects=True,
-                    headers={**_request_headers(url), "Range": "bytes=0-0"},
+                    timeout=DEFAULT_PROBE_TIMEOUT,
+                    extra_headers={"Range": "bytes=0-0"},
                     stream=True,
+                    proxies=proxies,
                 )
         except requests.Timeout:
             raise UrlFetchError("admin.media_management.url_import.error_timeout", 504)
@@ -170,14 +249,15 @@ def probe_media_url(url: str) -> dict:
 def fetch_media_stream(url: str) -> Tuple[requests.Response, str]:
     """Download a media URL as a streaming response. Caller must close the response."""
     url = validate_media_url(url)
+    proxies = settings.get_booru_proxies()
 
     try:
-        response = requests.get(
+        response = safe_request(
+            "GET",
             url,
-            timeout=DEFAULT_TIMEOUT,
-            allow_redirects=True,
-            headers=_request_headers(url),
+            timeout=DEFAULT_DOWNLOAD_TIMEOUT,
             stream=True,
+            proxies=proxies,
         )
     except requests.Timeout:
         raise UrlFetchError("admin.media_management.url_import.error_timeout", 504)

@@ -318,7 +318,7 @@ Requires `require_admin_mode`. Executes an atomic database transaction that fina
 1. Creates confirmed new tags in the database.
 2. Resolves and builds the album hierarchy for any `suggested_album_path` values.
 3. Moves staged files to `ORIGINAL_DIR` under unique filenames.
-4. Performs automated transcoding for formats requiring it (e.g. MKV/AVI to MP4, HEIC/JXL to WebP).
+4. Performs automated transcoding for formats requiring it (e.g. MKV/AVI to MP4, HEIC to WebP).
 5. Generates production thumbnails in `THUMBNAIL_DIR`.
 6. Inserts `Media` records, links tags and albums, and updates tag post counts and album timestamps.
 7. Deletes the temporary session directory and cached thumbnails.

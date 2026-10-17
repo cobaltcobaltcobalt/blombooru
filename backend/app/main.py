@@ -49,14 +49,15 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from .auth_middleware import AuthMiddleware
 from .config import APP_VERSION, settings
 from .database import get_db, init_db, init_engine
-from .models import Media, Album
-from .routes import (admin, ai_tagger, albums, booru_config, booru_import,
+from .models import Media, Album, blombooru_album_hierarchy, blombooru_album_media
+from .routes import (acknowledgements, admin, ai_tagger, albums, booru_config, booru_import,
                      changelog, danbooru, media, search, sharing, system,
                      tag_implications, tags, instance_info, uploads, url_import)
 from .translations import language_registry, translation_helper
 from .utils.logger import logger
 from .utils.search_parser import canonicalize_query
 from .utils.format_registry import format_registry
+from .utils.url_security import get_safe_return_url
 
 def get_cache_buster():
     """Get the current git commit hash to use as a cache buster, fallback to APP_VERSION"""
@@ -126,6 +127,16 @@ async def lifespan(app: FastAPI):
             async def periodic_dead_cache_cleanup():
                 from .database import SessionLocal
                 from .utils.media_helpers import cleanup_dead_media_cache
+                try:
+                    if SessionLocal is not None:
+                        db = SessionLocal()
+                        try:
+                            await asyncio.to_thread(cleanup_dead_media_cache, db)
+                        finally:
+                            db.close()
+                except Exception as e:
+                    logger.error(f"Startup dead cache cleanup error: {e}")
+
                 while True:
                     await asyncio.sleep(6 * 3600)  # Every 6 hours
                     try:
@@ -133,7 +144,7 @@ async def lifespan(app: FastAPI):
                             continue
                         db = SessionLocal()
                         try:
-                            cleanup_dead_media_cache(db)
+                            await asyncio.to_thread(cleanup_dead_media_cache, db)
                         finally:
                             db.close()
                     except asyncio.CancelledError:
@@ -270,24 +281,36 @@ templates.env.globals['current_language'] = lambda: settings.CURRENT_LANGUAGE
 templates.env.globals['available_languages'] = lambda: [lang.to_dict() for lang in language_registry.get_all_languages()]
 templates.env.globals['custom_background'] = lambda: settings.CUSTOM_BACKGROUND
 templates.env.globals['require_auth'] = lambda: settings.REQUIRE_AUTH
+templates.env.globals['blur_explicit_thumbnails'] = lambda: settings.BLUR_EXPLICIT_THUMBNAILS
 templates.env.globals['canonicalize_query'] = canonicalize_query
 templates.env.globals['get_supported_formats_json'] = lambda: json.dumps(format_registry.to_json_dict())
 
-def _is_authenticated_admin(request) -> bool:
+def _is_authenticated_admin(request=None) -> bool:
     """Verify that the request has a valid admin_token JWT. Used by templates to show/hide
     admin-only UI elements. Does NOT rely on the client-controlled admin_mode cookie alone."""
+    if not request or not hasattr(request, "cookies"):
+        return False
+    if hasattr(request, "state") and hasattr(request.state, "is_admin"):
+        return request.state.is_admin
     from .auth import get_current_user
     from .database import SessionLocal
     admin_token = request.cookies.get("admin_token")
     if not admin_token:
+        if hasattr(request, "state"):
+            request.state.is_admin = False
         return False
     if SessionLocal is None:
         return False
     db = SessionLocal()
     try:
         user = get_current_user(token=admin_token, admin_token=admin_token, db=db)
-        return user is not None
+        is_admin_user = user is not None
+        if hasattr(request, "state"):
+            request.state.is_admin = is_admin_user
+        return is_admin_user
     except Exception:
+        if hasattr(request, "state"):
+            request.state.is_admin = False
         return False
     finally:
         db.close()
@@ -309,6 +332,7 @@ app.include_router(url_import.router)
 app.include_router(booru_config.router)
 app.include_router(tag_implications.router)
 app.include_router(changelog.router)
+app.include_router(acknowledgements.router)
 app.include_router(uploads.router)
 
 def _get_theme_for_context(is_admin: bool = False):
@@ -384,7 +408,7 @@ async def admin_panel(request: Request):
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     """Login page"""
-    return_url = request.query_params.get("return", "/")
+    return_url = get_safe_return_url(request.query_params.get("return", "/"))
     return templates.TemplateResponse("login.html", {
         "request": request,
         "app_name": settings.APP_NAME,
@@ -472,25 +496,34 @@ async def shared_page(request: Request, share_uuid: str, db: Session = Depends(g
 
     return templates.TemplateResponse("shared.html", context)
 
-@app.get("/tags-gallery", response_class=HTMLResponse)
+@app.get("/tags", response_class=HTMLResponse)
 async def tags_overview_page(request: Request):
     return templates.TemplateResponse("tags_gallery.html", {
         "request": request,
         "app_name": settings.APP_NAME,
-        "default_sort": settings.get_default_sort(),
-        "default_order": settings.get_default_order(),
+        "default_sort": "post_count",
+        "default_order": "desc",
         "sidebar_filter_mode": settings.SIDEBAR_FILTER_MODE,
         "sidebar_custom_buttons": settings.SIDEBAR_CUSTOM_BUTTONS
     })
 
 @app.get("/albums", response_class=HTMLResponse)
-async def albums_page(request: Request):
+async def albums_page(request: Request, db: Session = Depends(get_db)):
     """Albums overview page"""
+    has_manual_order = db.query(Album.id).filter(
+        ~Album.id.in_(db.query(blombooru_album_hierarchy.c.child_album_id)),
+        Album.sort_position.isnot(None)
+    ).limit(1).scalar() is not None
+
+    default_sort = "manual" if has_manual_order else settings.get_default_sort()
+    default_order = "asc" if has_manual_order else settings.get_default_order()
+
     return templates.TemplateResponse("albums.html", {
         "request": request,
         "app_name": settings.APP_NAME,
-        "default_sort": settings.get_default_sort(),
-        "default_order": settings.get_default_order(),
+        "default_sort": default_sort,
+        "default_order": default_order,
+        "has_manual_order": has_manual_order,
         "popular_tags_mode": settings.get_popular_tags_mode(),
         "popular_tags_limit": settings.get_popular_tags_limit(),
         "sidebar_filter_mode": settings.SIDEBAR_FILTER_MODE,
@@ -504,12 +537,27 @@ async def album_detail_page(request: Request, album_id: int, db: Session = Depen
     if album is None:
         raise StarletteHTTPException(status_code=404, detail="Album not found")
 
+    has_manual_media = db.query(blombooru_album_media.c.media_id).filter(
+        blombooru_album_media.c.album_id == album_id,
+        blombooru_album_media.c.sort_position.isnot(None)
+    ).limit(1).scalar() is not None
+
+    has_manual_subalbums = db.query(blombooru_album_hierarchy.c.child_album_id).filter(
+        blombooru_album_hierarchy.c.parent_album_id == album_id,
+        blombooru_album_hierarchy.c.sort_position.isnot(None)
+    ).limit(1).scalar() is not None
+
+    has_manual_order = has_manual_media or has_manual_subalbums
+    default_sort = "manual" if has_manual_order else settings.get_default_sort()
+    default_order = "asc" if has_manual_order else settings.get_default_order()
+
     return templates.TemplateResponse("album.html", {
         "request": request,
         "app_name": settings.APP_NAME,
         "album_id": album_id,
-        "default_sort": settings.get_default_sort(),
-        "default_order": settings.get_default_order(),
+        "default_sort": default_sort,
+        "default_order": default_order,
+        "has_manual_order": has_manual_order,
         "popular_tags_mode": settings.get_popular_tags_mode(),
         "popular_tags_limit": settings.get_popular_tags_limit(),
         "sidebar_filter_mode": settings.SIDEBAR_FILTER_MODE,
@@ -604,7 +652,7 @@ async def manifest(request: Request):
     return {
         "name": settings.APP_NAME,
         "short_name": settings.APP_NAME,
-        "description": "A modern, self-hosted, single-user image booru and media tagger",
+        "description": "A modern self-hosted personal booru for organizing and tagging private image collections",
         "id": "/",
         "scope": "/",
         "start_url": "/",

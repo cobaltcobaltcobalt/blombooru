@@ -79,7 +79,15 @@
             "maintenance": {
                 "title": "Album Maintenance",
                 "search_manage": "Search & Manage Albums",
-                "search_manage_description": "Use this to quickly find, rename, change parent hierarchy, or delete albums."
+                "search_manage_description": "Use this to quickly find, rename, change parent hierarchy, or delete albums.",
+                "recalculate_metrics": "Recalculate Album Metrics",
+                "recalculate_metrics_description": "Recalculate media counts and maximum ratings for all albums across the hierarchy.",
+                "recalculate_metrics_btn": "Recalculate All Metrics",
+                "metrics_recalculated": "All album metrics successfully recalculated.",
+                "prune_albums": "Prune Albums",
+                "prune_albums_description": "Remove albums that have no media and no child albums. Albums that have no media but include other albums with media will not be deleted to preserve the hierarchy.",
+                "prune_albums_btn": "Prune All Albums",
+                "albums_pruned": "Successfully pruned {count} albums."
             },
             "none_root": "None (Root Album)",
             "parent_album": "Parent Album (Optional)",
@@ -198,7 +206,6 @@
                 "error_duplicate": "Media already exists (duplicate of {filename})",
                 "error_duplicate_session": "Exact duplicate of existing file in current session: {filename}",
                 "error_invalid_url": "Invalid URL",
-                "error_redirect_not_followed": "Redirects are not allowed",
                 "error_ssrf_blocked": "Access to internal networks is forbidden",
                 "error_not_an_image": "URL did not return an image or video",
                 "error_image_403": "Access denied by booru site (403)",
@@ -206,7 +213,7 @@
                 "error_proxy_failed": "Failed to fetch image: {error}"
             },
             "url_import": {
-                "hint": "Paste a booru post URL or a direct link to an image or video. Booru links will import tags, rating, source, etc. automatically.",
+                "hint": "Paste a booru post URL or a direct link to an image or video. Booru links will import tags, rating, source, etc. automatically. You can also upload a text file above, containing one URL per line for batch downloading.",
                 "fetch": "Fetch",
                 "fetching": "Fetching...",
                 "added_to_queue": "Added to upload queue",
@@ -225,15 +232,20 @@
                 "error_fetch_failed": "Failed to check URL: {error}",
                 "error_proxy_failed": "Failed to download file: {error}",
                 "error_empty_file": "The remote file is empty",
-                "error_import_failed": "Import failed: {error}"
+                "error_import_failed": "Import failed: {error}",
+                "batch_failed": "Failed to download {count} URL(s)"
             }
         },
         "messages": {
             "adding_tags": "Adding tags...",
             "already_latest": "Already on Latest Dev",
             "import_completed": "Import Completed Successfully!",
+            "scan_loaded": "Loaded {count} file(s) into the editor.",
             "scan_loading": "Loading {count} file(s)...",
             "scan_progress": "Loading {current}/{total}...",
+            "scan_queued": "{count} file(s) already in queue.",
+            "scan_ready_hint": "You can now edit tags and ratings before submitting.",
+            "scan_skipped": "{count} file(s) skipped due to errors.",
             "skipped_too_long": "Skipped (too long):",
             "update_error": "Error checking for updates: {error}",
             "update_output": "Update Output",
@@ -265,6 +277,8 @@
             "popular_tags_limit": "Tag Limit",
             "require_auth": "Require Authentication to View Media",
             "require_auth_hint": "When enabled, users must log in to view media. Public routes such as share links and static files remain public.",
+            "blur_explicit_thumbnails": "Blur Explicit Thumbnails",
+            "blur_explicit_thumbnails_hint": "When enabled, thumbnails for media rated explicit are blurred.",
             "save_settings": "Save Settings",
             "security": "Security",
             "settings_saved": "Settings saved successfully",
@@ -285,6 +299,10 @@
             "media_type_tags_gifs": "GIF Tags",
             "media_type_tags_videos": "Video Tags",
             "save_media_type_tags": "Save Automatic Tags",
+            "auto_apply_ai_tags": "Automatic Tags from AI Metadata",
+            "auto_apply_ai_tags_enable": "Automatically Apply Tags Parsed From AI Metadata",
+            "auto_apply_ai_tags_hint": "When enabled, tags parsed from AI metadata are automatically applied to uploaded media.",
+            "save_auto_apply_ai_tags": "Save AI Metadata Tag Settings",
             "custom_background": {
                 "title": "Custom Background",
                 "enable": "Enable Custom Background",
@@ -362,6 +380,12 @@
                 "save_success": "Configuration saved",
                 "title": "Booru Configuration",
                 "username": "User",
+                "proxy_title": "Outbound External Media Importer Proxy",
+                "proxy_hint": "Optional SOCKS5 or HTTP proxy URL for all external media imports.",
+                "test_proxy": "Test Proxy",
+                "proxy_test_success": "Proxy connection test successful (IP: {ip})",
+                "proxy_test_failed": "Proxy connection failed: {error}",
+                "error_proxy_empty": "Proxy URL cannot be empty",
                 "error_domain_required": "Domain is required",
                 "error_save_failed": "Failed to save configuration",
                 "error_not_found": "Configuration not found",
@@ -602,8 +626,11 @@
         "default": "Default",
         "delete": "Delete",
         "description": "Description",
+        "discard": "Discard",
+        "discard_changes": "Discard Changes",
         "disconnected": "Disconnected",
         "edit": "Edit",
+        "enlarge": "Enlarge",
         "error": "Error",
         "go": "Go",
         "help": "Help",
@@ -622,10 +649,12 @@
         "password": "Password",
         "password_placeholder": "Leave empty for none",
         "port": "Port",
+        "preview": "Preview",
         "previous": "Previous",
         "remove": "Remove",
         "save": "Save",
         "search": "Search",
+        "shrink": "Shrink",
         "success": "Success",
         "url_placeholder": "Enter URL here",
         "warning": "Warning",
@@ -688,7 +717,7 @@
         "error_403": "Access denied (403). You likely need an API key/login for this action."
     },
     "footer": {
-        "back_to_top": "Back to Top"
+        "acknowledgements": "Acknowledgements"
     },
     "gallery": {
         "add_items_to_albums_title": "Add {count} Item(s) to Albums",
@@ -708,14 +737,23 @@
         "quick_filter": "Quick Filter",
         "rating_filter": "Rating Filter",
         "filtering": "Filtering",
-        "remove_from_album": "Remove from Album",
         "select_all": "Select All",
         "selecting_all": "Selecting All...",
         "sort_by": "Sort By",
         "sort_random": "Random",
         "sort_regen_random": "Shuffle again",
         "sort_tag_count": "# of Tags",
-        "sort_toggle_order": "Toggle sort order"
+        "sort_toggle_order": "Toggle sort order",
+        "sort_manual": "Manual",
+        "sort_edit_order": "Edit Order",
+        "sort_clear_order": "Clear Order",
+        "sort_clear_confirm": "Are you sure you want to clear the manual order?",
+        "sort_cancel_confirm": "You have unsaved changes to the sorting order. Are you sure you want to discard them?",
+        "sort_order_saved": "Order saved successfully",
+        "sort_order_save_failed": "Failed to save order",
+        "sort_order_clear_failed": "Failed to clear order",
+        "sort_order_cleared": "Order cleared successfully",
+        "sort_order_save_partial": "Some sections could not be saved: {sections}"
     },
     "login": {
         "enter_credentials": "Enter your credentials to access {app_name}",
@@ -1025,6 +1063,7 @@
             "backend_saved": "Backend settings saved successfully",
             "theming_saved": "Background settings saved successfully",
             "media_type_tags_saved": "Automatic tags saved successfully",
+            "auto_apply_ai_tags_saved": "AI metadata tag settings saved successfully",
             "settings_updated": "Settings updated successfully",
             "tag_deleted": "Tag '{tag_name}' deleted successfully",
             "tag_merged": "Tag '{source_tag}' successfully merged into '{target_tag}'",
@@ -1115,47 +1154,10 @@
         "setup_intro": "Let's get your instance configured. This will only take a minute.",
         "setup_title": "Initial Setup",
         "skip": "Skip",
-        "welcome": "Welcome to Blombooru!"
+        "welcome": "Welcome to {app_name}!"
     },
     "search": {
-        "basic_desc_both": "Find media with both tags",
-        "basic_desc_exclude": "Exclude media with tag",
-        "basic_desc_fuzzy": "Fuzzy search (one or zero chars before)",
-        "basic_desc_wildcard": "Wildcard search",
-        "basic_tags": "Basic Tags",
-        "example_cat": "Safe cat images without a source",
-        "example_fuzzy": "Searching for one or more girls with any color eyes, no dogs",
-        "example_id": "First 100 uploads, oldest first",
-        "example_landscape": "High-quality landscape videos",
-        "example_tagcount": "Posts with many tags but no artist info",
-        "examples": "Example Searches",
-        "meta_date": "Upload date or relative age",
-        "meta_dimensions": "Image dimensions (pixels)",
-        "meta_filesize": "File size (kb, mb, gb)",
-        "meta_filetype": "Extension (png, gif, etc)",
-        "meta_qualifiers": "Meta Qualifiers",
-        "meta_rating": "safe, questionable, explicit",
-        "meta_source": "Source URL or none",
-        "meta_tagcount": "Number of tags",
-        "ranges": "Ranges",
-        "ranges_between": "Between inclusive",
-        "ranges_exact": "Exact match",
-        "ranges_folding": "Automatically combined and simplified",
-        "ranges_gte": "Greater than or equal",
-        "ranges_in_list": "In list",
-        "ranges_multi_list": "Multi-value lists with comparison operators (matches any)",
-        "ranges_note": "Note: Ranges can also be used with most meta qualifiers.",
-        "ranges_operators": "Operators",
-        "random": "I'm Feeling Lucky",
-        "sorting": "Sorting",
-        "sorting_aspect": "Aspect ratio",
-        "sorting_date": "Upload date",
-        "sorting_desc": "Use order:value",
-        "sorting_dimensions": "Dimensions and resolution",
-        "sorting_filesize": "File size",
-        "sorting_newest": "Newest first (default)",
-        "sorting_oldest": "Oldest first",
-        "sorting_tagcount": "Total tag count"
+        "random": "I'm Feeling Lucky"
     },
     "shared": {
         "ai_generation_data": "AI Generation Data",
@@ -1170,13 +1172,31 @@
     },
     "tags_gallery": {
         "sort_created_at": "Creation Date",
-        "sort_tag_name": "Tag Name",
-        "sort_post_count": "Post Count",
-        "sort_category": "Category",
         "failed_load_list": "Failed to load tags",
-        "no_visible_tags": "No visible tags found"
+        "implied_by": "Implied By",
+        "add_implied_tag": "Add implied tag...",
+        "add_alias": "Add alias...",
+        "load_details_failed": "Failed to load tag details",
+        "toggle_details": "Toggle tag details",
+        "shared_rule_hint": "Part of a rule with multiple targets. Edit it under Tag Implications in the admin panel.",
+        "alias_added": "Alias \"{alias}\" added",
+        "alias_removed": "Alias \"{alias}\" removed",
+        "implication_added": "Implication added",
+        "implication_removed": "Implication removed",
+        "bulk_delete_title": "Delete {count} Tags",
+        "bulk_delete_message": "Are you sure you want to delete {count} selected tag(s) and their aliases? This action cannot be undone."
     },
     "upload": {
+        "folder": {
+            "mapping_title": "Folder to Album Mapping",
+            "create_albums": "Create albums from folder structure",
+            "create_albums_hint": "Automatically create albums matching your folder hierarchy",
+            "root_mode_title": "Root Folder Behavior",
+            "root_mode_root": "Use \"{root}\" as top-level album",
+            "root_mode_subfolders": "Only use subfolders, skip root",
+            "album_path": "Album Path",
+            "remove_album_path": "Remove from folder album"
+        },
         "base_settings": {
             "select_album": "Select album to add..."
         },
@@ -1187,6 +1207,11 @@
             "no_new_tags": "No new tags pending.",
             "new_albums": "Pending New Albums",
             "no_new_albums": "No new albums pending.",
+            "already_exists": "Already exists, will link",
+            "new_album": "New album",
+            "rename_album": "Rename album",
+            "remove_tag_confirm": "Remove pending tag \"{tag}\"?",
+            "remove_album_confirm": "Remove pending album \"{album}\"?",
             "used_in_media": "Used in {count} media item(s). Click to select them.",
             "media_count": "{count} media"
         },
@@ -1194,6 +1219,7 @@
             "select_hint": "Select a media item above to edit details, or select multiple items to edit in bulk.",
             "additional_tags": "Additional Tags",
             "editing": "Editing:",
+            "folder_album": "Folder Album",
             "final_tags": "Final Tags",
             "title": "Staged Media",
             "remove_confirm": "Are you sure you want to remove this item from the upload queue?",
@@ -1207,6 +1233,7 @@
             "source_applied": "Source URL applied to selected items",
             "description_applied": "Description applied to selected items",
             "album_added": "Album added to selected items",
+            "common_folder_album": "Common Folder Album",
             "common_tags": "Common Tags"
         },
         "progress": {
@@ -1215,6 +1242,7 @@
             "extracted_success": "Extracted {count} files from {filename}",
             "extracting": "Extracting {filename}...",
             "failed": "{count} failed.",
+            "file_fetch_error": "Error fetching {filename}: {error}",
             "upload_success": "Successfully uploaded {count} file(s).",
             "uploading": "Uploading...",
             "uploading_progress": "Uploading {current}/{total}..."
@@ -1234,5 +1262,12 @@
     "changelog": {
         "modal_title": "What's Changed",
         "english_only_notice": "Release notes are only available in English."
+    },
+    "acknowledgements": {
+        "modal_title": "Acknowledgements & Licenses",
+        "search_placeholder": "Filter dependencies...",
+        "english_only_notice": "Acknowledgements and licenses are only available in English.",
+        "not_found": "No acknowledgements found.",
+        "failed_to_load": "Failed to load acknowledgements."
     }
 }

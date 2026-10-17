@@ -18,6 +18,8 @@ class AlbumViewer extends BaseGallery {
         // Get page from URL
         this.currentPage = parseInt(this.getUrlParam('page', '1'));
 
+        this.setupManualReorder();
+
         await this.loadAlbum();
         await this.loadContent();
         await this.loadPopularTagsFromAPI();
@@ -49,14 +51,14 @@ class AlbumViewer extends BaseGallery {
 
             if (data.parents && data.parents.length > 0) {
                 const crumbs = data.parents.map(p =>
-                    `<a href="/album/${p.id}" class="hover:text-primary">${p.name}</a>`
+                    `<a href="/album/${p.id}" class="hover:text-primary">${escapeHtml(p.name)}</a>`
                 ).join(' > ');
-                breadcrumbEl.innerHTML = `${rootLink} > ${crumbs} > ${this.album.name}`;
+                breadcrumbEl.innerHTML = `${rootLink} > ${crumbs} > ${escapeHtml(this.album.name)}`;
 
                 const titlePath = data.parents.map(p => p.name).join(' > ') + ' > ' + this.album.name;
                 document.title = `${titlePath} - ${window._appName || document.title.split(' - ').pop()}`;
             } else {
-                breadcrumbEl.innerHTML = `${rootLink} > ${this.album.name}`;
+                breadcrumbEl.innerHTML = `${rootLink} > ${escapeHtml(this.album.name)}`;
 
                 document.title = `${this.album.name} - ${window._appName || document.title.split(' - ').pop()}`;
             }
@@ -79,6 +81,7 @@ class AlbumViewer extends BaseGallery {
     }
 
     async loadContent() {
+        this.unloadAllGifs();
         this.showLoading();
 
         try {
@@ -101,7 +104,7 @@ class AlbumViewer extends BaseGallery {
 
             // Check if page adjustment is needed
             if (this.adjustPageIfNeeded(data.pages)) {
-                return this.loadContent();
+                return await this.loadContent();
             }
 
             // Filter out empty albums for logic checks
@@ -122,7 +125,13 @@ class AlbumViewer extends BaseGallery {
             this.renderContents(data);
 
             // Render pagination
-            this.renderPagination();
+            if (this.hasSubAlbums && (!data.media || data.media.length === 0)) {
+                if (this.elements.pageNav) {
+                    this.elements.pageNav.style.display = 'none';
+                }
+            } else {
+                this.renderPagination();
+            }
 
         } catch (error) {
             console.error('Error loading contents:', error);
@@ -152,6 +161,11 @@ class AlbumViewer extends BaseGallery {
         this.loadPopularTagsFromAPI();
     }
 
+    onCustomFilterChange() {
+        this.loadContent();
+        this.loadPopularTagsFromAPI();
+    }
+
     renderContents(data) {
         const subAlbumsContainer = document.getElementById('sub-albums-container');
         const subAlbumsGrid = document.getElementById('sub-albums-grid');
@@ -161,6 +175,7 @@ class AlbumViewer extends BaseGallery {
 
         if (!subAlbumsGrid || !this.elements.grid) return;
 
+        this.unloadAllGifs();
         subAlbumsGrid.innerHTML = '';
         this.elements.grid.innerHTML = '';
 
@@ -221,48 +236,97 @@ class AlbumViewer extends BaseGallery {
         }
     }
 
-    createAlbumCard(album) {
-        const thumbnails = album.thumbnail_paths || [];
-        let thumbnailHTML;
+    setupManualReorder() {
+        if (typeof ManualReorder === 'undefined') return;
 
-        if (thumbnails.length >= 4) {
-            thumbnailHTML = `
-                <div class="grid grid-cols-2 gap-0.5 aspect-square overflow-hidden">
-                    ${thumbnails.slice(0, 4).map(thumb => `
-                        <div class="relative overflow-hidden">
-                            <img src="${thumb}" class="w-full h-full object-cover" loading="lazy" 
-                                 onerror="this.src='/static/images/no-thumbnail.png'">
-                        </div>
-                    `).join('')}
-                </div>
-            `;
-        } else if (thumbnails.length > 0) {
-            thumbnailHTML = `
-                <div class="aspect-square overflow-hidden">
-                    <img src="${thumbnails[0]}" class="w-full h-full object-cover" loading="lazy" 
-                         onerror="this.src='/static/images/no-thumbnail.png'">
-                </div>
-            `;
-        } else {
-            thumbnailHTML = `
-                <div class="aspect-square surface-light flex items-center justify-center">
-                    <img src="/static/images/no-thumbnail.png" class="w-full h-full object-cover" loading="lazy">
-                </div>
-            `;
-        }
+        this.initManualReorder({
+            onCancel: () => {
+                const subAlbumsGrid = document.getElementById('sub-albums-grid');
+                const subAlbumsContainer = document.getElementById('sub-albums-container');
+                if (subAlbumsContainer && subAlbumsGrid && subAlbumsGrid.querySelectorAll('.album-card').length === 0) {
+                    subAlbumsContainer.style.display = 'none';
+                }
+            },
+            sections: [
+                {
+                    name: window.i18n.t('albums.sub_albums'),
+                    grid: () => document.getElementById('sub-albums-grid'),
+                    itemSelector: '.album-card',
+                    idExtractor: (el) => parseInt(el.dataset.id || el.href.split('/album/')[1]),
+                    saveEndpoint: `/api/albums/${this.albumId}/sub-albums/reorder`,
+                    savePayloadKey: 'album_ids',
+                    enabled: () => {
+                        const grid = document.getElementById('sub-albums-grid');
+                        const hasVisibleCards = grid && grid.querySelectorAll('.album-card').length > 0;
+                        const hasKnownSubAlbums = Boolean(this.album && (this.album.children_count > 0 || this.album.sub_albums_count > 0));
+                        return hasVisibleCards || hasKnownSubAlbums;
+                    },
+                    fetchAll: async (sec) => {
+                        const subAlbumsContainer = document.getElementById('sub-albums-container');
+                        const subAlbumsGrid = document.getElementById('sub-albums-grid');
+                        if (!subAlbumsGrid) return;
 
-        return `
-            <a href="/album/${album.id}" class="album-card block surface border hover:border-primary focus:border-primary focus:outline-none transition-colors">
-                ${thumbnailHTML}
-                <div class="p-2 border-t">
-                    <div class="text-xs font-bold truncate mb-1">${album.name}</div>
-                    <div class="flex justify-between items-center text-xs text-secondary">
-                        <span>${window.i18n.t('common.items_count', { count: album.media_count || 0 })}</span>
-                        <span>${album.rating[0].toUpperCase()}</span>
-                    </div>
-                </div>
-            </a>
-        `;
+                        try {
+                            const res = await fetch(`/api/albums/${this.albumId}/contents?page=1&limit=1&rating=safe,questionable,explicit&sort=manual&order=asc`);
+                            if (!res.ok) return;
+                            const data = await res.json();
+                            const albums = data.albums || [];
+                            if (albums.length > 0) {
+                                subAlbumsGrid.innerHTML = albums.map(album => this.createAlbumCard(album)).join('');
+                                if (subAlbumsContainer) subAlbumsContainer.style.display = 'block';
+                            }
+                        } catch (err) {
+                            console.error('Error fetching sub-albums for reorder:', err);
+                        }
+                    }
+                },
+                {
+                    name: window.i18n.t('common.media'),
+                    grid: () => this.elements.grid,
+                    itemSelector: '.gallery-item',
+                    idExtractor: (el) => parseInt(el.dataset.id || el.dataset.mediaId),
+                    saveEndpoint: `/api/albums/${this.albumId}/media/reorder`,
+                    savePayloadKey: 'media_ids',
+                    enabled: () => {
+                        return this.elements.grid && (this.elements.grid.querySelectorAll('.gallery-item').length > 0 || (this.album && this.album.media_count > 0));
+                    },
+                    fetchChunk: async (page, limit) => {
+                        const params = new URLSearchParams({ page });
+                        if (limit) params.set('limit', limit);
+                        if (this.currentRating) params.set('rating', this.currentRating);
+                        this.appendSortParams(params);
+                        if (this.selectedCustomFilters && this.selectedCustomFilters.size > 0) {
+                            this.selectedCustomFilters.forEach(cf => params.append('custom_filter', cf));
+                        }
+                        const res = await fetch(`/api/albums/${this.albumId}/contents?${params}`);
+                        if (!res.ok) return null;
+                        const data = await res.json();
+                        const newIds = [];
+                        if (page === 1) {
+                            window.unloadAllGifs();
+                            this.elements.grid.innerHTML = '';
+                        }
+                        if (data.media) {
+                            data.media.forEach(media => {
+                                const item = this.createGalleryItem(media, {
+                                    checkboxClass: 'album-item-checkbox checkbox',
+                                    linkUrl: `/album/${this.albumId}/media/${media.id}`,
+                                    preserveQueryParams: true
+                                });
+                                this.elements.grid.appendChild(item);
+                                newIds.push(media.id);
+                            });
+                        }
+                        return {
+                            newIds,
+                            total: data.total_media || 0,
+                            totalPages: data.pages || 1,
+                            limit: data.limit
+                        };
+                    }
+                }
+            ]
+        });
     }
 
     async bulkRemove() {

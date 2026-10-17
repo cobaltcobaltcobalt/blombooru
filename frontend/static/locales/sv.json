@@ -79,7 +79,15 @@
             "maintenance": {
                 "title": "Albumunderhåll",
                 "search_manage": "Sök & Hantera Album",
-                "search_manage_description": "Använd detta för att snabbt hitta, byta namn på, ändra överordnad hierarki eller ta bort album."
+                "search_manage_description": "Använd detta för att snabbt hitta, byta namn på, ändra överordnad hierarki eller ta bort album.",
+                "recalculate_metrics": "Omberäkna Albumstatistik",
+                "recalculate_metrics_description": "Omberäkna mediaräkningar och maxbetyg för alla album i hierarkin.",
+                "recalculate_metrics_btn": "Omberäkna Alla Mätvärden",
+                "metrics_recalculated": "Alla albummätvärden har omberäknats.",
+                "prune_albums": "Rensa Tomma Album",
+                "prune_albums_description": "Ta bort album som inte innehåller media eller underalbum. Album som saknar media men innehåller andra album med media kommer inte att raderas för att bevara hierarkin.",
+                "prune_albums_btn": "Rensa Alla Tomma Album",
+                "albums_pruned": "Lyckades rensa {count} album."
             },
             "none_root": "Inget (Rotalbum)",
             "parent_album": "Överordnat album (Valfritt)",
@@ -198,7 +206,6 @@
                 "error_duplicate": "Media finns redan (duplikat av {filename})",
                 "error_duplicate_session": "Exakt dubblett av befintlig fil i nuvarande session: {filename}",
                 "error_invalid_url": "Ogiltig URL",
-                "error_redirect_not_followed": "Omdirigeringar är inte tillåtna",
                 "error_ssrf_blocked": "Åtkomst till interna nätverk är förbjuden",
                 "error_not_an_image": "URL returnerade ingen bild eller video",
                 "error_image_403": "Åtkomst nekad av booru-sidan (403)",
@@ -206,7 +213,7 @@
                 "error_proxy_failed": "Kunde inte hämta bilden: {error}"
             },
             "url_import": {
-                "hint": "Klistra in en URL till ett booru-inlägg eller en direktlänk till en bild eller video. Booru-länkar importerar taggar, betyg, källa osv. automatiskt.",
+                "hint": "Klistra in en URL till ett booru-inlägg eller en direktlänk till en bild eller video. Booru-länkar importerar taggar, betyg, källa osv. automatiskt. Du kan också ladda upp en textfil ovan som har en URL per rad för batchnedladdning.",
                 "fetch": "Hämta",
                 "fetching": "Hämtar...",
                 "added_to_queue": "Lagt till i uppladdningskö",
@@ -225,15 +232,20 @@
                 "error_fetch_failed": "Kunde inte kontrollera URL: {error}",
                 "error_proxy_failed": "Kunde inte ladda ned filen: {error}",
                 "error_empty_file": "Fjärrfilen är tom",
-                "error_import_failed": "Importen misslyckades: {error}"
+                "error_import_failed": "Importen misslyckades: {error}",
+                "batch_failed": "Kunde inte ladda ned {count} URL:er"
             }
         },
         "messages": {
             "adding_tags": "Lägger till taggar...",
             "already_latest": "Redan på senaste Dev",
             "import_completed": "Import slutförd!",
+            "scan_loaded": "Läste in {count} fil(er) till redigeraren.",
             "scan_loading": "Laddar {count} fil(er)...",
             "scan_progress": "Laddar {current}/{total}...",
+            "scan_queued": "{count} fil(er) finns redan i kön.",
+            "scan_ready_hint": "Du kan nu redigera taggar och betyg innan du skickar in.",
+            "scan_skipped": "{count} fil(er) hoppades över på grund av fel.",
             "skipped_too_long": "Hoppades över (för lång):",
             "update_error": "Fel vid kontroll av uppdateringar: {error}",
             "update_output": "Uppdateringsutdata",
@@ -265,6 +277,8 @@
             "popular_tags_limit": "Antal Populära Taggar",
             "require_auth": "Kräv autentisering för att visa media",
             "require_auth_hint": "När aktiverat måste användare logga in för att visa media. Publika rutter som delningslänkar och statiska filer förblir publika.",
+            "blur_explicit_thumbnails": "Blurra Explicita Miniatyrer",
+            "blur_explicit_thumbnails_hint": "Blurrar miniatyrer för explicit media när aktiverat.",
             "save_settings": "Spara inställningar",
             "security": "Säkerhet",
             "settings_saved": "Inställningar sparade",
@@ -285,6 +299,10 @@
             "media_type_tags_gifs": "GIF-taggar",
             "media_type_tags_videos": "Videotaggar",
             "save_media_type_tags": "Spara Automatiska Taggar",
+            "auto_apply_ai_tags": "Automatiska Taggar Från AI-Metadata",
+            "auto_apply_ai_tags_enable": "Tillämpa automatiskt taggar tolkade från AI-metadata",
+            "auto_apply_ai_tags_hint": "När detta är aktiverat tillämpas taggar som tolkas från AI-metadata automatiskt på uppladdad media.",
+            "save_auto_apply_ai_tags": "Spara Inställningar för AI-metadatataggar",
             "custom_background": {
                 "title": "Anpassad Bakgrund",
                 "enable": "Aktivera Anpassad Bakgrund",
@@ -362,6 +380,12 @@
                 "save_success": "Konfiguration sparad",
                 "title": "Booru Konfiguration",
                 "username": "Användare",
+                "proxy_title": "Utgående Medieimporterproxy",
+                "proxy_hint": "Valfri SOCKS5- eller HTTP-proxyadress för alla externa medieimporter.",
+                "test_proxy": "Testa proxy",
+                "proxy_test_success": "Proxyanslutningstest lyckades (IP: {ip})",
+                "proxy_test_failed": "Proxyanslutning misslyckades: {error}",
+                "error_proxy_empty": "Proxyadressen kan inte vara tom",
                 "error_domain_required": "Domän krävs",
                 "error_save_failed": "Kunde inte spara konfigurationen",
                 "error_not_found": "Konfigurationen hittades inte",
@@ -601,8 +625,11 @@
         "default": "Standard",
         "delete": "Radera",
         "description": "Beskrivning",
+        "discard": "Kasta",
+        "discard_changes": "Kasta ändringar",
         "disconnected": "Frånkopplad",
         "edit": "Redigera",
+        "enlarge": "Förstora",
         "error": "Fel",
         "go": "Gå",
         "help": "Hjälp",
@@ -621,10 +648,12 @@
         "password": "Lösenord",
         "password_placeholder": "Lämna tomt för inget",
         "port": "Port",
+        "preview": "Förhandsgranska",
         "previous": "Föregående",
         "remove": "Ta bort",
         "save": "Spara",
         "search": "Sök",
+        "shrink": "Förminska",
         "success": "Lyckades",
         "url_placeholder": "Ange URL här",
         "test_connection": "Testa anslutning",
@@ -687,7 +716,7 @@
         "error_403": "Åtkomst nekad (403). Du behöver troligtvis en API-nyckel eller ett login för detta."
     },
     "footer": {
-        "back_to_top": "Tillbaka till toppen"
+        "acknowledgements": "Erkännanden"
     },
     "gallery": {
         "add_items_to_albums_title": "Lägg till {count} objekt till album",
@@ -707,14 +736,23 @@
         "quick_filter": "Snabbfilter",
         "rating_filter": "Betygsfilter",
         "filtering": "Filtrering",
-        "remove_from_album": "Ta bort från album",
         "select_all": "Välj alla",
         "selecting_all": "Väljer alla...",
         "sort_by": "Sortera efter",
         "sort_random": "Slumpmässig",
         "sort_regen_random": "Slumpa igen",
         "sort_tag_count": "Antal taggar",
-        "sort_toggle_order": "Växla sorteringsordning"
+        "sort_toggle_order": "Växla sorteringsordning",
+        "sort_manual": "Manuell",
+        "sort_edit_order": "Ändra ordning",
+        "sort_clear_order": "Återställ ordning",
+        "sort_clear_confirm": "Är du säker på att du vill återställa den manuella ordningen?",
+        "sort_cancel_confirm": "Du har osparade ändringar i sorteringsordningen. Är du säker på att du vill kasta dem?",
+        "sort_order_saved": "Ordningen har sparats",
+        "sort_order_save_failed": "Kunde inte spara ordningen",
+        "sort_order_clear_failed": "Kunde inte återställa ordningen",
+        "sort_order_cleared": "Ordningen har rensats",
+        "sort_order_save_partial": "Vissa sektioner kunde inte sparas: {sections}"
     },
     "login": {
         "enter_credentials": "Ange dina uppgifter för att komma åt {app_name}",
@@ -1024,6 +1062,7 @@
             "backend_saved": "Backend-inställningar har sparats",
             "theming_saved": "Bakgrundsinställningar har sparats",
             "media_type_tags_saved": "Automatiska taggar har sparats",
+            "auto_apply_ai_tags_saved": "Inställningar för AI-metadatataggar har sparats",
             "settings_updated": "Inställningar uppdaterade",
             "tag_deleted": "Tagg '{tag_name}' raderad",
             "tag_merged": "Tagg '{source_tag}' slogs ihop med '{target_tag}'",
@@ -1117,44 +1156,7 @@
         "welcome": "Välkommen till {app_name}!"
     },
     "search": {
-        "basic_desc_both": "Hitta media med båda taggarna",
-        "basic_desc_exclude": "Exkludera media med tagg",
-        "basic_desc_fuzzy": "Fuzzy-sökning (ett eller noll tecken före)",
-        "basic_desc_wildcard": "Jokersökning",
-        "basic_tags": "Grundläggande taggar",
-        "example_cat": "Säkra kattbilder utan källa",
-        "example_fuzzy": "Söker efter en eller flera tjejer med valfri ögonfärg, inga hundar",
-        "example_id": "Första 100 uppladdningar, äldst först",
-        "example_landscape": "Högkvalitativa landskapsvideor",
-        "example_tagcount": "Inlägg med många taggar men ingen artistinfo",
-        "examples": "Exempelsökningar",
-        "meta_date": "Uppladdningsdatum eller relativ ålder",
-        "meta_dimensions": "Bilddimensioner (pixlar)",
-        "meta_filesize": "Filstorlek (kb, mb, gb)",
-        "meta_filetype": "Filändelse (png, gif, etc)",
-        "meta_qualifiers": "Metaqualifiers",
-        "meta_rating": "safe, questionable, explicit",
-        "meta_source": "Käll-URL eller none",
-        "meta_tagcount": "Antal taggar",
-        "ranges": "Intervall",
-        "ranges_between": "Mellan inklusivt",
-        "ranges_exact": "Exakt matchning",
-        "ranges_folding": "Kombineras och förenklas automatiskt",
-        "ranges_gte": "Större än eller lika med",
-        "ranges_in_list": "I lista",
-        "ranges_multi_list": "Flervärdeslistor med jämförelseoperatorer (matchar vilkensomhelst)",
-        "ranges_note": "OBS: Intervall kan också användas med de flesta metaqualifiers.",
-        "ranges_operators": "Operatorer",
-        "random": "Jag Har Tur",
-        "sorting": "Sortering",
-        "sorting_aspect": "Bildförhållande",
-        "sorting_date": "Uppladdningsdatum",
-        "sorting_desc": "Använd order:värde",
-        "sorting_dimensions": "Dimensioner och upplösning",
-        "sorting_filesize": "Filstorlek",
-        "sorting_newest": "Nyast först (standard)",
-        "sorting_oldest": "Äldst först",
-        "sorting_tagcount": "Totalt antal taggar"
+        "random": "Jag Har Tur"
     },
     "shared": {
         "ai_generation_data": "AI-genereringsdata",
@@ -1169,13 +1171,31 @@
     },
     "tags_gallery": {
         "sort_created_at": "Skapandedatum",
-        "sort_tag_name": "Taggnamn",
-        "sort_post_count": "Antal inlägg",
-        "sort_category": "Kategori",
         "failed_load_list": "Kunde inte ladda taggar",
-        "no_visible_tags": "Inga synliga taggar hittades"
+        "implied_by": "Implikeras av",
+        "add_implied_tag": "Lägg till implikerad tagg...",
+        "add_alias": "Lägg till alias...",
+        "load_details_failed": "Kunde inte ladda taggdetaljer",
+        "toggle_details": "Växla taggdetaljer",
+        "shared_rule_hint": "Del av en regel med flera mål. Redigera den under Tagg-implikationer i adminpanelen.",
+        "alias_added": "Alias \"{alias}\" lades till",
+        "alias_removed": "Alias \"{alias}\" togs bort",
+        "implication_added": "Implikation lades till",
+        "implication_removed": "Implikation togs bort",
+        "bulk_delete_title": "Ta bort {count} taggar",
+        "bulk_delete_message": "Är du säker på att du vill ta bort {count} markerade tagg(ar) och deras alias? Denna åtgärd kan inte ångras."
     },
     "upload": {
+        "folder": {
+            "mapping_title": "Mapp till album-mappning",
+            "create_albums": "Skapa album från mappstruktur",
+            "create_albums_hint": "Skapa album automatiskt baserat på mappstrukturen",
+            "root_mode_title": "Beteende för rotmapp",
+            "root_mode_root": "Använd \"{root}\" som toppalbum",
+            "root_mode_subfolders": "Använd endast undermappar, hoppa över rot",
+            "album_path": "Albumsökväg",
+            "remove_album_path": "Ta bort från mappalbum"
+        },
         "base_settings": {
             "select_album": "Välj album att lägga till..."
         },
@@ -1186,6 +1206,11 @@
             "no_new_tags": "Inga nya taggar väntar.",
             "new_albums": "Väntande nya album",
             "no_new_albums": "Inga nya album väntar.",
+            "already_exists": "Finns redan, länkas",
+            "new_album": "Nytt album",
+            "rename_album": "Byt namn på album",
+            "remove_tag_confirm": "Ta bort väntande tagg \"{tag}\"?",
+            "remove_album_confirm": "Ta bort väntande album \"{album}\"?",
             "used_in_media": "Använt i {count} medieobjekt. Klicka för att välja dem.",
             "media_count": "{count} medieobjekt"
         },
@@ -1193,6 +1218,7 @@
             "select_hint": "Välj ett medieobjekt ovan för att redigera detaljer, eller välj flera för massredigering.",
             "additional_tags": "Ytterligare taggar",
             "editing": "Redigerar:",
+            "folder_album": "Mappalbum",
             "final_tags": "Slutliga taggar",
             "title": "Förberedd media",
             "remove_confirm": "Är du säker på att du vill ta bort det här medieobjektet från uppladdningskön?",
@@ -1206,6 +1232,7 @@
             "source_applied": "Käll-URL applicerad på valda objekt",
             "description_applied": "Beskrivning applicerad på valda objekt",
             "album_added": "Album lades till för valda objekt",
+            "common_folder_album": "Gemensamt mappalbum",
             "common_tags": "Gemensamma taggar"
         },
         "progress": {
@@ -1214,6 +1241,7 @@
             "extracted_success": "Extraherade {count} filer från {filename}",
             "extracting": "Extraherar {filename}...",
             "failed": "{count} misslyckades.",
+            "file_fetch_error": "Fel vid hämtning av {filename}: {error}",
             "upload_success": "Laddade upp {count} fil(er).",
             "uploading": "Laddar upp...",
             "uploading_progress": "Laddar upp {current}/{total}..."
@@ -1233,5 +1261,12 @@
     "changelog": {
         "modal_title": "Vad som är Nytt",
         "english_only_notice": "Versionsinformation är endast tillgänglig på engelska."
+    },
+    "acknowledgements": {
+        "modal_title": "Erkännanden och licenser",
+        "search_placeholder": "Filtrera beroenden...",
+        "english_only_notice": "Erkännanden och licenser från tredje part är endast tillgängliga på engelska.",
+        "not_found": "Inga erkännanden hittades.",
+        "failed_to_load": "Kunde inte ladda erkännanden."
     }
 }

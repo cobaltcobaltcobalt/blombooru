@@ -171,16 +171,30 @@
                             {{ t('admin.settings.security') }}
                         </label>
                         <div class="bg p-4 border h-full">
-                            <label class="flex items-center gap-2 cursor-pointer">
-                                <input type="checkbox" id="require-auth" name="require_auth"
-                                    class="w-4 h-4 accent-primary">
-                                <span class="text-xs font-bold">
-                                    {{ t('admin.settings.require_auth') }}
-                                </span>
-                            </label>
-                            <p class="text-xs text-secondary opacity-70 ml-6">
-                                {{ t('admin.settings.require_auth_hint') }}
-                            </p>
+                            <div>
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" id="require-auth" name="require_auth"
+                                        class="w-4 h-4 accent-primary">
+                                    <span class="text-xs font-bold">
+                                        {{ t('admin.settings.require_auth') }}
+                                    </span>
+                                </label>
+                                <p class="text-xs text-secondary opacity-70 ml-6">
+                                    {{ t('admin.settings.require_auth_hint') }}
+                                </p>
+                            </div>
+                            <div class="border-t mt-3 pt-3">
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" id="blur-explicit-thumbnails" name="blur_explicit_thumbnails"
+                                        class="w-4 h-4 accent-primary">
+                                    <span class="text-xs font-bold">
+                                        {{ t('admin.settings.blur_explicit_thumbnails') }}
+                                    </span>
+                                </label>
+                                <p class="text-xs text-secondary opacity-70 ml-6">
+                                    {{ t('admin.settings.blur_explicit_thumbnails_hint') }}
+                                </p>
+                            </div>
                         </div>
                     </div>
 
@@ -930,6 +944,23 @@
                             </div>
                         </div>
                         {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Outbound External Media Importer Proxy -->
+            <div>
+                <label class="block text-xs font-bold mb-2">{{ t('admin.settings.booru_config.proxy_title') }}</label>
+                <div class="bg p-4 border">
+                    <p class="text-xs text-secondary opacity-70 mb-3">{{ t('admin.settings.booru_config.proxy_hint') }}
+                    </p>
+                    <div class="flex flex-col sm:flex-row gap-3">
+                        <input type="text" id="booru-proxy-url"
+                            class="flex-1 bg px-3 py-2 border text-xs focus:outline-none hover:border-primary transition-colors focus:border-primary"
+                            placeholder="socks5h://127.0.0.1:10808">
+                        <button id="test-booru-proxy-btn" type="button" class="btn whitespace-nowrap cursor-pointer">
+                            {{ t('admin.settings.booru_config.test_proxy') }}
+                        </button>
                     </div>
                 </div>
             </div>

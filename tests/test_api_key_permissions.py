@@ -2,8 +2,10 @@ import asyncio
 import unittest
 from fastapi import HTTPException
 
-from backend.app.auth import (generate_api_key, get_current_admin_user,
-                              hash_api_key, require_admin_mode, verify_api_key,
+from backend.app.auth import (generate_api_key, get_api_key_from_request,
+                              get_current_admin_user, get_current_user,
+                              get_current_user_from_api_key, hash_api_key,
+                              require_admin_mode, verify_api_key,
                               verify_api_key_record)
 from backend.app.database import check_and_migrate_schema
 from backend.app.enums import ApiKeyPermissionEnum
@@ -11,7 +13,7 @@ from backend.app.models import ApiKey, User
 from backend.app.routes.admin.api_keys import (create_api_key, list_api_keys,
                                                revoke_api_key, update_api_key)
 from backend.app.schemas import ApiKeyCreate, ApiKeyUpdate
-from tests.backup_test_base import BackupTestBase
+from tests.test_base import BackupTestBase
 
 class DummyURL:
     def __init__(self, path: str):
@@ -339,6 +341,52 @@ class TestApiKeyPermissions(BackupTestBase):
         self.assertIsNotNone(resolved_user4)
         self.assertEqual(resolved_user4.id, self.user.id)
 
+    def test_cookie_based_api_key_rejection(self):
+        """Test that API keys passed in the admin_token cookie are rejected, preventing bypasses."""
+        read_raw = generate_api_key()
+        read_key = ApiKey(
+            key_hash=hash_api_key(read_raw),
+            key_prefix=read_raw[:12],
+            name="Cookie Key",
+            permission="read",
+            user_id=self.user.id
+        )
+        self.db.add(read_key)
+        self.db.commit()
+
+        # 1. get_current_user rejects blom_ tokens in admin_token cookie
+        req = DummyRequest("/api/media/upload")
+        req.cookies["admin_token"] = read_raw
+        user_from_cookie = get_current_user(admin_token=read_raw, db=self.db)
+        self.assertIsNone(user_from_cookie)
+
+        # 2. get_api_key_from_request does not inspect cookies
+        key_record = get_api_key_from_request(req, self.db)
+        self.assertIsNone(key_record)
+
+        # 3. get_current_user_from_api_key returns None
+        api_user = get_current_user_from_api_key(req, self.db)
+        self.assertIsNone(api_user)
+
+        # 4. require_admin_mode raises 401 Unauthorized (even with admin_mode toggle active)
+        with self.assertRaises(HTTPException) as ctx:
+            require_admin_mode(
+                request=req,
+                current_user=user_from_cookie,
+                admin_mode_active=True,
+                api_key_user=api_user
+            )
+        self.assertEqual(ctx.exception.status_code, 401)
+
+        # 5. get_current_admin_user raises 401 Unauthorized
+        with self.assertRaises(HTTPException) as ctx:
+            get_current_admin_user(
+                request=req,
+                current_user=user_from_cookie,
+                api_key_user=api_user
+            )
+        self.assertEqual(ctx.exception.status_code, 401)
+
     def test_browser_session_and_admin_mode_toggle(self):
         """Test browser cookie session auth and the admin_mode UI safety toggle."""
         # 1. Cookie session with admin_mode active -> allowed
@@ -383,6 +431,33 @@ class TestApiKeyPermissions(BackupTestBase):
         with self.assertRaises(HTTPException) as ctx2:
             _enforce_api_key_permission(req_unknown, self.user)
         self.assertEqual(ctx2.exception.status_code, 403)
+
+    def test_is_authenticated_admin_caching(self):
+        """Test _is_authenticated_admin caching on request.state.is_admin."""
+        from unittest.mock import patch
+        from backend.app.auth import create_access_token
+        from backend.app.main import _is_authenticated_admin
+
+        # 1. request=None
+        self.assertFalse(_is_authenticated_admin(None))
+
+        # 2. Anonymous request (no cookies)
+        req_anon = DummyRequest()
+        self.assertFalse(_is_authenticated_admin(req_anon))
+        self.assertFalse(req_anon.state.is_admin)
+
+        # 3. Authenticated request with valid token
+        token = create_access_token({"sub": self.user.username})
+        req_auth = DummyRequest()
+        req_auth.cookies["admin_token"] = token
+
+        self.assertTrue(_is_authenticated_admin(req_auth))
+        self.assertTrue(req_auth.state.is_admin)
+
+        # Subsequent call should use cached state and not query SessionLocal
+        with patch("backend.app.database.SessionLocal") as mock_session_local:
+            self.assertTrue(_is_authenticated_admin(req_auth))
+            mock_session_local.assert_not_called()
 
 if __name__ == "__main__":
     unittest.main()

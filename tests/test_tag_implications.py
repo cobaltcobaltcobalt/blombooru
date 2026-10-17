@@ -27,7 +27,7 @@ from backend.app.routes.tag_implications import (
     TagImplicationCreate,
 )
 from backend.app.utils.tag_utils import expand_implications, resolve_implications
-from tests.backup_test_base import BackupTestBase
+from tests.test_base import BackupTestBase
 
 class TestTagImplications(BackupTestBase):
     """
@@ -435,7 +435,7 @@ class TestTagImplications(BackupTestBase):
         self.assertEqual(names, {"cat", "feline"})
 
     def test_expand_implications_multiple_target_tags(self):
-        """Test implication triggering when any of the target tags are present."""
+        """Test implication triggering only when all target tags are present."""
         imp = TagImplication(
             target_tags=[self.tag_kitten, self.tag_cat],
             implied_tags=[self.tag_feline]
@@ -443,7 +443,13 @@ class TestTagImplications(BackupTestBase):
         self.db.add(imp)
         self.db.commit()
 
+        # Incomplete target set does not trigger implication
         tag_set = {self.tag_kitten.id: self.tag_kitten}
+        expand_implications(self.db, tag_set)
+        self.assertNotIn(self.tag_feline.id, tag_set)
+
+        # Complete target set triggers implication
+        tag_set = {self.tag_kitten.id: self.tag_kitten, self.tag_cat.id: self.tag_cat}
         expand_implications(self.db, tag_set)
         self.assertIn(self.tag_feline.id, tag_set)
 
@@ -497,7 +503,7 @@ class TestTagImplications(BackupTestBase):
         m3.tags.append(self.tag_solo)
         self.db.commit()
 
-        result = asyncio.run(simulate_apply_all_implications(current_user=self.admin_user, db=self.db))
+        result = asyncio.run(simulate_apply_all_implications(current_user=self.admin_user))
         affected = result.get("affected_media", [])
         self.assertEqual(len(affected), 1)
         self.assertEqual(affected[0]["media_id"], m1.id)
@@ -505,7 +511,7 @@ class TestTagImplications(BackupTestBase):
 
     def test_simulate_apply_all_no_implications(self):
         """Test simulate_apply_all_implications returns empty list when no implications exist."""
-        result = asyncio.run(simulate_apply_all_implications(current_user=self.admin_user, db=self.db))
+        result = asyncio.run(simulate_apply_all_implications(current_user=self.admin_user))
         self.assertEqual(result, {"affected_media": []})
 
     # Database Cascades & Relationship Integrity Tests
@@ -577,6 +583,8 @@ class TestTagImplications(BackupTestBase):
         """Verify standalone pattern-based implications match wildcards and imply tags."""
         clothing = self._create_tag("clothing")
         female = self._create_tag("female")
+        self._create_tag("summer_dress")
+        self._create_tag("1maid")
 
         self.db.add(TagImplication(target_tag_patterns=["*_dress"], implied_tags=[clothing]))
         self.db.add(TagImplication(target_tag_patterns=["?maid"], implied_tags=[female]))
@@ -638,6 +646,8 @@ class TestTagImplications(BackupTestBase):
         """Verify rules requiring both explicit target tags and pattern matches."""
         sword = self._create_tag("sword")
         knight = self._create_tag("knight")
+        self._create_tag("steel_armor")
+        self._create_tag("steel_shield")
 
         self.db.add(TagImplication(target_tags=[sword], target_tag_patterns=["*_armor"], implied_tags=[knight]))
         self.db.commit()
@@ -719,7 +729,7 @@ class TestTagImplications(BackupTestBase):
         self.db.commit()
 
         start = time.perf_counter()
-        result = asyncio.run(simulate_apply_all_implications(current_user=self.admin_user, db=self.db))
+        result = asyncio.run(simulate_apply_all_implications(current_user=self.admin_user))
         duration = time.perf_counter() - start
 
         affected = result.get("affected_media", [])
@@ -827,6 +837,31 @@ class TestTagImplications(BackupTestBase):
         assigned_tag_names = {t.name for t in media.tags}
         self.assertIn("swimsuit_bulk", assigned_tag_names)
         self.assertIn("summer_bulk", assigned_tag_names)
+
+    def test_list_implications_with_exact_tag(self):
+        """Verify list_implications with tag parameter only matches exact tag or wildcards."""
+        cat_ears = self._create_tag("cat_ears_exact")
+        animal_ears = self._create_tag("animal_ears_exact")
+        tail = self._create_tag("tail_exact")
+
+        rule1 = TagImplication(target_tags=[self.tag_cat], implied_tags=[self.tag_animal])
+        rule2 = TagImplication(target_tags=[cat_ears], implied_tags=[animal_ears])
+        rule3 = TagImplication(target_tag_patterns=["*_exact"], implied_tags=[tail])
+        self.db.add_all([rule1, rule2, rule3])
+        self.db.commit()
+
+        # Query for exact tag "cat"
+        res_cat = asyncio.run(list_implications(tag="cat", current_user=self.admin_user, db=self.db))
+        res_cat_ids = [r.id for r in res_cat]
+        self.assertIn(rule1.id, res_cat_ids)
+        self.assertNotIn(rule2.id, res_cat_ids)  # cat_ears_exact is not cat
+
+        # Query for "cat_ears_exact" matches rule2 and wildcard rule3
+        res_ears = asyncio.run(list_implications(tag="cat_ears_exact", current_user=self.admin_user, db=self.db))
+        res_ears_ids = [r.id for r in res_ears]
+        self.assertIn(rule2.id, res_ears_ids)
+        self.assertIn(rule3.id, res_ears_ids)  # matches *_exact pattern
+        self.assertNotIn(rule1.id, res_ears_ids)
 
 if __name__ == "__main__":
     unittest.main()

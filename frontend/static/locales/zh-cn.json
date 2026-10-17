@@ -79,7 +79,15 @@
             "maintenance": {
                 "title": "相册维护",
                 "search_manage": "搜索并管理相册",
-                "search_manage_description": ""
+                "search_manage_description": "",
+                "recalculate_metrics": "",
+                "recalculate_metrics_description": "",
+                "recalculate_metrics_btn": "",
+                "metrics_recalculated": "",
+                "prune_albums": "",
+                "prune_albums_description": "",
+                "prune_albums_btn": "",
+                "albums_pruned": ""
             },
             "none_root": "无（根相册）",
             "parent_album": "父级相册（可选）",
@@ -198,7 +206,6 @@
                 "error_duplicate": "媒体已存在（与 {filename} 重复）",
                 "error_duplicate_session": "",
                 "error_invalid_url": "无效的 URL",
-                "error_redirect_not_followed": "",
                 "error_ssrf_blocked": "",
                 "error_not_an_image": "",
                 "error_image_403": "源站拒绝访问图片 (403)",
@@ -225,15 +232,20 @@
                 "error_fetch_failed": "",
                 "error_proxy_failed": "",
                 "error_empty_file": "",
-                "error_import_failed": ""
+                "error_import_failed": "",
+                "batch_failed": ""
             }
         },
         "messages": {
             "adding_tags": "正在添加标签...",
             "already_latest": "已是最新开发版本",
             "import_completed": "导入成功完成！",
+            "scan_loaded": "",
             "scan_loading": "正在加载 {count} 个文件...",
             "scan_progress": "正在加载 {current}/{total}...",
+            "scan_queued": "",
+            "scan_ready_hint": "",
+            "scan_skipped": "",
             "skipped_too_long": "已跳过（路径太长）：",
             "update_error": "检查更新时出错：{error}",
             "update_output": "更新输出",
@@ -265,6 +277,8 @@
             "popular_tags_limit": "",
             "require_auth": "查看媒体需要身份验证",
             "require_auth_hint": "启用后，用户必须登录才能查看媒体。公共路由（如共享链接和静态文件）仍保持公开。",
+            "blur_explicit_thumbnails": "",
+            "blur_explicit_thumbnails_hint": "",
             "save_settings": "保存设置",
             "security": "安全",
             "settings_saved": "设置保存成功",
@@ -285,6 +299,10 @@
             "media_type_tags_gifs": "",
             "media_type_tags_videos": "",
             "save_media_type_tags": "",
+            "auto_apply_ai_tags": "",
+            "auto_apply_ai_tags_enable": "",
+            "auto_apply_ai_tags_hint": "",
+            "save_auto_apply_ai_tags": "",
             "custom_background": {
                 "title": "",
                 "enable": "",
@@ -362,6 +380,12 @@
                 "save_success": "配置已保存",
                 "title": "Booru 配置",
                 "username": "用户",
+                "proxy_title": "",
+                "proxy_hint": "",
+                "test_proxy": "",
+                "proxy_test_success": "",
+                "proxy_test_failed": "",
+                "error_proxy_empty": "",
                 "error_domain_required": "域名为必填项",
                 "error_save_failed": "保存配置失败",
                 "error_not_found": "未找到配置",
@@ -601,8 +625,11 @@
         "default": "默认",
         "delete": "删除",
         "description": "",
+        "discard": "",
+        "discard_changes": "",
         "disconnected": "断开连接",
         "edit": "编辑",
+        "enlarge": "",
         "error": "错误",
         "go": "前往",
         "help": "",
@@ -621,10 +648,12 @@
         "password": "密码",
         "password_placeholder": "留空则不设密码",
         "port": "端口",
+        "preview": "",
         "previous": "",
         "remove": "",
         "save": "保存",
         "search": "搜索",
+        "shrink": "",
         "success": "成功",
         "url_placeholder": "",
         "warning": "警告",
@@ -687,7 +716,7 @@
         "error_403": "拒绝访问 (403)。执行此操作可能需要 API 密钥或登录。"
     },
     "footer": {
-        "back_to_top": "回到顶部"
+        "acknowledgements": ""
     },
     "gallery": {
         "add_items_to_albums_title": "将 {count} 个项目添加到相册",
@@ -707,14 +736,23 @@
         "quick_filter": "快速过滤",
         "rating_filter": "分级过滤",
         "filtering": "",
-        "remove_from_album": "从相册中移除",
         "select_all": "全选",
         "selecting_all": "正在全选...",
         "sort_by": "排序方式",
         "sort_random": "",
         "sort_regen_random": "",
         "sort_tag_count": "",
-        "sort_toggle_order": ""
+        "sort_toggle_order": "",
+        "sort_manual": "",
+        "sort_edit_order": "",
+        "sort_clear_order": "",
+        "sort_clear_confirm": "",
+        "sort_cancel_confirm": "",
+        "sort_order_saved": "",
+        "sort_order_save_failed": "",
+        "sort_order_clear_failed": "",
+        "sort_order_cleared": "",
+        "sort_order_save_partial": ""
     },
     "login": {
         "enter_credentials": "输入您的凭据以访问 {app_name}",
@@ -1024,6 +1062,7 @@
             "backend_saved": "",
             "theming_saved": "",
             "media_type_tags_saved": "",
+            "auto_apply_ai_tags_saved": "",
             "settings_updated": "设置更新成功",
             "tag_deleted": "标签 '{tag_name}' 已成功删除",
             "tag_merged": "",
@@ -1114,47 +1153,10 @@
         "setup_intro": "让我们开始配置您的实例。只需一分钟。",
         "setup_title": "初始设置",
         "skip": "跳过",
-        "welcome": "欢迎使用 Blombooru！"
+        "welcome": "欢迎使用 {app_name}！"
     },
     "search": {
-        "basic_desc_both": "查找同时包含两个标签的媒体",
-        "basic_desc_exclude": "排除包含该标签的媒体",
-        "basic_desc_fuzzy": "模糊搜索（前置一个或零个字符）",
-        "basic_desc_wildcard": "通配符搜索",
-        "basic_tags": "基础标签",
-        "example_cat": "无来源的全年龄猫咪图片",
-        "example_fuzzy": "搜索包含一个或多个女孩、任意眼睛颜色且没有狗的结果",
-        "example_id": "前 100 个上传项，按时间从旧到新",
-        "example_landscape": "高质量风景视频",
-        "example_tagcount": "带有许多标签但没有画师信息的作品",
-        "examples": "搜索示例",
-        "meta_date": "上传日期或相对时长",
-        "meta_dimensions": "图片尺寸 (像素)",
-        "meta_filesize": "文件大小 (KB, MB, GB)",
-        "meta_filetype": "扩展名 (png, gif 等)",
-        "meta_qualifiers": "元限定符",
-        "meta_rating": "safe (全年龄), questionable (限制级), explicit (成人级)",
-        "meta_source": "来源 URL 或 none (无)",
-        "meta_tagcount": "标签数量",
-        "ranges": "范围",
-        "ranges_between": "包含两端的闭区间",
-        "ranges_exact": "精确匹配",
-        "ranges_folding": "",
-        "ranges_gte": "大于或等于",
-        "ranges_in_list": "在列表内",
-        "ranges_multi_list": "",
-        "ranges_note": "注意：范围语法也可以与大多数元限定符一起使用。",
-        "ranges_operators": "运算符",
-        "random": "手气不错 (随机)",
-        "sorting": "排序",
-        "sorting_aspect": "宽高比",
-        "sorting_date": "",
-        "sorting_desc": "使用 order:属性 值",
-        "sorting_dimensions": "",
-        "sorting_filesize": "",
-        "sorting_newest": "最新优先 (默认)",
-        "sorting_oldest": "最早优先",
-        "sorting_tagcount": ""
+        "random": "手气不错 (随机)"
     },
     "shared": {
         "ai_generation_data": "AI 生成数据",
@@ -1169,13 +1171,31 @@
     },
     "tags_gallery": {
         "sort_created_at": "",
-        "sort_tag_name": "",
-        "sort_post_count": "",
-        "sort_category": "",
         "failed_load_list": "",
-        "no_visible_tags": ""
+        "implied_by": "",
+        "add_implied_tag": "",
+        "add_alias": "",
+        "load_details_failed": "",
+        "toggle_details": "",
+        "shared_rule_hint": "",
+        "alias_added": "",
+        "alias_removed": "",
+        "implication_added": "",
+        "implication_removed": "",
+        "bulk_delete_title": "",
+        "bulk_delete_message": ""
     },
     "upload": {
+        "folder": {
+            "mapping_title": "",
+            "create_albums": "",
+            "create_albums_hint": "",
+            "root_mode_title": "",
+            "root_mode_root": "",
+            "root_mode_subfolders": "",
+            "album_path": "",
+            "remove_album_path": ""
+        },
         "base_settings": {
             "select_album": "选择要添加的相册..."
         },
@@ -1186,6 +1206,11 @@
             "no_new_tags": "",
             "new_albums": "",
             "no_new_albums": "",
+            "already_exists": "",
+            "new_album": "",
+            "rename_album": "",
+            "remove_tag_confirm": "",
+            "remove_album_confirm": "",
             "used_in_media": "",
             "media_count": ""
         },
@@ -1193,6 +1218,7 @@
             "select_hint": "",
             "additional_tags": "额外标签 (基础标签会自动前置)",
             "editing": "正在编辑:",
+            "folder_album": "",
             "final_tags": "最终标签",
             "title": "已上传媒体 (点击以编辑单个媒体的分级、来源和标签)",
             "remove_confirm": "",
@@ -1206,6 +1232,7 @@
             "source_applied": "",
             "description_applied": "",
             "album_added": "",
+            "common_folder_album": "",
             "common_tags": ""
         },
         "progress": {
@@ -1214,6 +1241,7 @@
             "extracted_success": "从 {filename} 中提取了 {count} 个文件",
             "extracting": "正在解压 {filename}...",
             "failed": "{count} 个失败。",
+            "file_fetch_error": "",
             "upload_success": "成功上传 {count} 个文件。",
             "uploading": "正在上传...",
             "uploading_progress": "正在上传 {current}/{total}..."
@@ -1233,5 +1261,12 @@
     "changelog": {
         "modal_title": "",
         "english_only_notice": ""
+    },
+    "acknowledgements": {
+        "modal_title": "",
+        "search_placeholder": "",
+        "english_only_notice": "",
+        "not_found": "",
+        "failed_to_load": ""
     }
 }

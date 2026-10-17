@@ -1,24 +1,83 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import rating_filter, sorting_options, page_jump_modal,
-loading_indicator, page_navigation, sidebar_start, sidebar_end %}
+{% from "components/macros.html" import sorting_options, rating_filter, page_jump_modal, category_filter, 
+bulk_actions, loading_indicator, page_navigation, sidebar_start, sidebar_end %}
+{% from "components/icons.html" import icon_use %}
 
 {% block title %}{{ t('common.tags') }} - {{ app_name }}{% endblock %}
 
+{% block extra_css %}
+<style>
+    .tag-card:not(.is-wrapped) .tag-post-count-mobile {
+        display: none !important;
+    }
+
+    .tag-card.is-wrapped .tag-post-count-desktop {
+        display: none !important;
+    }
+
+    .tag-card.is-wrapped .tag-left-col {
+        width: 100% !important;
+    }
+
+    .tag-card.is-wrapped .tag-right-col {
+        width: 100% !important;
+        margin-left: 0 !important;
+        justify-content: space-between !important;
+    }
+
+    @media (max-width: 640px) {
+        .tag-card .tag-post-count-desktop {
+            display: none !important;
+        }
+
+        .tag-card .tag-post-count-mobile {
+            display: inline !important;
+        }
+
+        .tag-card .tag-left-col {
+            width: 100% !important;
+        }
+
+        .tag-card .tag-right-col {
+            width: 100% !important;
+            margin-left: 0 !important;
+            justify-content: space-between !important;
+        }
+    }
+</style>
+{% endblock %}
+
 {% block content %}
+{% set tag_sort_options = {
+'post_count': t('admin.stats.usage_count'),
+'tag_name': t('admin.tags_management.tag_name'),
+'created_at': t('tags_gallery.sort_created_at'),
+'category': t('admin.tags_management.tag_category')
+} %}
+
 <div class="container mx-auto px-4 py-4">
     <div class="grid grid-cols-1 xl:grid-cols-5 lg:grid-cols-4 gap-4">
-        <!-- Tags Stack -->
         <div class="xl:col-span-4 lg:col-span-3">
             {{ rating_filter('mobile', mode=sidebar_filter_mode, custom_buttons=sidebar_custom_buttons) }}
-            {{ sorting_options(sort_options={
-                'post_count': t('tags_gallery.sort_post_count'),
-                'created_at': t('tags_gallery.sort_created_at'),
-                'tag_name': t('tags_gallery.sort_tag_name'),
-                'category': t('tags_gallery.sort_category')
-            }, default_sort=default_sort, default_order=default_order, location='mobile') }}
 
-            <div id="tags-grid"
-                 class="grid grid-cols-1 gap-2">
+            <!-- Mobile Category Filters -->
+            {{ category_filter(location='mobile') }}
+
+            {{
+            sorting_options(sort_options=tag_sort_options, default_sort=default_sort, default_order=default_order,
+            location='mobile')
+            }}
+
+            <!-- Tag Search Bar -->
+            <div class="mb-3">
+                <input type="text" id="tag-search-input"
+                    class="w-full bg px-3 py-2 border text-xs focus:outline-none hover:border-primary focus:border-primary transition-colors"
+                    placeholder="{{ t('common.search_tags_placeholder') }}" autocomplete="off" spellcheck="false">
+            </div>
+
+            {{ bulk_actions(['select_all', 'deselect_all', 'tag_category', 'tag_implies', 'tag_merge', 'tag_remove']) }}
+
+            <div id="tags-grid" class="flex flex-col gap-2">
             </div>
 
             {{ loading_indicator() }}
@@ -26,14 +85,12 @@ loading_indicator, page_navigation, sidebar_start, sidebar_end %}
         </div>
 
         <!-- Sidebar -->
-        {{ sidebar_start() }}
+        {{ sidebar_start(class="hidden lg:block") }}
         {{ rating_filter('desktop', mode=sidebar_filter_mode, custom_buttons=sidebar_custom_buttons) }}
-        {{ sorting_options(sort_options={
-            'post_count': t('tags_gallery.sort_post_count'),
-            'created_at': t('tags_gallery.sort_created_at'),
-            'tag_name': t('tags_gallery.sort_tag_name'),
-            'category': t('tags_gallery.sort_category')
-        }, default_sort=default_sort, default_order=default_order) }}
+        {{ sorting_options(sort_options=tag_sort_options, default_sort=default_sort, default_order=default_order) }}
+
+        <!-- Desktop Category Filters -->
+        {{ category_filter(location='desktop') }}
         {{ sidebar_end() }}
     </div>
 </div>
@@ -42,7 +99,11 @@ loading_indicator, page_navigation, sidebar_start, sidebar_end %}
 {% endblock %}
 
 {% block extra_js %}
+<script src="/static/js/components/tag-input-helper.js?v={{ cache_buster }}"></script>
 <script src="/static/js/components/custom-select.js?v={{ cache_buster }}"></script>
+<script src="/static/js/components/tag-manage-modals.js?v={{ cache_buster }}"></script>
+<script src="/static/js/components/tag-bulk-modals.js?v={{ cache_buster }}"></script>
+<script src="/static/js/components/tag-info-panel.js?v={{ cache_buster }}"></script>
 <script src="/static/js/components/base-gallery.js?v={{ cache_buster }}"></script>
 <script src="/static/js/pages/tags-gallery.js?v={{ cache_buster }}"></script>
 {% endblock %}

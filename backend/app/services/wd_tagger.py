@@ -18,6 +18,7 @@ from PIL import Image
 
 from ..config import settings
 from ..utils.logger import logger
+from ..utils import image_plugins
 
 class DownloadCancelledException(Exception):
     """Raised when a model download is cancelled by the client."""
@@ -219,6 +220,13 @@ class WDTagger:
             return model_name in cls._active_downloads
 
     @classmethod
+    def get_model_filenames(cls, model_name: str) -> Tuple[str, str]:
+        """Return (model_filename, label_filename) for a given model."""
+        if model_name == "pixai-tagger-v1.0":
+            return "model.onnx", "tags.json"
+        return "model.onnx", "selected_tags.csv"
+
+    @classmethod
     def is_model_downloaded(cls, model_name: str) -> bool:
         """Check if a model is fully downloaded in local cache without acquiring file locks."""
         if model_name not in cls.AVAILABLE_MODELS:
@@ -228,15 +236,16 @@ class WDTagger:
         try:
             import huggingface_hub
             repo_id = cls.AVAILABLE_MODELS[model_name]
+            model_file, label_file = cls.get_model_filenames(model_name)
             model_path = huggingface_hub.try_to_load_from_cache(
-                repo_id, cls.MODEL_FILENAME, cache_dir=settings.MODELS_DIR
+                repo_id, model_file, cache_dir=settings.MODELS_DIR
             )
-            csv_path = huggingface_hub.try_to_load_from_cache(
-                repo_id, cls.LABEL_FILENAME, cache_dir=settings.MODELS_DIR
+            label_path = huggingface_hub.try_to_load_from_cache(
+                repo_id, label_file, cache_dir=settings.MODELS_DIR
             )
             return bool(
                 isinstance(model_path, str) and os.path.exists(model_path) and
-                isinstance(csv_path, str) and os.path.exists(csv_path)
+                isinstance(label_path, str) and os.path.exists(label_path)
             )
         except Exception:
             return False
@@ -279,11 +288,12 @@ class WDTagger:
                 task.cancel()
     
     AVAILABLE_MODELS = {
+        "pixai-tagger-v1.0": "A1yCE/pixai-tagger-v1.0-onnx-fp16",
         "wd-eva02-large-tagger-v3": "SmilingWolf/wd-eva02-large-tagger-v3",
-        "wd-vit-tagger-v3": "SmilingWolf/wd-vit-tagger-v3",
+        "wd-vit-large-tagger-v3": "SmilingWolf/wd-vit-large-tagger-v3",
         "wd-swinv2-tagger-v3": "SmilingWolf/wd-swinv2-tagger-v3",
         "wd-convnext-tagger-v3": "SmilingWolf/wd-convnext-tagger-v3",
-        "wd-vit-large-tagger-v3": "SmilingWolf/wd-vit-large-tagger-v3",
+        "wd-vit-tagger-v3": "SmilingWolf/wd-vit-tagger-v3",
     }
     
     # Speed ranking (relative, lower is faster)
@@ -292,28 +302,41 @@ class WDTagger:
         "wd-convnext-tagger-v3": 2,
         "wd-swinv2-tagger-v3": 3,
         "wd-eva02-large-tagger-v3": 4,
-        "wd-vit-large-tagger-v3": 5,  # Slowest
+        "wd-vit-large-tagger-v3": 5,
+        "pixai-tagger-v1.0": 6,       # Slowest
+    }
+    
+    # Accuracy ranking (relative, lower is more accurate), based on benchmarks found online
+    MODEL_ACCURACY_RANKING = {
+        "pixai-tagger-v1.0": 1,        # Most accurate
+        "wd-eva02-large-tagger-v3": 2,
+        "wd-vit-large-tagger-v3": 3,
+        "wd-swinv2-tagger-v3": 4,
+        "wd-convnext-tagger-v3": 5,
+        "wd-vit-tagger-v3": 6,         # Least accurate
     }
     
     MODEL_FILENAME = "model.onnx"
     LABEL_FILENAME = "selected_tags.csv"
     
-    # Optimal batch sizes per model (tuned for ~16GB RAM systems)
+    # Measured per-model plateau caps on CPU (Ryzen 7 5700G)
     OPTIMAL_BATCH_SIZES = {
-        "wd-eva02-large-tagger-v3": 4,
-        "wd-vit-tagger-v3": 16,
-        "wd-swinv2-tagger-v3": 8,
-        "wd-convnext-tagger-v3": 12,
-        "wd-vit-large-tagger-v3": 2,
+        "pixai-tagger-v1.0": 1,
+        "wd-convnext-tagger-v3": 1,
+        "wd-eva02-large-tagger-v3": 2,
+        "wd-vit-large-tagger-v3": 5,
+        "wd-vit-tagger-v3": 10,
+        "wd-swinv2-tagger-v3": 15,
     }
 
-    # Total download sizes (model.onnx + selected_tags.csv) in bytes
+    # Total download sizes (model file + tags file) in bytes
     MODEL_DOWNLOAD_SIZES_BYTES = {
         "wd-vit-tagger-v3": int(379.3 * 1024 * 1024),
         "wd-convnext-tagger-v3": int(375.3 * 1024 * 1024),
         "wd-swinv2-tagger-v3": int(445.3 * 1024 * 1024),
         "wd-eva02-large-tagger-v3": int(850.3 * 1024 * 1024),
         "wd-vit-large-tagger-v3": int(1200.3 * 1024 * 1024),
+        "pixai-tagger-v1.0": int(935.4 * 1024 * 1024),
     }
     
     def __new__(cls):
@@ -338,7 +361,7 @@ class WDTagger:
                 max_workers=self._num_preprocess_workers,
                 thread_name_prefix="wd_preprocess"
             )
-            self._dynamic_batch_size = 4
+            self._dynamic_batch_size = 1
             self._oom_encountered = False
             
             self._idle_timeout = int(os.getenv("BLOMBOORU_WD_TAGGER_IDLE_TIMEOUT", 60))  # 1 min default
@@ -370,6 +393,8 @@ class WDTagger:
                 logger.info(f"Idle for {self._idle_timeout}s, unloading WD Tagger to free RAM/VRAM...")
                 self._model = None
                 self._current_model_name = None
+                self._dynamic_batch_size = 1
+                self._oom_encountered = False
                 
                 import gc
                 gc.collect()
@@ -424,23 +449,45 @@ class WDTagger:
         }
 
     def _run_with_oom_retry(self, batch_images: np.ndarray) -> np.ndarray:
-        try:
+        if getattr(self, '_fixed_batch_one', False):
             with self._inference_lock:
-                return self._model.run(None, {self._input_name: batch_images})[0]
-        except Exception as e:
-            msg = str(e)
-            is_oom = (
-                "CUDA" in msg
-                and ("memory" in msg.lower() or "alloc" in msg.lower())
-                and batch_images.shape[0] > 1
-            )
-            if is_oom:
-                logger.warning(f"CUDA OOM at batch size {batch_images.shape[0]}, retrying at half size")
-                mid = batch_images.shape[0] // 2
-                first = self._run_with_oom_retry(batch_images[:mid])
-                second = self._run_with_oom_retry(batch_images[mid:])
-                return np.concatenate([first, second], axis=0)
-            raise
+                if batch_images.shape[0] == 1:
+                    raw_preds = self._model.run(None, {self._input_name: batch_images})[0]
+                else:
+                    outs = []
+                    for i in range(batch_images.shape[0]):
+                        out = self._model.run(None, {self._input_name: batch_images[i:i+1]})[0]
+                        outs.append(out[0])
+                    raw_preds = np.stack(outs, axis=0)
+        else:
+            try:
+                with self._inference_lock:
+                    raw_preds = self._model.run(None, {self._input_name: batch_images})[0]
+            except Exception as e:
+                msg = str(e)
+                is_oom = (
+                    "CUDA" in msg
+                    and ("memory" in msg.lower() or "alloc" in msg.lower())
+                    and batch_images.shape[0] > 1
+                )
+                if is_oom:
+                    logger.warning(f"CUDA OOM at batch size {batch_images.shape[0]}, retrying at half size")
+                    mid = batch_images.shape[0] // 2
+                    first = self._run_with_oom_retry(batch_images[:mid])
+                    second = self._run_with_oom_retry(batch_images[mid:])
+                    return np.concatenate([first, second], axis=0)
+                raise
+
+        if self._tag_data and self._tag_data.get('is_pixai'):
+            positive = raw_preds >= 0
+            probs = np.empty_like(raw_preds, dtype=np.float32)
+            probs[positive] = 1.0 / (1.0 + np.exp(-raw_preds[positive]))
+            negative = ~positive
+            exp_neg = np.exp(raw_preds[negative])
+            probs[negative] = exp_neg / (1.0 + exp_neg)
+            return probs
+
+        return raw_preds
     
     def _process_chunk_oom_protected(
         self,
@@ -467,10 +514,7 @@ class WDTagger:
                     return {}
                 batch_images = np.stack([img for _, img in valid_items], axis=0)
                 
-                with self._inference_lock:
-                    if is_cancelled and is_cancelled():
-                        return {}
-                    preds = self._model.run(None, {self._input_name: batch_images})[0]
+                preds = self._run_with_oom_retry(batch_images)
                 
                 for (fp, _), scores in zip(valid_items, preds):
                     tags = self._extract_tags_from_scores(
@@ -491,10 +535,14 @@ class WDTagger:
                 self._oom_encountered = True
                 
                 current_size = len(file_paths)
-                exp = 4
-                while exp * 2 < current_size:
-                    exp *= 2
-                self._dynamic_batch_size = max(4, exp)
+                max_batch = self.OPTIMAL_BATCH_SIZES.get(self._current_model_name, 4)
+                if getattr(self, '_fixed_batch_one', False) or max_batch <= 1:
+                    self._dynamic_batch_size = 1
+                else:
+                    exp = 1
+                    while exp * 2 < current_size:
+                        exp *= 2
+                    self._dynamic_batch_size = max(1, min(exp, max_batch))
                 
                 mid = len(file_paths) // 2
                 first_half = self._process_chunk_oom_protected(
@@ -510,6 +558,65 @@ class WDTagger:
                 first_half.update(second_half)
                 return first_half
             raise
+
+    def _parse_label_data(self, label_path: str) -> dict:
+        """Parse tag labels from CSV (WD models) or JSON (PixAI models)."""
+        if label_path.endswith(".json"):
+            import json
+            with open(label_path, "r", encoding="utf-8") as f:
+                tag_map = json.load(f)
+            num_classes = tag_map.get("num_classes", 30877)
+            all_names = [""] * num_classes
+            general_indices = []
+            character_indices = []
+            copyright_indices = []
+            artist_indices = []
+            meta_indices = []
+            rating_indices = []
+
+            for cat in tag_map.get("categories", []):
+                cname = cat["name"]
+                offset = cat["offset"]
+                count = cat["count"]
+                tags = cat["tags"]
+                for i, tag in enumerate(tags):
+                    all_names[offset + i] = tag
+                indices = np.arange(offset, offset + count)
+                if cname == "general":
+                    general_indices = indices
+                elif cname == "character":
+                    character_indices = indices
+                elif cname == "copyright":
+                    copyright_indices = indices
+                elif cname == "style":
+                    artist_indices = indices
+                elif cname == "meta":
+                    meta_indices = indices
+                elif cname == "rating":
+                    rating_indices = indices
+
+            return {
+                'names': all_names,
+                'general': np.array(general_indices, dtype=int),
+                'character': np.array(character_indices, dtype=int),
+                'copyright': np.array(copyright_indices, dtype=int),
+                'artist': np.array(artist_indices, dtype=int),
+                'meta': np.array(meta_indices, dtype=int),
+                'rating': np.array(rating_indices, dtype=int),
+                'is_pixai': True,
+            }
+        else:
+            df = pd.read_csv(label_path)
+            return {
+                'names': df["name"].tolist(),
+                'general': np.where(df["category"] == 0)[0],
+                'character': np.where(df["category"] == 4)[0],
+                'copyright': np.array([], dtype=int),
+                'artist': np.array([], dtype=int),
+                'meta': np.array([], dtype=int),
+                'rating': np.where(df["category"] == 9)[0],
+                'is_pixai': False,
+            }
 
     def _load_model(
         self,
@@ -528,6 +635,7 @@ class WDTagger:
             raise DownloadCancelledException("Operation cancelled")
         
         model_repo = self.AVAILABLE_MODELS[model_name]
+        model_filename, label_filename = self.get_model_filenames(model_name)
         
         def _fetch_paths(force_download: bool = False):
             if is_cancelled and is_cancelled():
@@ -539,13 +647,13 @@ class WDTagger:
                     return (
                         huggingface_hub.hf_hub_download(
                             model_repo,
-                            self.LABEL_FILENAME,
+                            label_filename,
                             force_download=True,
                             cache_dir=settings.MODELS_DIR
                         ),
                         huggingface_hub.hf_hub_download(
                             model_repo,
-                            self.MODEL_FILENAME,
+                            model_filename,
                             force_download=True,
                             cache_dir=settings.MODELS_DIR
                         )
@@ -556,13 +664,13 @@ class WDTagger:
                 return (
                     huggingface_hub.hf_hub_download(
                         model_repo,
-                        self.LABEL_FILENAME,
+                        label_filename,
                         local_files_only=True,
                         cache_dir=settings.MODELS_DIR
                     ),
                     huggingface_hub.hf_hub_download(
                         model_repo,
-                        self.MODEL_FILENAME,
+                        model_filename,
                         local_files_only=True,
                         cache_dir=settings.MODELS_DIR
                     )
@@ -571,20 +679,14 @@ class WDTagger:
                 logger.info(f"Model '{model_name}' not found in cache. Downloading from HuggingFace...")
                 return _fetch_paths(force_download=True)
 
-        csv_path, model_path = _fetch_paths()
+        label_path, model_path = _fetch_paths()
         
         if is_cancelled and is_cancelled():
             raise DownloadCancelledException("Operation cancelled")
         
         try:
             # Attempt to load the model and labels
-            df = pd.read_csv(csv_path)
-            self._tag_data = {
-                'names': df["name"].tolist(),
-                'rating': np.where(df["category"] == 9)[0],
-                'general': np.where(df["category"] == 0)[0],
-                'character': np.where(df["category"] == 4)[0],
-            }
+            self._tag_data = self._parse_label_data(label_path)
             
             providers = self._resolve_providers()
             sess_options = self._get_session_options(providers)
@@ -599,19 +701,13 @@ class WDTagger:
                 raise
             # If loading fails (e.g. corrupted file), force network check and re-download
             logger.warning(f"Failed to load model from cache: {e}. Verifying hashes and re-downloading...")
-            csv_path, model_path = _fetch_paths(force_download=True)
+            label_path, model_path = _fetch_paths(force_download=True)
             
             if is_cancelled and is_cancelled():
                 raise DownloadCancelledException("Operation cancelled")
             
             # Retry loading
-            df = pd.read_csv(csv_path)
-            self._tag_data = {
-                'names': df["name"].tolist(),
-                'rating': np.where(df["category"] == 9)[0],
-                'general': np.where(df["category"] == 0)[0],
-                'character': np.where(df["category"] == 4)[0],
-            }
+            self._tag_data = self._parse_label_data(label_path)
             
             providers = self._resolve_providers()
             sess_options = self._get_session_options(providers)
@@ -627,8 +723,18 @@ class WDTagger:
                 raise
 
         input_info = self._model.get_inputs()[0]
-        self._target_size = input_info.shape[2]
         self._input_name = input_info.name
+        shape = input_info.shape
+        if len(shape) == 4 and shape[1] == 3:
+            self._is_nchw = True
+            self._target_size = shape[2] if isinstance(shape[2], int) else 1008
+            self._fixed_batch_one = (shape[0] == 1)
+        else:
+            self._is_nchw = False
+            self._target_size = shape[2] if isinstance(shape[2], int) else 448
+            self._fixed_batch_one = False
+        self._dynamic_batch_size = 1
+        self._oom_encountered = False
         self._current_model_name = model_name
 
     def ensure_loaded(
@@ -660,6 +766,27 @@ class WDTagger:
         Preprocess a single image for the model.
         Optimized version with minimal allocations.
         """
+        if getattr(self, '_is_nchw', False):
+            if image.mode != "RGB":
+                image = image.convert("RGBA")
+                canvas = Image.new("RGBA", image.size, (255, 255, 255))
+                canvas.alpha_composite(image)
+                image = canvas.convert("RGB")
+
+            width, height = image.size
+            size = self._target_size
+            if height != size or width != size:
+                scale = min(size / height, size / width)
+                new_size = (int(width * scale), int(height * scale))
+                image = image.resize(new_size, Image.Resampling.BILINEAR)
+                canvas = Image.new("RGB", (size, size), (0, 0, 0))
+                canvas.paste(image, ((size - new_size[0]) // 2, (size - new_size[1]) // 2))
+                image = canvas
+
+            array = np.asarray(image, dtype=np.float32) / 255.0
+            array = (array - 0.5) / 0.5
+            return np.transpose(array, (2, 0, 1))
+
         width, height = image.size
         
         # Handle transparency
@@ -762,40 +889,76 @@ class WDTagger:
         
         # Character tags - vectorized threshold check
         char_indices = self._tag_data['character']
-        char_scores = scores[char_indices]
-        char_mask = char_scores >= character_threshold
-        
-        for idx, score in zip(char_indices[char_mask], char_scores[char_mask]):
-            results.append({
-                'name': names[idx],
-                'category': 'character',
-                'confidence': float(score)
-            })
+        if len(char_indices) > 0:
+            char_scores = scores[char_indices]
+            char_mask = char_scores >= character_threshold
+            for idx, score in zip(char_indices[char_mask], char_scores[char_mask]):
+                results.append({
+                    'name': names[idx],
+                    'category': 'character',
+                    'confidence': float(score)
+                })
+
+        # Copyright tags
+        cpy_indices = self._tag_data.get('copyright', np.array([], dtype=int))
+        if len(cpy_indices) > 0:
+            cpy_scores = scores[cpy_indices]
+            cpy_mask = cpy_scores >= general_threshold
+            for idx, score in zip(cpy_indices[cpy_mask], cpy_scores[cpy_mask]):
+                results.append({
+                    'name': names[idx],
+                    'category': 'copyright',
+                    'confidence': float(score)
+                })
+
+        # Artist tags (e.g. style tags from PixAI)
+        art_indices = self._tag_data.get('artist', np.array([], dtype=int))
+        if len(art_indices) > 0:
+            art_scores = scores[art_indices]
+            art_mask = art_scores >= general_threshold
+            for idx, score in zip(art_indices[art_mask], art_scores[art_mask]):
+                results.append({
+                    'name': names[idx],
+                    'category': 'artist',
+                    'confidence': float(score)
+                })
         
         # General tags
         gen_indices = self._tag_data['general']
-        gen_scores = scores[gen_indices]
-        gen_mask = gen_scores >= general_threshold
-        
-        for idx, score in zip(gen_indices[gen_mask], gen_scores[gen_mask]):
-            results.append({
-                'name': names[idx],
-                'category': 'general',
-                'confidence': float(score)
-            })
+        if len(gen_indices) > 0:
+            gen_scores = scores[gen_indices]
+            gen_mask = gen_scores >= general_threshold
+            for idx, score in zip(gen_indices[gen_mask], gen_scores[gen_mask]):
+                results.append({
+                    'name': names[idx],
+                    'category': 'general',
+                    'confidence': float(score)
+                })
+
+        # Meta tags
+        meta_indices = self._tag_data.get('meta', np.array([], dtype=int))
+        if len(meta_indices) > 0:
+            meta_scores = scores[meta_indices]
+            meta_mask = meta_scores >= general_threshold
+            for idx, score in zip(meta_indices[meta_mask], meta_scores[meta_mask]):
+                results.append({
+                    'name': names[idx],
+                    'category': 'meta',
+                    'confidence': float(score)
+                })
         
         # Rating tags
         if not hide_rating_tags:
             rating_indices = self._tag_data['rating']
-            rating_scores = scores[rating_indices]
-            rating_mask = rating_scores > 0.5
-            
-            for idx, score in zip(rating_indices[rating_mask], rating_scores[rating_mask]):
-                results.append({
-                    'name': names[idx],
-                    'category': 'rating',
-                    'confidence': float(score)
-                })
+            if len(rating_indices) > 0:
+                rating_scores = scores[rating_indices]
+                rating_mask = rating_scores > 0.5
+                for idx, score in zip(rating_indices[rating_mask], rating_scores[rating_mask]):
+                    results.append({
+                        'name': names[idx],
+                        'category': 'rating',
+                        'confidence': float(score)
+                    })
         
         # Sort results
         if character_tags_first:
@@ -805,8 +968,23 @@ class WDTagger:
                 key=lambda x: x['confidence'], 
                 reverse=True
             )
+            cpy_tags = sorted(
+                [r for r in results if r['category'] == 'copyright'],
+                key=lambda x: x['confidence'], 
+                reverse=True
+            )
+            art_tags = sorted(
+                [r for r in results if r['category'] == 'artist'],
+                key=lambda x: x['confidence'], 
+                reverse=True
+            )
             general_tags = sorted(
                 [r for r in results if r['category'] == 'general'],
+                key=lambda x: x['confidence'], 
+                reverse=True
+            )
+            meta_tags = sorted(
+                [r for r in results if r['category'] == 'meta'],
                 key=lambda x: x['confidence'], 
                 reverse=True
             )
@@ -815,7 +993,7 @@ class WDTagger:
                 key=lambda x: x['confidence'], 
                 reverse=True
             )
-            results = char_tags + general_tags + rating_tags
+            results = char_tags + cpy_tags + art_tags + general_tags + meta_tags + rating_tags
         else:
             results.sort(key=lambda x: x['confidence'], reverse=True)
         
@@ -943,6 +1121,11 @@ class WDTagger:
         self.ensure_loaded(model_name)
         
         if batch_size is None:
+            max_batch = self.OPTIMAL_BATCH_SIZES.get(self._current_model_name, 4)
+            if getattr(self, '_fixed_batch_one', False) or max_batch <= 1:
+                self._dynamic_batch_size = 1
+            else:
+                self._dynamic_batch_size = min(self._dynamic_batch_size, max_batch)
             target_size = self._dynamic_batch_size
         else:
             target_size = batch_size
@@ -971,10 +1154,13 @@ class WDTagger:
                 i += actual_chunk_size
                 
                 if batch_size is None:
-                    if self._oom_encountered:
-                        self._dynamic_batch_size = min(self._dynamic_batch_size + 1, 64)
+                    max_batch = self.OPTIMAL_BATCH_SIZES.get(self._current_model_name, 4)
+                    if getattr(self, '_fixed_batch_one', False) or max_batch <= 1:
+                        self._dynamic_batch_size = 1
+                    elif self._oom_encountered:
+                        self._dynamic_batch_size = min(self._dynamic_batch_size + 1, max_batch)
                     else:
-                        self._dynamic_batch_size = min(self._dynamic_batch_size * 2, 64)
+                        self._dynamic_batch_size = min(self._dynamic_batch_size * 2, max_batch)
                     target_size = self._dynamic_batch_size
         finally:
             self._reset_idle_timer()
@@ -1032,10 +1218,13 @@ class WDTagger:
                 i += actual_chunk_size
                 
                 if batch_size is None:
-                    if self._oom_encountered:
-                        target_size = min(target_size + 1, 8)
+                    max_batch = self.OPTIMAL_BATCH_SIZES.get(self._current_model_name, 8)
+                    if getattr(self, '_fixed_batch_one', False) or max_batch <= 1:
+                        target_size = 1
+                    elif self._oom_encountered:
+                        target_size = min(target_size + 1, max_batch)
                     else:
-                        target_size = min(target_size * 2, 8)
+                        target_size = min(target_size * 2, max_batch)
         finally:
             self._reset_idle_timer()
     

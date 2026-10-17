@@ -441,6 +441,7 @@ class AdminSystem {
             if (typeof TagAutocomplete !== 'undefined') {
                 const autocomplete = new TagAutocomplete(tagInput, {
                     multipleValues: true,
+                    enableQualifiers: true,
                     containerClasses: 'max-h-40 overflow-y-auto w-full bg border border-primary shadow-lg z-10'
                 });
                 instance.autocomplete = autocomplete;
@@ -544,6 +545,47 @@ class AdminSystem {
         } finally {
             btn.disabled = false;
             btn.textContent = originalText;
+        }
+    }
+
+    async testBooruProxy() {
+        const proxyInput = document.getElementById('booru-proxy-url');
+        const proxyUrl = proxyInput ? proxyInput.value.trim() : '';
+        if (!proxyUrl) {
+            app.showNotification(window.i18n.t('admin.settings.booru_config.error_proxy_empty'), 'error');
+            return;
+        }
+
+        const btn = document.getElementById('test-booru-proxy-btn');
+        const originalText = btn ? btn.textContent : '';
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = window.i18n.t('admin.actions.testing');
+        }
+
+        try {
+            const result = await app.apiCall('/api/booru-config/test-proxy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ proxy_url: proxyUrl })
+            });
+
+            if (result.success) {
+                const msg = window.i18n.t('admin.settings.booru_config.proxy_test_success', { ip: result.origin_ip || 'unknown' });
+                app.showNotification(msg, 'success');
+            } else {
+                const err = result.error || window.i18n.t('common.connection_failed');
+                const msg = window.i18n.t('admin.settings.booru_config.proxy_test_failed', { error: err });
+                app.showNotification(msg, 'error');
+            }
+        } catch (error) {
+            const msg = window.i18n.t('admin.settings.booru_config.proxy_test_failed', { error: error.message });
+            app.showNotification(msg, 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
         }
     }
 
@@ -658,6 +700,11 @@ class AdminSystem {
                 if (requireAuthCheckbox) requireAuthCheckbox.checked = settings.require_auth;
             }
 
+            if (settings.blur_explicit_thumbnails !== undefined) {
+                const blurExplicitCheckbox = document.getElementById('blur-explicit-thumbnails');
+                if (blurExplicitCheckbox) blurExplicitCheckbox.checked = settings.blur_explicit_thumbnails;
+            }
+
             if (settings.redis) {
                 const redisEnabled = document.getElementById('redis-enabled');
                 if (redisEnabled) {
@@ -735,6 +782,12 @@ class AdminSystem {
                 });
             }
 
+            // Load booru proxy setting
+            if (settings.booru_proxy_url !== undefined) {
+                const proxyInput = document.getElementById('booru-proxy-url');
+                if (proxyInput) proxyInput.value = settings.booru_proxy_url || '';
+            }
+
             // Load media_type_tags settings
             if (settings.media_type_tags) {
                 const types = ['image', 'gif', 'video'];
@@ -748,6 +801,14 @@ class AdminSystem {
                         }
                     }
                 });
+            }
+
+            // Load auto_apply_ai_tags settings
+            if (settings.auto_apply_ai_tags !== undefined) {
+                const autoApplyAiTagsCheckbox = document.getElementById('auto-apply-ai-tags');
+                if (autoApplyAiTagsCheckbox) {
+                    autoApplyAiTagsCheckbox.checked = !!settings.auto_apply_ai_tags;
+                }
             }
 
             // Load custom background settings
@@ -827,6 +888,7 @@ class AdminSystem {
         const popularTagsLimitRaw = document.getElementById('popular-tags-limit')?.value;
         const popularTagsLimit = popularTagsLimitRaw ? Math.max(1, Math.min(100, parseInt(popularTagsLimitRaw) || 20)) : 20;
         const requireAuth = document.getElementById('require-auth')?.checked || false;
+        const blurExplicitThumbnails = document.getElementById('blur-explicit-thumbnails')?.checked || false;
 
         const sidebarMode = this.sidebarFilterModeSelect ? this.sidebarFilterModeSelect.getValue() : 'rating';
 
@@ -857,6 +919,7 @@ class AdminSystem {
             popular_tags_limit: popularTagsLimit,
             external_share_url: externalShareUrl || null,
             require_auth: requireAuth,
+            blur_explicit_thumbnails: blurExplicitThumbnails,
             sidebar_filter_mode: sidebarMode,
             sidebar_custom_buttons: validButtons
         };
@@ -987,13 +1050,17 @@ class AdminSystem {
             }
         });
 
+        const proxyInput = document.getElementById('booru-proxy-url');
+        const booruProxyUrl = proxyInput ? proxyInput.value.trim() : null;
+
         try {
             await app.apiCall('/api/admin/settings', {
                 method: 'PATCH',
                 body: JSON.stringify({
                     redis: redisSettings,
                     shared_tags: sharedTagsSettings,
-                    similarity_weights: similarityWeights
+                    similarity_weights: similarityWeights,
+                    booru_proxy_url: booruProxyUrl || null
                 })
             });
 
@@ -1062,18 +1129,18 @@ class AdminSystem {
     getApiKeyPermissionIcon(permission, size = 16) {
         if (permission === 'write') {
             const title = window.i18n.t('admin.api_access.level_write');
-            return `<span title="${this.app.escapeHtml(title)}" class="inline-flex items-center">
+            return `<span title="${escapeHtml(title)}" class="inline-flex items-center">
                 ${window.Icons.upload({ size: size, class: 'text-warning shrink-0' })}
             </span>`;
         }
         if (permission === 'admin') {
             const title = window.i18n.t('admin.api_access.level_admin');
-            return `<span title="${this.app.escapeHtml(title)}" class="inline-flex items-center">
+            return `<span title="${escapeHtml(title)}" class="inline-flex items-center">
                 ${window.Icons.shield({ size: size, class: 'text-danger shrink-0' })}
             </span>`;
         }
         const title = window.i18n.t('admin.api_access.level_read');
-        return `<span title="${this.app.escapeHtml(title)}" class="inline-flex items-center">
+        return `<span title="${escapeHtml(title)}" class="inline-flex items-center">
             ${window.Icons.eye({ size: size, class: 'text-success shrink-0' })}
         </span>`;
     }
@@ -1224,10 +1291,10 @@ class AdminSystem {
                 <div class="flex-1 min-w-0 pr-2">
                     <div class="flex items-center gap-1 mb-1.5">
                         ${iconSvg}
-                        <span class="font-bold text-xs truncate text">${this.app.escapeHtml(key.name || 'Unnamed Key')}</span>
+                        <span class="font-bold text-xs truncate text">${escapeHtml(key.name || 'Unnamed Key')}</span>
                     </div>
                     <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-secondary">
-                        <span class="font-mono bg surface px-1 border">${this.app.escapeHtml(key.key_prefix)}...</span>
+                        <span class="font-mono bg surface px-1 border">${escapeHtml(key.key_prefix)}...</span>
                         <div>
                             <span> ${window.i18n.t('admin.api_access.created_at')} <strong>${new Date(key.created_at).toLocaleDateString()}</strong></span>
                             <span> ${window.i18n.t('admin.api_access.last_used')} <strong>${key.last_used_at ? new Date(key.last_used_at).toLocaleDateString() : window.i18n.t('common.never')}</strong></span>
@@ -1374,8 +1441,8 @@ class AdminSystem {
                 if (status.notices && status.notices.length > 0) {
                     noticesDiv.classList.remove('hidden');
                     noticesDiv.innerHTML = status.notices.map(n => {
-                        const translated = window.i18n ? window.i18n.t(n) : n;
-                        return `<div class="bg text-xs p-2 mb-1 border-l-4 border-warning text-warning font-bold">${this.app.escapeHtml(translated)}</div>`;
+                        const translated = window.i18n.t(n);
+                        return `<div class="bg text-xs p-2 mb-1 border-l-4 border-warning text-warning font-bold">${escapeHtml(translated)}</div>`;
                     }).join('');
                 } else {
                     noticesDiv.classList.add('hidden');
@@ -1406,11 +1473,11 @@ class AdminSystem {
             if (configNotice && status.config_files_changed && status.update_available) {
                 configNotice.classList.remove('hidden');
                 const fileNames = (status.changed_config_files || []).join(', ');
-                const msg = window.i18n ? window.i18n.t('admin.update.config_files_changed', { files: fileNames }) : `Configuration files changed: ${fileNames}`;
+                const msg = window.i18n.t('admin.update.config_files_changed', { files: fileNames });
                 if (configMessage) configMessage.textContent = msg;
                 if (configLinks) {
                     configLinks.innerHTML = Object.entries(status.asset_urls || {}).map(([name, url]) =>
-                        `<a href="${this.app.escapeHtml(url)}" target="_blank" class="btn-dark px-3 py-1 text-[10px] cursor-pointer">${this.app.escapeHtml(name)}</a>`
+                        `<a href="${escapeHtml(url)}" target="_blank" class="btn-dark px-3 py-1 text-[10px] cursor-pointer">${escapeHtml(name)}</a>`
                     ).join('');
                 }
             } else if (configNotice) {
@@ -1426,7 +1493,7 @@ class AdminSystem {
                 } else if (!status.update_available && status.deployment_type === 'local') {
                     updateBtn.style.display = 'block';
                     updateBtn.disabled = true;
-                    updateBtn.textContent = window.i18n ? window.i18n.t('admin.messages.already_latest') : 'Already up to date';
+                    updateBtn.textContent = window.i18n.t('admin.messages.already_latest');
                 } else {
                     updateBtn.style.display = 'none';
                 }
@@ -1444,8 +1511,8 @@ class AdminSystem {
                 const noticesDiv2 = document.getElementById('update-notices');
                 if (noticesDiv2) {
                     noticesDiv2.classList.remove('hidden');
-                    const msg = window.i18n ? window.i18n.t('admin.update.up_to_date') : 'You are running the latest version.';
-                    noticesDiv2.innerHTML = `<div class="text-xs tag-text p-2 border border-success bg-success bg-opacity-10">${this.app.escapeHtml(msg)}</div>`;
+                    const msg = window.i18n.t('admin.update.up_to_date');
+                    noticesDiv2.innerHTML = `<div class="text-xs tag-text p-2 border border-success bg-success bg-opacity-10">${escapeHtml(msg)}</div>`;
                 }
             }
 
@@ -1456,7 +1523,7 @@ class AdminSystem {
                 if (hasContent && status.update_available) {
                     changelogBtn.style.display = 'block';
                     const count = (status.commits || []).length;
-                    changelogBtn.textContent = window.i18n ? window.i18n.t('admin.messages.view_changelog', { count }) : `View Changelog (${count})`;
+                    changelogBtn.textContent = window.i18n.t('admin.messages.view_changelog', { count });
                 } else {
                     changelogBtn.style.display = 'none';
                 }
@@ -1465,7 +1532,7 @@ class AdminSystem {
         } catch (e) {
             console.error(e);
             if (loading) {
-                loading.textContent = window.i18n ? window.i18n.t('admin.messages.update_error', { error: e.message }) : `Error: ${e.message}`;
+                loading.textContent = window.i18n.t('admin.messages.update_error', { error: e.message });
                 loading.classList.remove('hidden');
                 loading.classList.add('text-danger');
             }
@@ -1482,7 +1549,7 @@ class AdminSystem {
             return;
         }
 
-        const t = (key, params) => window.i18n ? window.i18n.t(key, params) : key;
+        const t = (key, params) => window.i18n.t(key, params);
 
         const extractWhatsChanged = (body) => {
             if (!body) return '';
@@ -1502,7 +1569,7 @@ class AdminSystem {
             const listItems = lines.map(line => {
                 // Strip leading "* " or "- "
                 const cleaned = line.replace(/^[\*\-]\s+/, '');
-                return `<li class="mb-1 last:mb-0">${this.app.escapeHtml(cleaned)}</li>`;
+                return `<li class="mb-1 last:mb-0">${escapeHtml(cleaned)}</li>`;
             });
             return `<ul class="list-disc list-inside text-xs">${listItems.join('')}</ul>`;
         };
@@ -1516,7 +1583,7 @@ class AdminSystem {
                 changesHtml += `
                 <div class="bg p-2 border-b last:border-0 text-left">
                     <div class="mb-2">
-                        <a href="${this.app.escapeHtml(rel.url)}" target="_blank" class="font-mono text-xs bg-primary primary-text px-1 hover:bg-primary transition-colors">${this.app.escapeHtml(rel.tag)}</a>
+                        <a href="${escapeHtml(rel.url)}" target="_blank" class="font-mono text-xs bg-primary primary-text px-1 hover:bg-primary transition-colors">${escapeHtml(rel.tag)}</a>
                     </div>
                     ${parseMarkdownList(changes)}
                 </div>`;
@@ -1530,8 +1597,8 @@ class AdminSystem {
                 commitsHtml += `
                 <div class="border-b last:border-0 text-left">
                     <div class="flex items-center bg p-2 gap-2">
-                        <a href="https://github.com/mrblomblo/blombooru/commit/${this.app.escapeHtml(c.hash)}" target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" class="font-mono text-xs bg-primary primary-text px-1 hover:bg-primary transition-colors">${this.app.escapeHtml(c.hash)}</a>
-                        <span class="text-xs">${this.app.escapeHtml(c.message)}</span>
+                        <a href="https://github.com/mrblomblo/blombooru/commit/${escapeHtml(c.hash)}" target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" class="font-mono text-xs bg-primary primary-text px-1 hover:bg-primary transition-colors">${escapeHtml(c.hash)}</a>
+                        <span class="text-xs">${escapeHtml(c.message)}</span>
                     </div>
                 </div>`;
             }
@@ -1551,23 +1618,23 @@ class AdminSystem {
         <div>
             ${(hasChanges && hasCommits) ? `
             <div class="flex border-b mb-3" id="changelog-tabs">
-                <button class="px-3 py-1 text-xs font-bold border-b-2 border-primary text-primary cursor-pointer" data-tab="changes">${this.app.escapeHtml(tabLabelChanges)}</button>
-                <button class="px-3 py-1 text-xs text-secondary hover:text-primary cursor-pointer" data-tab="commits">${this.app.escapeHtml(tabLabelCommits)}</button>
+                <button class="px-3 py-1 text-xs font-bold border-b-2 border-primary text-primary cursor-pointer" data-tab="changes">${escapeHtml(tabLabelChanges)}</button>
+                <button class="px-3 py-1 text-xs text-secondary hover:text-primary cursor-pointer" data-tab="commits">${escapeHtml(tabLabelCommits)}</button>
             </div>` : ''}
             <div class="max-h-80 overflow-y-auto custom-scrollbar">
-                <div id="tab-changes" ${!hasChanges ? 'style="display:none"' : ''}>${changesHtml || `<div class="text-xs text-secondary">${this.app.escapeHtml(noReleasesMsg)}</div>`}</div>
-                <div id="tab-commits" style="display:${hasChanges ? 'none' : 'block'}">${commitsHtml || `<div class="text-xs text-secondary">${this.app.escapeHtml(noCommitsMsg)}</div>`}</div>
+                <div id="tab-changes" ${!hasChanges ? 'style="display:none"' : ''}>${changesHtml || `<div class="text-xs text-secondary">${escapeHtml(noReleasesMsg)}</div>`}</div>
+                <div id="tab-commits" style="display:${hasChanges ? 'none' : 'block'}">${commitsHtml || `<div class="text-xs text-secondary">${escapeHtml(noCommitsMsg)}</div>`}</div>
             </div>
-            ${compare_url ? `<div class="mt-3 pt-2 border-t text-center"><a href="${this.app.escapeHtml(compare_url)}" target="_blank" class="text-xs text-primary hover:text-primary transition-colors">${this.app.escapeHtml(fullChangelogMsg)}</a></div>` : ''}
+            ${compare_url ? `<div class="mt-3 pt-2 border-t text-center"><a href="${escapeHtml(compare_url)}" target="_blank" class="text-xs text-primary hover:text-primary transition-colors">${escapeHtml(fullChangelogMsg)}</a></div>` : ''}
         </div>`;
 
         const modal = new ModalHelper({
             id: 'changelog-modal',
             type: 'info',
             confirmId: 'changelog-confirm-btn',
-            title: window.i18n ? window.i18n.t('modal.changelog.title') : 'Changelog',
+            title: window.i18n.t('modal.changelog.title'),
             message: tabsHtml,
-            confirmText: window.i18n ? window.i18n.t('common.got_it') : 'Got it',
+            confirmText: window.i18n.t('common.got_it'),
             cancelText: '',
             onConfirm: () => {
                 modal.destroy();
@@ -1600,7 +1667,7 @@ class AdminSystem {
     async performUpdate() {
         if (typeof ModalHelper === 'undefined') {
             console.error('ModalHelper not available');
-            if (!confirm(window.i18n ? window.i18n.t('notifications.admin.update_confirm', { target: 'latest' }) : 'Update now?')) return;
+            if (!confirm(window.i18n.t('notifications.admin.update_confirm', { target: 'latest' }))) return;
             this._execute_update();
             return;
         }
@@ -1610,10 +1677,10 @@ class AdminSystem {
             type: 'warning',
             confirmId: 'update-confirm-yes',
             cancelId: 'update-confirm-no',
-            title: window.i18n ? window.i18n.t('common.system_update') : 'System Update',
-            message: window.i18n ? window.i18n.t('modal.system_update.message', { target: 'latest' }) : 'Are you sure you want to update?',
-            confirmText: window.i18n ? window.i18n.t('modal.system_update.confirm') : 'Update Now',
-            cancelText: window.i18n ? window.i18n.t('common.cancel') : 'Cancel',
+            title: window.i18n.t('common.system_update'),
+            message: window.i18n.t('modal.system_update.message', { target: 'latest' }),
+            confirmText: window.i18n.t('modal.system_update.confirm'),
+            cancelText: window.i18n.t('common.cancel'),
             onConfirm: () => {
                 this._execute_update();
                 modal.destroy();
@@ -1630,7 +1697,7 @@ class AdminSystem {
         const resultDiv = document.getElementById('update-result');
         const resultLog = document.getElementById('update-result-log');
         if (resultDiv) resultDiv.classList.remove('hidden');
-        if (resultLog) resultLog.textContent = window.i18n ? window.i18n.t('admin.messages.update_started') : 'Starting update...';
+        if (resultLog) resultLog.textContent = window.i18n.t('admin.messages.update_started');
 
         try {
             const response = await app.apiCall('/api/system/update/perform', {
@@ -1644,14 +1711,14 @@ class AdminSystem {
 
             if (response.success) {
                 app.showNotification(
-                    window.i18n ? window.i18n.t('notifications.admin.update_initiated') : 'Update initiated',
+                    window.i18n.t('notifications.admin.update_initiated'),
                     'success'
                 );
             }
         } catch (e) {
             if (resultLog) resultLog.textContent += `\nError: ${e.message}`;
             app.showNotification(
-                window.i18n ? window.i18n.t('notifications.admin.update_failed', { error: e.message }) : `Update failed: ${e.message}`,
+                window.i18n.t('notifications.admin.update_failed', { error: e.message }),
                 'error'
             );
         }
@@ -1735,7 +1802,7 @@ class AdminSystem {
 
         const themes = this._builtinThemes || [];
         dropdown.innerHTML = themes.map(t =>
-            `<div class="custom-select-option px-3 py-2 cursor-pointer hover:surface text-xs" data-value="${this.app.escapeHtml(t.id)}">${this.app.escapeHtml(t.name)}</div>`
+            `<div class="custom-select-option px-3 py-2 cursor-pointer hover:surface text-xs" data-value="${escapeHtml(t.id)}">${escapeHtml(t.name)}</div>`
         ).join('');
 
         // Preserve existing selection if no explicit selectedId passed, otherwise use the provided one
@@ -1777,17 +1844,17 @@ class AdminSystem {
                 <td class="p-2 text-xs">${typeBadge}</td>
                 <td class="p-2 text-xs text-right whitespace-nowrap">
                     <button type="button" class="text-success hover:text-success transition-colors mr-2 cursor-pointer"
-                        data-action="export" data-theme-id="${this.app.escapeHtml(theme.id)}"
+                        data-action="export" data-theme-id="${escapeHtml(theme.id)}"
                         title="${window.i18n.t('admin.settings.custom_themes.export')}">
                         ${window.Icons.download({ size: 14 })}
                     </button>
                     <button type="button" class="text-primary hover:text-primary transition-colors mr-2 cursor-pointer"
-                        data-action="edit" data-theme-id="${this.app.escapeHtml(theme.id)}"
+                        data-action="edit" data-theme-id="${escapeHtml(theme.id)}"
                         title="${window.i18n.t('admin.settings.custom_themes.edit')}">
                         ${window.Icons.edit({ size: 14 })}
                     </button>
                     <button type="button" class="text-danger hover:text-danger transition-colors cursor-pointer"
-                        data-action="delete" data-theme-id="${this.app.escapeHtml(theme.id)}"
+                        data-action="delete" data-theme-id="${escapeHtml(theme.id)}"
                         title="${window.i18n.t('common.delete')}">
                         ${window.Icons.trash({ size: 14 })}
                     </button>

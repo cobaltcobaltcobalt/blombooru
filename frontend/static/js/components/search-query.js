@@ -7,7 +7,7 @@ function canonicalizeQuery(queryString) {
         'rating', 'tagcount', 'gentags', 'arttags', 'chartags', 'copytags', 'metatags',
         'id', 'width', 'height', 'duration', 'filesize', 'file_size', 'size',
         'date', 'age', 'filetype', 'source', 'md5',
-        'album', 'pool', 'parent', 'child',
+        'album', 'pool', 'album_tree', 'pool_tree', 'parent', 'child',
         'order', 'sort', 'uploaded_at', 'time', 'created_at'
     ]);
 

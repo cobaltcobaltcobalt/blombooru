@@ -238,6 +238,18 @@
       <line x1="13" y1="12" x2="20" y2="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       <polyline points="17 9 20 12 17 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
     </symbol>
+    <symbol id="icon-enlarge" viewBox="0 0 24 24">
+      <polyline points="15 3 21 3 21 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <polyline points="9 21 3 21 3 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <line x1="21" y1="3" x2="14" y2="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <line x1="3" y1="21" x2="10" y2="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="icon-shrink" viewBox="0 0 24 24">
+      <polyline points="4 14 10 14 10 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <polyline points="20 10 14 10 14 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <line x1="14" y1="10" x2="21" y2="3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <line x1="10" y1="14" x2="3" y2="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
   </defs>
 </svg>
 {% endmacro %}
@@ -338,4 +350,24 @@
 {% macro image_icon(size=24, class="", id="", style="", extra="", stroke_width=none, stroke=none, fill=none) %}
 {% set _ = kwargs %}
 {{ icon_use("image", size=size, class=class, id=id, style=style, extra=extra, stroke_width=stroke_width, stroke=stroke, fill=fill) }}
+{% endmacro %}
+
+{% macro edit_icon(size=14, class="", id="", style="", extra="", stroke_width=none, stroke=none, fill=none) %}
+{% set _ = kwargs %}
+{{ icon_use("edit", size=size, class=class, id=id, style=style, extra=extra, stroke_width=stroke_width, stroke=stroke, fill=fill) }}
+{% endmacro %}
+
+{% macro eye_icon(size=16, class="", id="", style="", extra="", stroke_width=none, stroke=none, fill=none) %}
+{% set _ = kwargs %}
+{{ icon_use("eye", size=size, class=class, id=id, style=style, extra=extra, stroke_width=stroke_width, stroke=stroke, fill=fill) }}
+{% endmacro %}
+
+{% macro enlarge_icon(size=14, class="", id="", style="", extra="", stroke_width=none, stroke=none, fill=none) %}
+{% set _ = kwargs %}
+{{ icon_use("enlarge", size=size, class=class, id=id, style=style, extra=extra, stroke_width=stroke_width, stroke=stroke, fill=fill) }}
+{% endmacro %}
+
+{% macro shrink_icon(size=14, class="", id="", style="", extra="", stroke_width=none, stroke=none, fill=none) %}
+{% set _ = kwargs %}
+{{ icon_use("shrink", size=size, class=class, id=id, style=style, extra=extra, stroke_width=stroke_width, stroke=stroke, fill=fill) }}
 {% endmacro %}

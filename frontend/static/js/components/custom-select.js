@@ -14,21 +14,24 @@ class CustomSelect {
     }
 
     init() {
-        this.trigger.addEventListener('click', (e) => {
+        this._triggerClickHandler = (e) => {
             if (this.disabled) return;
             e.stopPropagation();
             this.toggle();
-        });
+        };
+        this.trigger.addEventListener('click', this._triggerClickHandler);
 
-        document.addEventListener('click', (e) => {
+        this._documentClickHandler = (e) => {
             if (!this.element.contains(e.target)) {
                 this.close();
             }
-        });
+        };
+        document.addEventListener('click', this._documentClickHandler);
 
-        this.element.addEventListener('keydown', (e) => {
+        this._keydownHandler = (e) => {
             this.handleKeyboard(e);
-        });
+        };
+        this.element.addEventListener('keydown', this._keydownHandler);
 
         this.dropdown.addEventListener('wheel', (e) => {
             e.stopPropagation();
@@ -81,6 +84,22 @@ class CustomSelect {
         this.element.classList.add('open');
         this.focusedIndex = -1;
 
+        if (this.dropdown) {
+            this.dropdown.style.left = '';
+            this.dropdown.style.right = '';
+            let rect = this.dropdown.getBoundingClientRect();
+            if (rect.right > window.innerWidth - 8) {
+                this.dropdown.style.left = 'auto';
+                this.dropdown.style.right = '0';
+                rect = this.dropdown.getBoundingClientRect();
+            }
+            if (rect.left < 8) {
+                const parentRect = this.element.getBoundingClientRect();
+                this.dropdown.style.left = `${Math.max(0, 8 - parentRect.left)}px`;
+                this.dropdown.style.right = 'auto';
+            }
+        }
+
         const selected = this.dropdown.querySelector('.selected');
         if (selected) {
             selected.scrollIntoView({ block: 'nearest' });
@@ -91,6 +110,10 @@ class CustomSelect {
         this.element.classList.remove('open');
         this.focusedIndex = -1;
         this.clearFocused();
+        if (this.dropdown) {
+            this.dropdown.style.left = '';
+            this.dropdown.style.right = '';
+        }
     }
 
     selectOption(option, triggerEvent = true) {
@@ -268,6 +291,21 @@ class CustomSelect {
                     this.valueDisplay.textContent = '';
                 }
             }
+        }
+    }
+
+    destroy() {
+        if (this._documentClickHandler) {
+            document.removeEventListener('click', this._documentClickHandler);
+            this._documentClickHandler = null;
+        }
+        if (this._triggerClickHandler && this.trigger) {
+            this.trigger.removeEventListener('click', this._triggerClickHandler);
+            this._triggerClickHandler = null;
+        }
+        if (this._keydownHandler && this.element) {
+            this.element.removeEventListener('keydown', this._keydownHandler);
+            this._keydownHandler = null;
         }
     }
 }

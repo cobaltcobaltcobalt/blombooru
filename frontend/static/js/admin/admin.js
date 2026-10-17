@@ -40,12 +40,6 @@ class AdminPanel {
         this.keybindings.load();
     }
 
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-
     async checkAuth() {
         try {
             const response = await fetch('/api/admin/settings');
@@ -187,6 +181,12 @@ class AdminPanel {
         const syncSharedTagsBtn = document.getElementById('sync-shared-tags-btn');
         if (syncSharedTagsBtn) {
             syncSharedTagsBtn.addEventListener('click', () => this.system.syncSharedTags());
+        }
+
+        // Booru proxy test button
+        const testBooruProxyBtn = document.getElementById('test-booru-proxy-btn');
+        if (testBooruProxyBtn) {
+            testBooruProxyBtn.addEventListener('click', () => this.system.testBooruProxy());
         }
     }
 

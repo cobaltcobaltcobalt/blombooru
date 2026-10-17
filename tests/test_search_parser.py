@@ -124,6 +124,11 @@ class TestSearchParser(unittest.TestCase):
         self.assertEqual(canonicalize_query(""), "")
         self.assertEqual(canonicalize_query("   "), "")
 
+    def test_canonicalize_query_album_tree(self):
+        query = "album_tree:1 pool_tree:sub_album"
+        canonical = canonicalize_query(query)
+        self.assertEqual(canonical, "album_tree:1 pool_tree:sub_album")
+
     def test_parse_search_query_multi_values(self):
         parsed = parse_search_query("gentags:13,16,<8,>91 -rating:e,q width:>1920,<500")
         self.assertIn("gentags", parsed["meta"])
@@ -325,6 +330,7 @@ class TestSearchParserDBIntegration(unittest.TestCase):
     def tearDown(self):
         self.db.close()
         Base.metadata.drop_all(self.engine)
+        self.engine.dispose()
 
     def test_multi_gentags_filter(self):
         # m1 has 1 general tag, m2 has 3 general tags, m3 has 0 general tags

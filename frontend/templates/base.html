@@ -76,8 +76,9 @@
     {% block head_extra %}{% endblock %}
 </head>
 
-<body class="bg text text-xs flex flex-col h-screen overflow-hidden"
-    data-sidebar-mode="{{ sidebar_filter_mode if sidebar_filter_mode is defined else 'rating' }}">
+<body class="bg text text-xs flex flex-col h-screen h-dvh overflow-hidden"
+    data-sidebar-mode="{{ sidebar_filter_mode if sidebar_filter_mode is defined else 'rating' }}"
+    data-blur-explicit="{{ 'true' if blur_explicit_thumbnails() else 'false' }}">
     {{ icon_sprite() }}
     {% set bg = custom_background() %}
     {% set _is_login = is_login_page if is_login_page is defined else false %}
@@ -143,8 +144,8 @@
                     <nav class="hidden sm:block">
                         <ul class="flex gap-2 items-center">
                             <li>
-                                <a href="/tags-gallery"
-                                    class="block bg border px-3 py-1 hover:border-primary transition-colors {{ 'text-primary' if request.url.path.startswith('/tags-gallery') or request.url.path.startswith('/tags-gallery/') else 'text' }}">
+                                <a href="/tags"
+                                    class="block bg border px-3 py-1 hover:border-primary transition-colors {{ 'text-primary' if request.url.path.startswith('/tags') or request.url.path.startswith('/tags/') else 'text' }}">
                                     {{ t('common.tags') }}
                                 </a>
                             </li>
@@ -154,12 +155,21 @@
                                     {{ t('common.albums') }}
                                 </a>
                             </li>
+                            {% if is_admin(request) %}
                             <li>
                                 <a href="/admin"
                                     class="block bg border px-3 py-1 hover:border-primary transition-colors {{ 'text-primary' if request.url.path.startswith('/admin') else 'text' }}">
                                     {{ t('common.admin_panel') }}
                                 </a>
                             </li>
+                            {% else %}
+                            <li>
+                                <a href="/login"
+                                    class="block bg border px-3 py-1 hover:border-primary transition-colors {{ 'text-primary' if request.url.path.startswith('/login') else 'text' }}">
+                                    {{ t('login.login_button') }}
+                                </a>
+                            </li>
+                            {% endif %}
                             {% if is_admin(request) %}
                             <li>
                                 <a href="/admin?tab=content#media-management" title="{{ t('nav.upload') }}"
@@ -211,8 +221,8 @@
                 <nav id="mobile-menu" class="sm:hidden hidden border-y my-2">
                     <ul class="flex flex-col py-2 gap-1">
                         <li id="nav-tags-gallery-item-mobile">
-                            <a href="/tags-gallery"
-                                class="btn-dark w-full justify-start px-4 py-2 cursor-pointer {{ 'text-primary' if request.url.path.startswith('/tags-gallery') or request.url.path.startswith('/tags-gallery/') else 'text' }}">
+                            <a href="/tags"
+                                class="btn-dark w-full justify-start px-4 py-2 cursor-pointer {{ 'text-primary' if request.url.path.startswith('/tags') or request.url.path.startswith('/tags/') else 'text' }}">
                                 {{ t('common.tags') }}
                             </a>
                         </li>
@@ -230,12 +240,21 @@
                             </a>
                         </li>
                         {% endif %}
+                        {% if is_admin(request) %}
                         <li>
                             <a href="/admin"
                                 class="btn-dark w-full justify-start px-4 py-2 cursor-pointer {{ 'text-primary' if request.url.path.startswith('/admin') else 'text' }}">
                                 {{ t('common.admin_panel') }}
                             </a>
                         </li>
+                        {% else %}
+                        <li>
+                            <a href="/login"
+                                class="btn-dark w-full justify-start px-4 py-2 cursor-pointer {{ 'text-primary' if request.url.path.startswith('/login') else 'text' }}">
+                                {{ t('login.login_button') }}
+                            </a>
+                        </li>
+                        {% endif %}
                         <li>
                             <a href="#" id="logout-btn-mobile"
                                 class="btn-dark w-full justify-start px-4 py-2 cursor-pointer">
@@ -266,15 +285,15 @@
         {% endblock %}
         {% endif %}
 
-        <main id="main-scroll" class="flex-1 h-full overflow-y-auto flex flex-col">
+        <main id="main-scroll" class="flex-1 min-h-0 overflow-y-auto flex flex-col">
             <div class="flex-1 w-full">
                 {% block content %}{% endblock %}
             </div>
 
             {% if show_footer is not defined or show_footer %}
             {% block footer %}
-            <footer class="surface border-t mt-8">
-                <div class="container mx-auto px-4 py-6">
+            <footer class="surface border-t mt-8 pb-8 sm:pb-0">
+                <div class="container mx-auto px-2 py-4 sm:px-4 sm:py-6">
                     <div class="flex flex-col md:flex-row justify-between items-center gap-4">
                         <div class="text-secondary text-xs">
                             <p>&copy; <span id="footer-app-name">{{ app_name }}</span> {{ get_current_year() }}. Powered
@@ -287,14 +306,14 @@
                         </div>
 
                         <div class="flex gap-4 text-xs">
+                            <button type="button" id="footer-acknowledgements-btn"
+                                class="text-secondary transition-colors hover:text-primary cursor-pointer">
+                                {{ t('footer.acknowledgements') }}
+                            </button>
+                            <span class="text-tertiary">&#x2022;</span>
                             <a href="https://github.com/mrblomblo/blombooru"
                                 class="text-secondary transition-colors hover:text-primary" target="_blank"
                                 rel="noopener noreferrer" referrerPolicy="no-referrer">GitHub</a>
-                            <span class="text-tertiary">&#x2022;</span>
-                            <a href="#" class="text-secondary transition-colors hover:text-primary"
-                                onclick="document.getElementById('main-scroll').scrollTo({top: 0, behavior: 'smooth'}); return false;">
-                                {{ t('footer.back_to_top') }}
-                            </a>
                         </div>
                     </div>
                 </div>
@@ -308,10 +327,11 @@
         <script src="/static/js/components/model-download-modal.js?v={{ cache_buster }}"></script>
         <script src="/static/js/components/keybinding-manager.js?v={{ cache_buster }}"></script>
         <script src="/static/js/components/changelog-modal.js?v={{ cache_buster }}"></script>
+        <script src="/static/js/components/acknowledgements-modal.js?v={{ cache_buster }}"></script>
+        <script src="/static/js/pages/main.js?v={{ cache_buster }}"></script>
         <script src="/static/js/components/search-query.js?v={{ cache_buster }}"></script>
         <script src="/static/js/components/tag-preview.js?v={{ cache_buster }}"></script>
         <script src="/static/js/format-registry.js?v={{ cache_buster }}"></script>
-        <script src="/static/js/pages/main.js?v={{ cache_buster }}"></script>
         <script src="/static/js/components/tag-autocomplete.js?v={{ cache_buster }}"></script>
 
         {% if show_header is not defined or show_header %}
@@ -321,12 +341,14 @@
             const searchInputMobile = document.getElementById('search-input-mobile');
             if (searchInput) {
                 new TagAutocomplete(searchInput, {
-                    multipleValues: true
+                    multipleValues: true,
+                    enableQualifiers: true
                 });
             }
             if (searchInputMobile) {
                 new TagAutocomplete(searchInputMobile, {
-                    multipleValues: true
+                    multipleValues: true,
+                    enableQualifiers: true
                 });
             }
         </script>
@@ -352,9 +374,43 @@
                 window.addEventListener('resize', adjustPadding);
 
                 let lastScrollTop = 0;
+                let wasHeaderVisibleBeforeDrag = false;
+                let isDraggingActive = false;
+
+                const setDraggingState = (dragging) => {
+                    if (dragging) {
+                        if (!isDraggingActive) {
+                            wasHeaderVisibleBeforeDrag = !header.classList.contains('-translate-y-full');
+                            isDraggingActive = true;
+                        }
+                        document.body.classList.add('is-dragging');
+                        header.classList.add('-translate-y-full');
+                    } else {
+                        isDraggingActive = false;
+                        document.body.classList.remove('is-dragging');
+                        if (wasHeaderVisibleBeforeDrag || mainScroll.scrollTop <= 0) {
+                            header.classList.remove('-translate-y-full');
+                        } else {
+                            header.classList.add('-translate-y-full');
+                        }
+                    }
+                };
+
+                const bodyObserver = new MutationObserver(() => {
+                    const hasClass = document.body.classList.contains('is-dragging');
+                    if (hasClass !== isDraggingActive) {
+                        setDraggingState(hasClass);
+                    }
+                });
+                bodyObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
 
                 mainScroll.addEventListener('scroll', () => {
                     const currentScroll = mainScroll.scrollTop;
+
+                    if (isDraggingActive || document.body.classList.contains('is-dragging')) {
+                        lastScrollTop = currentScroll;
+                        return;
+                    }
 
                     if (currentScroll <= 0) {
                         header.classList.remove('-translate-y-full');

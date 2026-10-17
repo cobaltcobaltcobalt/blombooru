@@ -61,20 +61,20 @@ class FormatRegistry:
         self._register(MediaFormat(".gif", "image/gif", FormatCategory.IMAGE))
         self._register(MediaFormat(".webp", "image/webp", FormatCategory.IMAGE))
         self._register(MediaFormat(".avif", "image/avif", FormatCategory.IMAGE))
+        self._register(MediaFormat(".jxl", "image/jxl", FormatCategory.IMAGE))
         self._register(MediaFormat(".bmp", "image/bmp", FormatCategory.IMAGE))
         self._register(MediaFormat(".tiff", "image/tiff", FormatCategory.IMAGE, aliases=[".tif"]))
         
         # Images requiring transcode
         self._register(MediaFormat(".heic", "image/heic", FormatCategory.IMAGE, transcode_target=".webp", aliases=[".heif"]))
-        self._register(MediaFormat(".jxl", "image/jxl", FormatCategory.IMAGE, transcode_target=".webp"))
 
         # Natively supported video
         self._register(MediaFormat(".mp4", "video/mp4", FormatCategory.VIDEO))
         self._register(MediaFormat(".webm", "video/webm", FormatCategory.VIDEO))
-        self._register(MediaFormat(".mov", "video/quicktime", FormatCategory.VIDEO))
         self._register(MediaFormat(".m4v", "video/x-m4v", FormatCategory.VIDEO))
 
         # Videos requiring transcode
+        self._register(MediaFormat(".mov", "video/quicktime", FormatCategory.VIDEO, transcode_target=".mp4"))
         self._register(MediaFormat(".mkv", "video/x-matroska", FormatCategory.VIDEO, transcode_target=".mp4"))
         self._register(MediaFormat(".avi", "video/x-msvideo", FormatCategory.VIDEO, transcode_target=".mp4"))
 

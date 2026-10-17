@@ -8,6 +8,7 @@ from starlette.types import ASGIApp
 
 from .config import settings
 from . import database
+from .utils.url_security import get_safe_return_url
 
 class AuthMiddleware(BaseHTTPMiddleware):
     """
@@ -25,6 +26,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
             "/api/admin/first-run",
             "/api/admin/onboarding",
             "/api/instance-info",
+            "/api/acknowledgements",
+            "/api/search/syntax-guide",
             "/favicon.ico",
             "/manifest.json",
             "/sw.js",
@@ -34,6 +37,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             "/static/",
             "/shared/",
             "/api/shared/",
+            "/data/themes/",
         )
     
         # Danbooru API routes - these handle their own auth
@@ -211,8 +215,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 content={"detail": "Authentication required"}
             )
         
-        return_url = quote(str(request.url.path))
+        path_and_query = str(request.url.path)
         if request.url.query:
-            return_url += f"?{request.url.query}"
+            path_and_query += f"?{request.url.query}"
+        safe_return = get_safe_return_url(path_and_query, default="/")
+        return_url = quote(safe_return)
         
         return RedirectResponse(url=f"/login?return={return_url}", status_code=302)

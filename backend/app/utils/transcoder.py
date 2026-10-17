@@ -8,10 +8,7 @@ from PIL import Image
 from ..config import settings
 from .format_registry import FormatCategory, format_registry
 from .logger import logger
-
-from pillow_heif import register_heif_opener
-
-register_heif_opener()
+from . import image_plugins
 
 class TranscodingError(Exception):
     pass
@@ -50,7 +47,7 @@ def get_transcoded_path_for_original(original_path: Path, transcode_target_ext: 
     return dest_path
 
 def transcode_image(source_path: Path, destination_path: Path) -> bool:
-    """Transcode an image (e.g. HEIC, JXL) to WEBP while preserving metadata where possible."""
+    """Transcode an image (e.g. HEIC) to WEBP while preserving metadata where possible."""
     destination_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_dest = destination_path.with_suffix(destination_path.suffix + ".tmp")
 

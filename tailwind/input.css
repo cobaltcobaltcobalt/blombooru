@@ -1,4 +1,6 @@
-@import "tailwindcss" source("../frontend/");
+@import "tailwindcss";
+@source "../frontend";
+@source "../backend";
 @import "tailwindcss/preflight" layer(base);
 @import "tailwindcss/utilities";
 

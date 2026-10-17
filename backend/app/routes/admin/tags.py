@@ -9,11 +9,12 @@ from sqlalchemy import case, desc, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
-from ...auth import get_current_admin_user, require_admin_mode
+from ...auth import require_admin_mode
 from ...config import settings
 from ...utils.request_helpers import safe_error_detail
 from ...database import get_db
-from ...models import Media, Tag, TagAlias, TagRating, User
+from ...enums import TagCategoryEnum
+from ...models import Media, Tag, TagAlias, TagImplication, TagRating, User
 from ...schemas import TagResponse
 from ...utils.cache import invalidate_tag_cache
 from ...utils.logger import logger
@@ -264,10 +265,12 @@ async def get_tag_stats(
     """Get tag statistics"""
     total_tags = db.query(Tag).count()
     total_aliases = db.query(TagAlias).count()
+    total_implications = db.query(TagImplication).count()
     
     return {
         "total_tags": total_tags,
         "total_aliases": total_aliases,
+        "total_implications": total_implications,
     }
 
 @router.get("/search-tags")
@@ -569,6 +572,28 @@ async def bulk_create_tags(
         "skipped": skipped,
         "errors": errors
     }
+
+class BulkCategoryUpdateRequest(BaseModel):
+    tag_ids: list[int]
+    category: TagCategoryEnum
+
+@router.post("/tags/bulk-category")
+async def bulk_update_tag_category(
+    data: BulkCategoryUpdateRequest,
+    current_user: User = Depends(require_admin_mode),
+    db: Session = Depends(get_db)
+):
+    """Bulk update tag category for selected tags."""
+    if not data.tag_ids:
+        return {"updated": 0}
+
+    updated = db.query(Tag).filter(Tag.id.in_(data.tag_ids)).update(
+        {Tag.category: data.category},
+        synchronize_session=False
+    )
+    db.commit()
+    invalidate_tag_cache()
+    return {"updated": updated}
 
 def cleanup_aliased_tags_logic(db: Session):
     """

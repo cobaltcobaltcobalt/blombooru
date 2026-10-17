@@ -1,20 +1,16 @@
 import re
-from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from wenmode import Wenmode
-from wenmode.presets import github
-
 from ..auth import require_admin_mode
 from ..config import APP_VERSION, settings
 from ..utils.logger import logger
+from ..utils.markdown import render_markdown
 
 router = APIRouter(prefix="/api/changelog", tags=["changelog"])
 
 CHANGELOG_PATH = settings.BASE_DIR / "CHANGELOG.md"
-wen = Wenmode(github())
 
 class ChangelogResponse(BaseModel):
     needs_modal: bool
@@ -66,12 +62,7 @@ async def get_changelog(current_user: dict = Depends(require_admin_mode)):
     try:
         rendered_sections = []
         for s in sections:
-            rendered = wen.render(s)
-            rendered = re.sub(
-                r'<a\s+(?!.*?target=)(href="[^"]+")',
-                r'<a target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" \1',
-                rendered
-            )
+            rendered = render_markdown(s, heading_color="primary")
             rendered_sections.append(f'<div class="changelog-version bg p-3 md:p-4 border">{rendered}</div>')
         html = "\n".join(rendered_sections)
     except Exception as e:

@@ -4,6 +4,8 @@ class UploadSession {
         this.items = new Map();
         this.isUploading = false;
         this.isCommitting = false;
+        this.isCancelling = false;
+        this.sessionAbortController = new AbortController();
         this.listeners = {
             itemAdded: [],
             itemUpdated: [],
@@ -24,6 +26,32 @@ class UploadSession {
         });
     }
 
+    _getSignal(options = {}) {
+        const optionSignal = options.signal;
+        const sessionSignal = this.sessionAbortController?.signal;
+
+        if (optionSignal && sessionSignal) {
+            if (typeof AbortSignal.any === 'function') {
+                return AbortSignal.any([optionSignal, sessionSignal]);
+            }
+            if (optionSignal.aborted) return optionSignal;
+            if (sessionSignal.aborted) return sessionSignal;
+            const controller = new AbortController();
+            const onAbort = () => controller.abort();
+            optionSignal.addEventListener('abort', onAbort, { once: true });
+            sessionSignal.addEventListener('abort', onAbort, { once: true });
+            return controller.signal;
+        }
+        return optionSignal || sessionSignal;
+    }
+
+    abortPendingOperations() {
+        if (this.sessionAbortController) {
+            this.sessionAbortController.abort();
+            this.sessionAbortController = new AbortController();
+        }
+    }
+
     on(event, callback) {
         if (this.listeners[event]) {
             this.listeners[event].push(callback);
@@ -42,12 +70,17 @@ class UploadSession {
         }
     }
 
-    async ensureSession() {
+    async ensureSession(options = {}) {
+        if (this.isCancelling) {
+            throw new DOMException('Upload session is being cancelled', 'AbortError');
+        }
         if (this.sessionId) return this.sessionId;
 
+        const signal = this._getSignal(options);
         const response = await fetch('/api/uploads/sessions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            signal: signal,
         });
 
         if (!response.ok) {
@@ -61,13 +94,22 @@ class UploadSession {
     }
 
     async uploadFile(file, options = {}) {
-        await this.ensureSession();
+        if (this.isCancelling || options.signal?.aborted) {
+            throw new DOMException('Upload operation aborted', 'AbortError');
+        }
+        await this.ensureSession(options);
+        if (this.isCancelling || options.signal?.aborted) {
+            throw new DOMException('Upload operation aborted', 'AbortError');
+        }
 
         const formData = new FormData();
         formData.append('file', file, file.name);
 
         if (options.relativePath) {
             formData.append('relative_path', options.relativePath);
+        }
+        if (options.folderMappingMode) {
+            formData.append('folder_mapping_mode', options.folderMappingMode);
         }
         if (options.baseRating) {
             formData.append('base_rating', options.baseRating);
@@ -84,6 +126,9 @@ class UploadSession {
         if (options.baseDescription) {
             formData.append('base_description', options.baseDescription);
         }
+        if (options.sidecar) {
+            formData.append('sidecar', options.sidecar, options.sidecar.name);
+        }
         if (options.categoryHints) {
             formData.append('category_hints', JSON.stringify(options.categoryHints));
         }
@@ -91,17 +136,102 @@ class UploadSession {
             formData.append('user_assigned_tags', JSON.stringify(options.userAssignedTags));
         }
 
+        const signal = this._getSignal(options);
         const response = await fetch(`/api/uploads/sessions/${this.sessionId}/files`, {
             method: 'POST',
             body: formData,
+            signal: signal,
         });
 
         if (!response.ok) {
             const err = await response.json().catch(() => ({}));
-            throw new Error(err.detail || `Failed to upload file ${file.name}`);
+            const error = new Error(err.detail || `Failed to upload file ${file.name}`);
+            error.status = response.status;
+            error.detail = err.detail;
+            throw error;
         }
 
         const item = await response.json();
+        if (this.isCancelling || options.signal?.aborted) {
+            return null;
+        }
+        this.items.set(item.item_id, item);
+        this.emit('itemAdded', item);
+        return item;
+    }
+
+    static isDuplicateError(err) {
+        if (!err) return false;
+        if (err.status === 409) return true;
+        const msg = String(err.message || '');
+        const detail = String(err.detail || '');
+        return msg.includes('error_duplicate') || detail.includes('error_duplicate');
+    }
+
+    static isSystemicError(err) {
+        if (!err) return false;
+        const status = err.status;
+        if (status === 401) return true;
+        const msg = String(err.message || '');
+        const detail = String(err.detail || '');
+        if (status === 404) {
+            return msg.toLowerCase().includes('session') || detail.toLowerCase().includes('session');
+        }
+        if (status === 403) {
+            return !msg.includes('Access denied') && !detail.includes('Access denied');
+        }
+        return false;
+    }
+
+    isDuplicateError(err) {
+        return UploadSession.isDuplicateError(err);
+    }
+
+    isSystemicError(err) {
+        return UploadSession.isSystemicError(err);
+    }
+
+    async addUntrackedFile(filePath, options = {}) {
+        if (this.isCancelling || options.signal?.aborted) {
+            throw new DOMException('Upload operation aborted', 'AbortError');
+        }
+        await this.ensureSession(options);
+        if (this.isCancelling || options.signal?.aborted) {
+            throw new DOMException('Upload operation aborted', 'AbortError');
+        }
+
+        const payload = {
+            file_path: filePath,
+            relative_path: options.relativePath || null,
+            base_rating: options.baseRating || null,
+            base_source: options.baseSource || null,
+            base_tags: options.baseTags || null,
+            base_album_ids: options.baseAlbumIds ? options.baseAlbumIds.join(',') : null,
+            base_description: options.baseDescription || null,
+            category_hints: options.categoryHints ? JSON.stringify(options.categoryHints) : null,
+            user_assigned_tags: options.userAssignedTags ? JSON.stringify(options.userAssignedTags) : null,
+        };
+
+        const signal = this._getSignal(options);
+        const response = await fetch(`/api/uploads/sessions/${this.sessionId}/untracked-files`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            signal: signal,
+        });
+
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            const error = new Error(err.detail || `Failed to add untracked file ${filePath}`);
+            error.status = response.status;
+            error.detail = err.detail;
+            throw error;
+        }
+
+        const item = await response.json();
+        if (this.isCancelling || options.signal?.aborted) {
+            return null;
+        }
         this.items.set(item.item_id, item);
         this.emit('itemAdded', item);
         return item;
@@ -163,10 +293,12 @@ class UploadSession {
             album_ids: updateData.album_ids || null,
             add_album_ids: updateData.add_album_ids || null,
             remove_album_ids: updateData.remove_album_ids || null,
-            suggested_album_path: updateData.suggested_album_path || null,
             add_tags: updateData.add_tags || null,
             remove_tag_names: updateData.remove_tag_names || null,
         };
+        if (updateData.suggested_album_path !== undefined) {
+            payload.suggested_album_path = updateData.suggested_album_path;
+        }
 
         const response = await fetch(`/api/uploads/sessions/${this.sessionId}/items/bulk-update`, {
             method: 'POST',
@@ -246,6 +378,48 @@ class UploadSession {
         return await this.fetchPendingEntities();
     }
 
+    async updatePendingAlbum(path, updateData) {
+        if (!this.sessionId) return;
+
+        const response = await fetch(`/api/uploads/sessions/${this.sessionId}/pending/albums`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                path: path,
+                ...updateData
+            }),
+        });
+
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.detail || 'Failed to update pending album');
+        }
+
+        await this.refreshSession();
+        return await this.fetchPendingEntities();
+    }
+
+    async setFolderMapping(enabled, rootMode = 'use_root') {
+        if (!this.sessionId) return;
+
+        const response = await fetch(`/api/uploads/sessions/${this.sessionId}/folder-mapping`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                enabled: !!enabled,
+                root_mode: rootMode
+            }),
+        });
+
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.detail || 'Failed to update folder mapping');
+        }
+
+        await this.refreshSession();
+        return await this.fetchPendingEntities();
+    }
+
     async refreshSession() {
         if (!this.sessionId) return;
 
@@ -290,23 +464,24 @@ class UploadSession {
     }
 
     async cancelSession() {
-        if (!this.sessionId) {
-            this.items.clear();
-            this.emit('sessionCleared', null);
-            return;
-        }
+        this.isCancelling = true;
+        this.abortPendingOperations();
 
-        try {
-            await fetch(`/api/uploads/sessions/${this.sessionId}`, {
-                method: 'DELETE',
-            });
-        } catch (e) {
-            console.warn('Error deleting upload session:', e);
-        } finally {
-            this.sessionId = null;
-            this.items.clear();
-            this.emit('sessionCleared', null);
+        const targetSessionId = this.sessionId;
+        this.sessionId = null;
+        this.items.clear();
+        this.emit('sessionCleared', null);
+
+        if (targetSessionId) {
+            try {
+                await fetch(`/api/uploads/sessions/${targetSessionId}`, {
+                    method: 'DELETE',
+                });
+            } catch (e) {
+                console.warn('Error deleting upload session:', e);
+            }
         }
+        this.isCancelling = false;
     }
 
     getItem(itemId) {

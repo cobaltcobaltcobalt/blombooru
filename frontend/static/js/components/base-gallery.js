@@ -10,6 +10,7 @@ class BaseGallery {
             enablePagination: true,
             enableRatingFilter: true,
             enableSorting: true,
+            itemSelector: '.gallery-item',
             defaultRating: 'explicit',
             defaultSort: 'uploaded_at',
             defaultOrder: 'desc',
@@ -24,6 +25,8 @@ class BaseGallery {
         this.tooltipHelper = null;
         this.sortBySelect = null;
         this.currentRandomSeed = null;
+        this.savedRandomSeed = null;
+        this.loadedGifs = new Set();
 
         // Selection state
         this.lastSelectedId = null;
@@ -102,6 +105,17 @@ class BaseGallery {
         this.currentSort = urlParams.get('sort') || this.elements.sortBy?.dataset.value || this.options.defaultSort;
         this.currentOrder = urlParams.get('order') || defaultOrderFromDom;
         this.currentRandomSeed = urlParams.get('seed') || null;
+        this.savedRandomSeed = this.currentRandomSeed;
+
+        const urlFallbackSort = urlParams.get('fallback_sort');
+        const urlFallbackOrder = urlParams.get('fallback_order');
+        if (this.currentSort !== 'manual') {
+            this.lastNonManualSort = this.currentSort;
+            this.lastNonManualOrder = this.currentOrder;
+        } else {
+            this.lastNonManualSort = urlFallbackSort || this.options.defaultSort || 'uploaded_at';
+            this.lastNonManualOrder = urlFallbackOrder || defaultOrderFromDom || this.options.defaultOrder || 'desc';
+        }
     }
 
     /**
@@ -132,6 +146,24 @@ class BaseGallery {
             if (this.isDragging) {
                 this.handleDragEnd();
             }
+        });
+
+        // Global mousemove for autoscrolling during drag selection
+        document.addEventListener('mousemove', (e) => {
+            if (!this.isDragging || !this.dragStartItem) return;
+
+            window.autoScroll?.check(e.clientX, e.clientY, {
+                onScroll: (x, y) => {
+                    const el = document.elementFromPoint(x, y);
+                    const item = el ? el.closest(this.options.itemSelector) : null;
+                    if (item && item.dataset && item.dataset.id) {
+                        const id = parseInt(item.dataset.id);
+                        if (id && id !== this.lastSelectedId) {
+                            this.handleDragEnter(item, id);
+                        }
+                    }
+                }
+            });
         });
 
         // Prevent text selection while dragging
@@ -243,6 +275,64 @@ class BaseGallery {
         this.loadContent();
     }
 
+    freezeFiltersForReorder() {
+        this.savedRatings = new Set(this.selectedRatings);
+        this.savedCustomFilters = new Set(this.selectedCustomFilters);
+
+        // Force all ratings
+        this.selectedRatings = new Set(['safe', 'questionable', 'explicit']);
+        this.currentRating = 'safe,questionable,explicit';
+        this.updateRatingFilterLabels();
+
+        // Clear custom filters
+        this.selectedCustomFilters = new Set();
+        this.currentCustomFilter = '';
+        this.updateCustomFilterLabels();
+
+        // Disable filter checkboxes in the UI
+        document.querySelectorAll('.rating-filter-input, .custom-filter-input').forEach(input => {
+            input.disabled = true;
+        });
+        document.querySelectorAll('.rating-filter-label, .custom-filter-label').forEach(label => {
+            label.classList.add('pointer-events-none', 'opacity-50');
+        });
+    }
+
+    restoreFiltersAfterReorder() {
+        let filtersChanged = false;
+        if (this.savedRatings) {
+            const restoredRating = Array.from(this.savedRatings).join(',');
+            if (this.currentRating !== restoredRating) {
+                filtersChanged = true;
+            }
+            this.selectedRatings = new Set(this.savedRatings);
+            this.currentRating = restoredRating;
+            this.updateRatingFilterLabels();
+            this.savedRatings = null;
+        }
+
+        if (this.savedCustomFilters) {
+            const restoredCustom = Array.from(this.savedCustomFilters).join(' ');
+            if (this.currentCustomFilter !== restoredCustom) {
+                filtersChanged = true;
+            }
+            this.selectedCustomFilters = new Set(this.savedCustomFilters);
+            this.currentCustomFilter = restoredCustom;
+            this.updateCustomFilterLabels();
+            this.savedCustomFilters = null;
+        }
+
+        // Re-enable filter checkboxes
+        document.querySelectorAll('.rating-filter-input, .custom-filter-input').forEach(input => {
+            input.disabled = false;
+        });
+        document.querySelectorAll('.rating-filter-label, .custom-filter-label').forEach(label => {
+            label.classList.remove('pointer-events-none', 'opacity-50');
+        });
+
+        return filtersChanged;
+    }
+
     updateRatingFilterLabels() {
         document.querySelectorAll('.rating-filter-label').forEach(label => {
             label.classList.remove('checked');
@@ -266,6 +356,51 @@ class BaseGallery {
         this.loadContent();
     }
 
+    initManualReorder(options = {}) {
+        if (typeof ManualReorder === 'undefined') return null;
+
+        const defaultCallbacks = {
+            onActivate: () => {
+                this.freezeFiltersForReorder();
+                if (typeof options.onActivate === 'function') options.onActivate();
+            },
+            onSaveSuccess: () => {
+                this.currentSort = 'manual';
+                this.currentOrder = 'asc';
+                this.syncSortUrlParams();
+                this.updateSortControlsVisibility();
+                if (this.restoreFiltersAfterReorder()) {
+                    this.loadContent();
+                }
+                if (typeof options.onSaveSuccess === 'function') options.onSaveSuccess();
+            },
+            onClearSuccess: () => {
+                this.restoreFiltersAfterReorder();
+                this.loadContent();
+                if (typeof options.onClearSuccess === 'function') options.onClearSuccess();
+            },
+            onCancel: () => {
+                if (this.restoreFiltersAfterReorder()) {
+                    this.loadContent();
+                }
+                if (typeof options.onCancel === 'function') options.onCancel();
+            }
+        };
+
+        this.manualReorder = new ManualReorder({
+            ...options,
+            ...defaultCallbacks
+        });
+
+        document.querySelectorAll('.js-sort-edit-order').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.manualReorder.activate();
+            });
+        });
+
+        return this.manualReorder;
+    }
+
     // ==================== Sorting ====================
 
     setupSorting() {
@@ -277,6 +412,7 @@ class BaseGallery {
         this.sortBySelects = [];
         this.sortOrderToggles = document.querySelectorAll('.js-sort-order-toggle');
         this.sortRandomRegenBtns = document.querySelectorAll('.js-sort-random-regen');
+        this.sortEditOrderBtns = document.querySelectorAll('.js-sort-edit-order');
 
         const sortByElements = document.querySelectorAll('.js-sort-by-select');
         const params = new URLSearchParams(window.location.search);
@@ -329,20 +465,40 @@ class BaseGallery {
     }
 
     getOrderValue() {
+        if (this.currentSort === 'manual') {
+            return 'asc';
+        }
         return this.currentOrder;
     }
 
     handleSortChange(newSort) {
         const previousSort = this.currentSort;
+        if (previousSort !== 'manual') {
+            this.lastNonManualSort = previousSort;
+            this.lastNonManualOrder = this.currentOrder;
+        }
         this.currentSort = newSort;
 
         if (newSort === 'random') {
-            if (previousSort !== 'random' || !this.currentRandomSeed) {
+            if (!this.currentRandomSeed && !this.savedRandomSeed) {
                 this.currentRandomSeed = String(Date.now());
+            } else if (!this.currentRandomSeed && this.savedRandomSeed) {
+                this.currentRandomSeed = this.savedRandomSeed;
             }
+            this.savedRandomSeed = this.currentRandomSeed;
             this.rollSortRandomDice();
         } else {
-            this.currentRandomSeed = null;
+            if (this.currentRandomSeed) {
+                this.savedRandomSeed = this.currentRandomSeed;
+            }
+        }
+
+        if (newSort === 'manual') {
+            this.currentOrder = 'asc';
+            this.updateSortOrderToggleState();
+        } else if (previousSort === 'manual' && this.lastNonManualOrder) {
+            this.currentOrder = this.lastNonManualOrder;
+            this.updateSortOrderToggleState();
         }
 
         this.updateSortControlsVisibility();
@@ -351,9 +507,12 @@ class BaseGallery {
     }
 
     toggleSortOrder() {
-        if (this.currentSort === 'random') return;
+        if (this.currentSort === 'random' || this.currentSort === 'manual') return;
 
         this.currentOrder = this.currentOrder === 'asc' ? 'desc' : 'asc';
+        if (this.currentSort !== 'manual') {
+            this.lastNonManualOrder = this.currentOrder;
+        }
         this.updateSortOrderToggleState();
         this.syncSortUrlParams();
         this.onSortChange();
@@ -363,6 +522,7 @@ class BaseGallery {
         if (this.currentSort !== 'random') return;
 
         this.currentRandomSeed = String(Date.now());
+        this.savedRandomSeed = this.currentRandomSeed;
         this.rollSortRandomDice();
         this.syncSortUrlParams();
         this.onSortChange();
@@ -376,15 +536,22 @@ class BaseGallery {
 
     updateSortControlsVisibility() {
         const isRandom = this.currentSort === 'random';
+        const isManual = this.currentSort === 'manual';
 
         this.sortOrderToggles.forEach(btn => {
-            btn.classList.toggle('hidden', isRandom);
-            btn.disabled = isRandom;
+            btn.classList.toggle('hidden', isRandom || isManual);
+            btn.disabled = isRandom || isManual;
         });
 
         this.sortRandomRegenBtns.forEach(btn => {
             btn.classList.toggle('hidden', !isRandom);
         });
+
+        if (this.sortEditOrderBtns) {
+            this.sortEditOrderBtns.forEach(btn => {
+                btn.classList.toggle('hidden', !isManual);
+            });
+        }
     }
 
     updateSortOrderToggleState() {
@@ -399,7 +566,9 @@ class BaseGallery {
         const params = {
             sort: this.currentSort,
             order: this.currentOrder,
-            seed: this.currentSort === 'random' ? this.currentRandomSeed : null
+            seed: this.currentSort === 'random' ? this.currentRandomSeed : null,
+            fallback_sort: this.currentSort === 'manual' ? (this.lastNonManualSort || null) : null,
+            fallback_order: this.currentSort === 'manual' ? (this.lastNonManualOrder || null) : null
         };
         this.updateUrlParams(params);
     }
@@ -407,9 +576,16 @@ class BaseGallery {
     appendSortParams(params) {
         const sort = this.getSortValue();
         params.set('sort', sort);
-        params.set('order', this.getOrderValue());
+        params.set('order', sort === 'manual' ? 'asc' : this.getOrderValue());
         if (sort === 'random' && this.currentRandomSeed) {
             params.set('seed', this.currentRandomSeed);
+        }
+        if (sort === 'manual' && this.lastNonManualSort) {
+            params.set('fallback_sort', this.lastNonManualSort);
+            params.set('fallback_order', this.lastNonManualOrder || 'desc');
+            if (this.lastNonManualSort === 'random' && (this.currentRandomSeed || this.savedRandomSeed)) {
+                params.set('seed', this.currentRandomSeed || this.savedRandomSeed);
+            }
         }
     }
 
@@ -492,6 +668,7 @@ class BaseGallery {
         const pageTop = document.getElementById('main-scroll');
         if (this.isLoading || page < 1 || page > this.totalPages || page === this.currentPage) return;
 
+        this.unloadAllGifs();
         this.currentPage = page;
         this.updateUrlParams({ page });
         await this.loadContent();
@@ -515,6 +692,11 @@ class BaseGallery {
         }
 
         if (!this.elements.pageNav) return;
+
+        if (document.body.classList.contains('reorder-active-mode')) {
+            this.elements.pageNav.style.display = 'none';
+            return;
+        }
 
         if (this.totalPages <= 1) {
             this.elements.pageNav.style.display = 'none';
@@ -911,7 +1093,7 @@ class BaseGallery {
     async handleSelectAll() {
         if (!app.isAdminMode) return;
 
-        const visibleItems = document.querySelectorAll('.gallery-item');
+        const visibleItems = document.querySelectorAll(this.options.itemSelector);
         const visibleIds = Array.from(visibleItems).map(item => parseInt(item.dataset.id));
 
         // Check if all visible items are already selected
@@ -921,7 +1103,7 @@ class BaseGallery {
             // Logic 1: Fill the current page
             visibleItems.forEach(item => {
                 const id = parseInt(item.dataset.id);
-                const checkbox = item.querySelector('.checkbox, .album-item-checkbox');
+                const checkbox = item.querySelector('.select-checkbox, .checkbox, .album-item-checkbox');
 
                 if (checkbox && !checkbox.checked) {
                     checkbox.checked = true;
@@ -940,7 +1122,7 @@ class BaseGallery {
     handleDeselectAll() {
         if (!app.isAdminMode) return;
 
-        const visibleItems = document.querySelectorAll('.gallery-item');
+        const visibleItems = document.querySelectorAll(this.options.itemSelector);
         const visibleIds = Array.from(visibleItems).map(item => parseInt(item.dataset.id));
 
         // Check if all visible items are selected
@@ -952,7 +1134,7 @@ class BaseGallery {
                 const id = parseInt(item.dataset.id);
                 this.selectedItems.delete(id);
                 item.classList.remove('selected');
-                const checkbox = item.querySelector('.checkbox, .album-item-checkbox');
+                const checkbox = item.querySelector('.select-checkbox, .checkbox, .album-item-checkbox');
                 if (checkbox) checkbox.checked = false;
             });
         } else {
@@ -985,7 +1167,7 @@ class BaseGallery {
 
             // Build params based on current URL (preserves filters, sorts, etc.)
             const params = new URLSearchParams(window.location.search);
-            params.set('limit', '100000'); // Fetch "all" (reasonable limit)
+            params.set('limit', '500000'); // Fetch "all" (reasonable limit)
             params.delete('page');
 
             if (this.options.enableRatingFilter !== false && this.currentRating) {
@@ -1023,11 +1205,11 @@ class BaseGallery {
             });
 
             // Visually update current page items to ensure they look selected
-            document.querySelectorAll('.gallery-item').forEach(item => {
+            document.querySelectorAll(this.options.itemSelector).forEach(item => {
                 const id = parseInt(item.dataset.id);
                 if (this.selectedItems.has(id)) {
                     item.classList.add('selected');
-                    const checkbox = item.querySelector('.checkbox, .album-item-checkbox');
+                    const checkbox = item.querySelector('.select-checkbox, .checkbox, .album-item-checkbox');
                     if (checkbox) checkbox.checked = true;
                 }
             });
@@ -1059,7 +1241,7 @@ class BaseGallery {
     }
 
     selectAll() {
-        document.querySelectorAll('.gallery-item').forEach(item => {
+        document.querySelectorAll(this.options.itemSelector).forEach(item => {
             const id = parseInt(item.dataset.id);
             const checkbox = item.querySelector('.select-checkbox');
 
@@ -1074,9 +1256,9 @@ class BaseGallery {
 
     clearSelection() {
         this.selectedItems.clear();
-        document.querySelectorAll('.gallery-item').forEach(item => {
+        document.querySelectorAll(this.options.itemSelector).forEach(item => {
             item.classList.remove('selected');
-            const checkbox = item.querySelector('.select-checkbox');
+            const checkbox = item.querySelector('.select-checkbox, .checkbox, .album-item-checkbox');
             if (checkbox) checkbox.checked = false;
         });
         this.updateBulkActionsUI();
@@ -1125,6 +1307,7 @@ class BaseGallery {
     startDrag() {
         this.isDragging = true;
         this.suppressClick = true;
+        document.body.classList.add('is-dragging');
 
         // Calculate target state based on start item
         const id = parseInt(this.dragStartItem.dataset.id);
@@ -1170,6 +1353,8 @@ class BaseGallery {
         this.selectionSnapshot = null;
         this.dragTargetState = null;
         this.updateSelectionModeClass();
+        document.body.classList.remove('is-dragging');
+        window.autoScroll?.stop();
 
         setTimeout(() => {
             this.suppressClick = false;
@@ -1177,7 +1362,7 @@ class BaseGallery {
     }
 
     updateVisibleSelectionState() {
-        document.querySelectorAll('.gallery-item').forEach(item => {
+        document.querySelectorAll(this.options.itemSelector).forEach(item => {
             const id = parseInt(item.dataset.id);
             const checkbox = item.querySelector('.select-checkbox');
 
@@ -1192,7 +1377,7 @@ class BaseGallery {
     }
 
     applySelectionState(id, isSelected) {
-        const item = document.querySelector(`.gallery-item[data-id="${id}"]`);
+        const item = document.querySelector(`${this.options.itemSelector}[data-id="${id}"]`);
 
         if (isSelected) {
             this.selectedItems.add(id);
@@ -1212,7 +1397,7 @@ class BaseGallery {
     }
 
     getRange(itemA, itemB) {
-        const allItems = Array.from(document.querySelectorAll('.gallery-item'));
+        const allItems = Array.from(document.querySelectorAll(this.options.itemSelector));
         const indexA = allItems.indexOf(itemA);
         const indexB = allItems.indexOf(itemB);
 
@@ -1227,8 +1412,8 @@ class BaseGallery {
     getRangeFromLast(currentId) {
         if (!this.lastSelectedId) return [currentId];
 
-        const itemA = document.querySelector(`.gallery-item[data-id="${this.lastSelectedId}"]`);
-        const itemB = document.querySelector(`.gallery-item[data-id="${currentId}"]`);
+        const itemA = document.querySelector(`${this.options.itemSelector}[data-id="${this.lastSelectedId}"]`);
+        const itemB = document.querySelector(`${this.options.itemSelector}[data-id="${currentId}"]`);
 
         if (!itemA || !itemB) return [currentId];
 
@@ -1458,7 +1643,7 @@ class BaseGallery {
     }
 
     toggleItemSelection(item, mediaId, event = null) {
-        if (this.suppressClick) return;
+        if (this.suppressClick || document.body.classList.contains('reorder-active-mode')) return;
 
         const checkbox = item.querySelector('.select-checkbox');
 
@@ -1488,6 +1673,58 @@ class BaseGallery {
     }
 
     // ==================== Gallery Item Creation ====================
+
+    createAlbumCard(album) {
+        const thumbnails = album.thumbnail_paths || [];
+        const ratings = album.thumbnail_ratings || [];
+        const shouldBlur = window.shouldBlurExplicit();
+        let thumbnailHTML;
+
+        if (thumbnails.length >= 4) {
+            thumbnailHTML = `
+                <div class="relative aspect-square overflow-hidden w-full">
+                    <div class="grid grid-cols-2 gap-0.5 w-full h-full">
+                        ${thumbnails.slice(0, 4).map((thumb, idx) => {
+                const isExplicit = ratings[idx] === 'explicit' && shouldBlur;
+                return `
+                            <div class="relative overflow-hidden w-full h-full aspect-square ${isExplicit ? 'album-thumb-blur' : ''}">
+                                <img src="${thumb}" class="absolute inset-0 w-full h-full object-cover" loading="lazy" 
+                                    onerror="this.src='/static/images/no-thumbnail.png'">
+                            </div>
+                            `;
+            }).join('')}
+                    </div>
+                </div>
+            `;
+        } else if (thumbnails.length > 0) {
+            const isExplicit = ratings[0] === 'explicit' && shouldBlur;
+            thumbnailHTML = `
+                <div class="relative aspect-square overflow-hidden w-full ${isExplicit ? 'album-thumb-blur' : ''}">
+                    <img src="${thumbnails[0]}" class="absolute inset-0 w-full h-full object-cover" loading="lazy" 
+                        onerror="this.src='/static/images/no-thumbnail.png'">
+                </div>
+            `;
+        } else {
+            thumbnailHTML = `
+                <div class="relative aspect-square surface-light flex items-center justify-center overflow-hidden w-full">
+                    <img src="/static/images/no-thumbnail.png" class="absolute inset-0 w-full h-full object-cover" loading="lazy">
+                </div>
+            `;
+        }
+
+        return `
+            <a href="/album/${album.id}" data-id="${album.id}" class="album-card block surface border hover:border-primary focus:border-primary focus:outline-none transition-colors">
+                ${thumbnailHTML}
+                <div class="p-2 border-t">
+                    <div class="text-xs font-bold truncate mb-1">${escapeHtml(album.name)}</div>
+                    <div class="flex justify-between items-center text-xs text-secondary">
+                        <span>${window.i18n.t('common.items_count', { count: album.media_count || 0 })}</span>
+                        <span>${album.rating[0].toUpperCase()}</span>
+                    </div>
+                </div>
+            </a>
+        `;
+    }
 
     createGalleryItem(media, options = {}) {
         const {
@@ -1525,6 +1762,7 @@ class BaseGallery {
             }
 
             indicator.addEventListener('click', (e) => {
+                if (document.body.classList.contains('reorder-active-mode')) return;
                 e.preventDefault();
                 e.stopPropagation();
                 this.toggleItemSelection(item, media.id, e);
@@ -1536,6 +1774,7 @@ class BaseGallery {
         // Start drag on mousedown
         if (app.isAdminMode) {
             item.addEventListener('mousedown', (e) => {
+                if (document.body.classList.contains('reorder-active-mode')) return;
                 if (e.button === 0) {
                     if (this.isSelectionMode) {
                         e.preventDefault();
@@ -1591,12 +1830,22 @@ class BaseGallery {
         const basePath = linkUrl || `/media/${media.id}`;
         if (preserveQueryParams) {
             const params = new URLSearchParams(window.location.search);
+            if (this.currentSort === 'manual' && !params.has('fallback_sort')) {
+                this.appendSortParams(params);
+            }
             const queryString = params.toString();
             link.href = `${basePath}${queryString ? '?' + queryString : ''}`;
         } else {
             link.href = basePath;
         }
-        link.appendChild(img);
+
+        const blurWrapperOrImg = window.wrapBlurThumbnail(img, media, item);
+        link.appendChild(blurWrapperOrImg);
+
+        const targetContainer = (blurWrapperOrImg === img) ? link : blurWrapperOrImg;
+        if (window.setupGifPreview) {
+            window.setupGifPreview(item, media, targetContainer, img, this.loadedGifs);
+        }
 
         link.addEventListener('click', (e) => {
             if (app.isAdminMode && this.isSelectionMode) {
@@ -1611,6 +1860,7 @@ class BaseGallery {
         const LONG_PRESS_DURATION = 350; // ms
 
         const startLongPress = (e) => {
+            if (document.body.classList.contains('reorder-active-mode')) return;
             longPressTriggered = false;
             item.classList.add('long-pressing');
 
@@ -1723,6 +1973,14 @@ class BaseGallery {
                 ${app.isAuthenticated ? `<a href="/admin" class="btn mt-4 inline-block cursor-pointer">${window.i18n.t('gallery.go_to_admin')}</a>` : ''}
             </div>
         `;
+    }
+
+    // ==================== GIF Preview Helpers ====================
+
+    unloadAllGifs() {
+        if (window.unloadAllGifs) {
+            window.unloadAllGifs(this.loadedGifs, this.elements.grid);
+        }
     }
 
     // ==================== Abstract Methods ====================

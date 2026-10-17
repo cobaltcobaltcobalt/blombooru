@@ -34,12 +34,54 @@
             <div id="upload-area" class="upload-area flex flex-col items-center justify-center gap-2">
                 {{ upload_icon(size=32, class="text-secondary") }}
                 <p class="text-xs text-secondary">{{ t('admin.media_management.drop_media') }}</p>
-                <input type="file" id="file-input" multiple accept="image/*,video/*,.zip,.tar.gz,.tgz">
+                <input type="file" id="file-input" multiple accept="image/*,video/*,.zip,.tar.gz,.tgz,.txt,text/plain">
             </div>
 
             <!-- Upload Review Queue & Pending Entities Section -->
             <div id="upload-review-section" class="my-4" style="display: none;">
-                <div id="upload-pending-container"></div>
+                <!-- Folder to Album Mapping Controls Section -->
+                <div id="folder-mapping-bar" class="mb-4" style="display: none;">
+                    <label class="block text-xs font-bold mb-2">
+                        {{ t('upload.folder.mapping_title') }}
+                    </label>
+                    <div class="surface p-4 border">
+                        <div>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" id="folder-mapping-toggle" class="w-4 h-4 accent-primary"
+                                    checked>
+                                <span class="text-xs font-bold">
+                                    {{ t('upload.folder.create_albums') }}
+                                </span>
+                            </label>
+                            <p class="text-xs text-secondary opacity-70 ml-6">
+                                {{ t('upload.folder.create_albums_hint') }}
+                            </p>
+                        </div>
+
+                        <div id="folder-mapping-root-options" class="mt-4">
+                            <label class="block text-xs font-bold mb-2">
+                                {{ t('upload.folder.root_mode_title') }}
+                            </label>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {% set root_modes = [
+                                ('use_root', 'upload.folder.root_mode_root'),
+                                ('skip_root', 'upload.folder.root_mode_subfolders'),
+                                ] %}
+                                {% for mode, label_key in root_modes %}
+                                <button type="button"
+                                    class="folder-root-mode-btn w-full px-3 py-2 bg border text-xs text-center cursor-pointer hover:border-primary transition-colors select-none"
+                                    data-mode="{{ mode }}">
+                                    <span {% if mode=='use_root' %}id="folder-root-mode-label-root" {% endif %}>
+                                        {{ t(label_key) }}
+                                    </span>
+                                </button>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="upload-pending-container" class="max-w-full min-w-0"></div>
 
                 <div class="mb-3">
                     <h4 class="text-xs font-bold uppercase tracking-wider mb-2">{{ t('upload.preview.title') }}</h4>
@@ -123,8 +165,8 @@
             <div class="text-lg font-bold" id="total-aliases">0</div>
         </div>
         <div class="bg p-3 border">
-            <div class="text-xs text-secondary">{{ t('admin.tags_management.categories') }}</div>
-            <div class="text-lg font-bold" id="total-categories">5</div>
+            <div class="text-xs text-secondary">{{ t('admin.tags_implications.title') }}</div>
+            <div class="text-lg font-bold" id="total-implications">0</div>
         </div>
     </div>
 
@@ -335,6 +377,32 @@
         </form>
     </div>
 
+    <!-- Automatic Tags from AI Metadata -->
+    <div class="mb-4">
+        <h3 class="text-sm font-bold mb-3">
+            {{ t('admin.settings.auto_apply_ai_tags') }}
+        </h3>
+        <form id="auto-apply-ai-tags-form">
+            <div class="bg p-4 border">
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" id="auto-apply-ai-tags" name="auto_apply_ai_tags"
+                        class="w-4 h-4 accent-primary">
+                    <span class="text-xs font-bold">
+                        {{ t('admin.settings.auto_apply_ai_tags_enable') }}
+                    </span>
+                </label>
+                <p class="text-xs text-secondary opacity-70 ml-6 mt-1">
+                    {{ t('admin.settings.auto_apply_ai_tags_hint') }}
+                </p>
+                <div class="mt-4">
+                    <button type="submit" class="btn-primary cursor-pointer">
+                        {{ t('admin.settings.save_auto_apply_ai_tags') }}
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+
     <!-- Tags Maintenance -->
     <div id="tags-maintenance-section" class="mb-4">
         <h3 class="text-sm font-bold mb-3">{{ t('admin.tags_management.maintenance.title') }}</h3>
@@ -435,7 +503,7 @@
     </div>
 
     <!-- Album Maintenance -->
-    <div id="albums-maintenance-section" class="mb-4">
+    <div id="albums-maintenance-section">
         <h3 class="text-sm font-bold mb-3">{{ t('admin.albums_management.maintenance.title') }}</h3>
         <div class="bg p-4 border space-y-4">
             <div>
@@ -452,6 +520,28 @@
                     </div>
                     <div id="album-search-results" class="border max-h-72 overflow-y-auto empty:hidden"></div>
                 </div>
+            </div>
+
+            <div class="pt-3 border-t">
+                <h4 class="text-xs font-bold mb-1">{{ t('admin.albums_management.maintenance.recalculate_metrics') }}
+                </h4>
+                <p class="text-xs text-secondary mb-3">
+                    {{ t('admin.albums_management.maintenance.recalculate_metrics_description') }}
+                </p>
+                <button type="button" id="recalculate-album-metrics-btn" class="btn-primary cursor-pointer">
+                    {{ t('admin.albums_management.maintenance.recalculate_metrics_btn') }}
+                </button>
+            </div>
+
+            <div class="pt-3 border-t">
+                <h4 class="text-xs font-bold mb-1">{{ t('admin.albums_management.maintenance.prune_albums') }}
+                </h4>
+                <p class="text-xs text-secondary mb-3">
+                    {{ t('admin.albums_management.maintenance.prune_albums_description') }}
+                </p>
+                <button type="button" id="prune-albums-btn" class="btn-primary cursor-pointer">
+                    {{ t('admin.albums_management.maintenance.prune_albums_btn') }}
+                </button>
             </div>
         </div>
     </div>

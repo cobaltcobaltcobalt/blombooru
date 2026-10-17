@@ -1,4 +1,3 @@
-import hashlib
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -13,15 +12,18 @@ from ..auth import require_admin_mode
 from ..config import settings
 from ..utils.request_helpers import safe_error_detail
 from ..database import get_db
-from ..models import Album, Media, Tag, User
-from ..services.booru import BooruPost, BooruTag, get_client_for_url
-from ..utils.album_utils import update_album_last_modified
-from ..utils.cache import (invalidate_album_cache, invalidate_media_cache,
-                           invalidate_tag_cache)
+from ..enums import RatingEnum
+from ..models import Media, User
+from ..services.booru import (BooruAuthenticationError, BooruNotFoundError,
+                              BooruPost, BooruRateLimitError, get_client_for_url,
+                              get_user_agent_for_url)
+from ..utils.album_utils import set_media_albums
+from ..utils.cache import (invalidate_media_cache, invalidate_tag_cache)
 from ..utils.logger import logger
 from ..utils.media_helpers import get_unique_filename
 from ..utils.media_processor import calculate_file_hash, process_media_file
-from ..utils.thumbnail_generator import generate_thumbnail
+from ..utils.thumbnail_generator import generate_thumbnail, THUMBNAIL_EXT
+from ..utils.url_fetch import UrlFetchError, safe_request
 from ..utils.url_security import UrlValidationError, validate_url_not_ssrf
 from .media import get_or_create_tags, update_tag_counts
 
@@ -41,83 +43,15 @@ class ImportRequest(BaseModel):
     category_hints: Optional[dict[str, str]] = None
 
 def _enrich_post_tags_with_db_categories(post: BooruPost, db: Session):
-    """Enrich, deduplicate, resolve aliases, and apply implications on a fetched post's tag list.
-
-    This mutates post.tags so that what the caller (and ultimately the UI) sees is already normalised:
-    - Duplicate tag names (case-insensitive) are removed.
-    - Tags whose name is a registered alias are replaced with the canonical tag name and category, and marked as not-new.
-    - Remaining tags that exist in the local DB are enriched with their local category and marked as not-new.
-    - Tag implications are recursively expanded so that all implied tags are added to the final list.
-    - Deduplication is enforced after all steps so that e.g. ["1girl", "1girls"] collapses to just ["1girl"].
+    """
+    Enrich, deduplicate, resolve aliases, and apply implications on a fetched post's tag list.
+    This mutates post.tags so that what the caller sees is already normalised.
     """
     if not post.tags:
         return
 
-    from sqlalchemy import func
-    from ..models import Tag
-    from ..utils.tag_utils import expand_implications, resolve_aliases
-
-    # Build a fast alias lookup: alias_name -> (canonical_name, canonical_category)
-    raw_names = [t.name.strip().lower() for t in post.tags]
-    alias_map = resolve_aliases(db, raw_names)
-
-    # Rebuild names with aliases resolved
-    canonical_names = set()
-    for raw in raw_names:
-        if raw in alias_map:
-            canonical_names.add(alias_map[raw][0])
-        else:
-            canonical_names.add(raw)
-
-    existing_tags = (
-        db.query(Tag)
-        .filter(func.lower(Tag.name).in_(canonical_names))
-        .all()
-    )
-
-    tag_set: dict[int, Tag] = {t.id: t for t in existing_tags}
-
-    expand_implications(db, tag_set)
-
-    seen_canonical: set[str] = set()
-    enriched: list[BooruTag] = []
-    
-    # Add original tags (with aliases resolved)
-    for t in post.tags:
-        raw = t.name.strip().lower()
-        if not raw:
-            continue
-            
-        canonical_name = alias_map[raw][0] if raw in alias_map else raw
-        if canonical_name in seen_canonical:
-            continue
-            
-        seen_canonical.add(canonical_name)
-        existing_match = next((t_obj for t_obj in tag_set.values() if t_obj.name == canonical_name), None)
-        
-        if existing_match:
-            enriched.append(BooruTag(
-                name=existing_match.name,
-                category=existing_match.category,
-                is_new=False
-            ))
-        else:
-            enriched.append(BooruTag(
-                name=canonical_name,
-                category=t.category,
-                is_new=True
-            ))
-
-    for implied in tag_set.values():
-        if implied.name not in seen_canonical:
-            seen_canonical.add(implied.name)
-            enriched.append(BooruTag(
-                name=implied.name,
-                category=implied.category,
-                is_new=False
-            ))
-
-    post.tags = enriched
+    from ..utils.tag_utils import enrich_and_resolve_tags
+    post.tags = enrich_and_resolve_tags(db, post.tags, dry_run=True)
 
 @router.post("/fetch")
 async def fetch_booru_post(
@@ -143,8 +77,14 @@ async def fetch_booru_post(
         _enrich_post_tags_with_db_categories(post, db)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=safe_error_detail("Invalid request", e))
+    except BooruAuthenticationError:
+        raise HTTPException(status_code=403, detail="admin.media_management.booru_import.error_access_denied_403")
+    except BooruNotFoundError:
+        raise HTTPException(status_code=404, detail="admin.media_management.booru_import.error_post_not_found")
+    except BooruRateLimitError as e:
+        raise HTTPException(status_code=429, detail=f"admin.media_management.booru_import.error_booru_api:::{safe_error_detail('Rate limited', e)}")
     except requests.HTTPError as e:
-        if e.response.status_code == 403:
+        if e.response.status_code in (401, 403):
             raise HTTPException(status_code=403, detail="admin.media_management.booru_import.error_access_denied_403")
         if e.response.status_code == 404:
             raise HTTPException(status_code=404, detail="admin.media_management.booru_import.error_post_not_found")
@@ -193,8 +133,14 @@ async def download_and_import(
         _enrich_post_tags_with_db_categories(post, db)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=safe_error_detail("Invalid request", e))
+    except BooruAuthenticationError:
+        raise HTTPException(status_code=403, detail="admin.media_management.booru_import.error_access_denied_403")
+    except BooruNotFoundError:
+        raise HTTPException(status_code=404, detail="admin.media_management.booru_import.error_post_not_found")
+    except BooruRateLimitError as e:
+        raise HTTPException(status_code=429, detail=f"admin.media_management.booru_import.error_booru_api:::{safe_error_detail('Rate limited', e)}")
     except requests.HTTPError as e:
-        if e.response.status_code == 403:
+        if e.response.status_code in (401, 403):
             raise HTTPException(status_code=403, detail="admin.media_management.booru_import.error_access_denied_403")
         if e.response.status_code == 404:
             raise HTTPException(status_code=404, detail="admin.media_management.booru_import.error_post_not_found")
@@ -207,12 +153,28 @@ async def download_and_import(
 
     # Download media file to temp location
     try:
+        user_agent = get_user_agent_for_url(post.file_url, db=db)
+        proxies = settings.get_booru_proxies()
+        session = None
         if client and hasattr(client, "session"):
-            response = client.session.get(post.file_url, timeout=60, stream=True)
-        else:
-            response = requests.get(post.file_url, timeout=60, stream=True)
+            from urllib.parse import urlparse
+            booru_host = (urlparse(client.base_url).hostname or "").lower()
+            file_host = (urlparse(post.file_url).hostname or "").lower()
+            if booru_host and file_host == booru_host:
+                session = client.session
 
+        response = safe_request(
+            "GET",
+            post.file_url,
+            timeout=60,
+            stream=True,
+            user_agent=user_agent,
+            proxies=proxies,
+            session=session,
+        )
         response.raise_for_status()
+    except UrlFetchError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
     except requests.HTTPError as e:
         if e.response.status_code == 403:
             raise HTTPException(status_code=403, detail="admin.media_management.booru_import.error_download_403")
@@ -251,7 +213,7 @@ async def download_and_import(
         metadata = process_media_file(file_path, precalculated_hash=file_hash)
 
         thumbnail_name = Path(unique_filename).stem
-        thumbnail_filename = f"{thumbnail_name}.jpg"
+        thumbnail_filename = f"{thumbnail_name}{THUMBNAIL_EXT}"
         thumbnail_path = settings.THUMBNAIL_DIR / thumbnail_filename
 
         thumb_source = (settings.BASE_DIR / metadata["transcoded_path"]) if metadata.get("transcoded_path") else file_path
@@ -264,7 +226,7 @@ async def download_and_import(
         relative_path = file_path.relative_to(settings.BASE_DIR)
         relative_thumb = thumbnail_path.relative_to(settings.BASE_DIR) if thumbnail_generated else None
 
-        final_rating = req.rating or post.rating
+        final_rating = RatingEnum.normalize(req.rating) or (RatingEnum.normalize(post.rating) if post and post.rating else None) or RatingEnum.safe
         final_source = req.source if req.source is not None else (post.source or post.booru_url)
         final_tags = req.tags if req.tags is not None else [t.name for t in post.tags]
         final_description = req.description if req.description is not None else post.description
@@ -300,13 +262,6 @@ async def download_and_import(
             media.tags = get_or_create_tags(db, tag_list, category_hints=category_hints)
             tag_ids_to_update = [tag.id for tag in media.tags]
 
-        # Handle albums
-        affected_album_ids = []
-        if req.album_ids:
-            albums = db.query(Album).filter(Album.id.in_(req.album_ids)).all()
-            media.albums = albums
-            affected_album_ids = [album.id for album in albums]
-
         db.add(media)
         db.commit()
         db.refresh(media)
@@ -315,11 +270,8 @@ async def download_and_import(
             update_tag_counts(db, tag_ids_to_update)
             db.commit()
 
-        if affected_album_ids:
-            for a_id in affected_album_ids:
-                update_album_last_modified(a_id, db)
-            db.commit()
-            invalidate_album_cache()
+        if req.album_ids:
+            set_media_albums(db, media.id, req.album_ids)
 
         db.refresh(media)
 
@@ -369,30 +321,18 @@ async def proxy_image(
     if not url.startswith("http"):
         raise HTTPException(status_code=400, detail="admin.media_management.booru_import.error_invalid_url")
 
-    _validate_url_not_ssrf(url)
-
     try:
-        from urllib.parse import urlparse
-        parsed = urlparse(url)
-        referer = f"{parsed.scheme}://{parsed.netloc}/"
+        user_agent = get_user_agent_for_url(url, db=db)
+        proxies = settings.get_booru_proxies()
 
-        external_resp = requests.get(
+        external_resp = safe_request(
+            "GET",
             url,
-            stream=True,
             timeout=60,
-            allow_redirects=False,
-            headers={
-                "User-Agent": "Blombooru/1.0 (booru-import)",
-                "Referer": referer,
-            },
+            stream=True,
+            user_agent=user_agent,
+            proxies=proxies,
         )
-        
-        if external_resp.status_code in (301, 302, 303, 307, 308):
-            # Refuse to follow redirects
-            raise HTTPException(
-                status_code=422,
-                detail="admin.media_management.booru_import.error_redirect_not_followed"
-            )
 
         if external_resp.status_code == 403:
             raise HTTPException(status_code=403, detail="admin.media_management.booru_import.error_image_403")
@@ -415,7 +355,15 @@ async def proxy_image(
             media_type=content_type,
             headers={"Cache-Control": "public, max-age=3600"}
         )
+    except UrlFetchError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
     except HTTPException:
         raise
+    except requests.HTTPError as e:
+        if e.response.status_code == 403:
+            raise HTTPException(status_code=403, detail="admin.media_management.booru_import.error_image_403")
+        if e.response.status_code == 404:
+            raise HTTPException(status_code=404, detail="admin.media_management.booru_import.error_image_404")
+        raise HTTPException(status_code=502, detail=f"admin.media_management.booru_import.error_proxy_failed:::{safe_error_detail('Proxy failed', e)}")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"admin.media_management.booru_import.error_proxy_failed:::{safe_error_detail('Proxy failed', e)}")

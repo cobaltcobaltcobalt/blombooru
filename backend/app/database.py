@@ -183,12 +183,16 @@ def check_and_migrate_schema(engine):
         migrate_add_parent_id,
         migrate_add_share_language,
         migrate_add_description,
+        migrate_add_description_enlarged,
         migrate_add_implication_patterns,
         migrate_implication_patterns_to_jsonb,
         migrate_file_size_to_bigint,
         migrate_remove_duplicate_tag_aliases,
         migrate_add_api_key_permission,
         migrate_add_transcoded_path,
+        migrate_add_album_indexes,
+        migrate_add_album_cached_columns,
+        migrate_add_manual_sort_positions,
     ]
     
     for migration in migrations:
@@ -269,6 +273,25 @@ def migrate_add_description(engine, inspector):
     with engine.connect() as conn:
         conn.execute(text(
             "ALTER TABLE blombooru_media ADD COLUMN description TEXT"
+        ))
+        conn.commit()
+
+def migrate_add_description_enlarged(engine, inspector):
+    """Add description_enlarged column to media table"""
+    from sqlalchemy import text
+    
+    columns = [c['name'] for c in inspector.get_columns('blombooru_media')]
+    
+    if 'description_enlarged' in columns:
+        return
+    
+    logger.info("Adding description_enlarged column to blombooru_media...")
+    
+    is_sqlite = engine.dialect.name == 'sqlite'
+    col_type = "BOOLEAN DEFAULT 0 NOT NULL" if is_sqlite else "BOOLEAN DEFAULT FALSE NOT NULL"
+    with engine.connect() as conn:
+        conn.execute(text(
+            f"ALTER TABLE blombooru_media ADD COLUMN description_enlarged {col_type}"
         ))
         conn.commit()
 
@@ -383,4 +406,108 @@ def migrate_add_transcoded_path(engine, inspector):
         conn.execute(text(
             "ALTER TABLE blombooru_media ADD COLUMN transcoded_path VARCHAR(500)"
         ))
+        conn.commit()
+
+def migrate_add_album_indexes(engine, inspector):
+    """Add indexes to blombooru_album_hierarchy(child_album_id) and blombooru_album_media(media_id)"""
+    from sqlalchemy import text
+    
+    tables = inspector.get_table_names()
+    if 'blombooru_album_hierarchy' in tables:
+        indexes = [idx['name'] for idx in inspector.get_indexes('blombooru_album_hierarchy')]
+        if 'ix_blombooru_album_hierarchy_child_album_id' not in indexes:
+            logger.info("Adding index ix_blombooru_album_hierarchy_child_album_id...")
+            with engine.connect() as conn:
+                conn.execute(text(
+                    "CREATE INDEX ix_blombooru_album_hierarchy_child_album_id ON blombooru_album_hierarchy(child_album_id)"
+                ))
+                conn.commit()
+
+    if 'blombooru_album_media' in tables:
+        indexes = [idx['name'] for idx in inspector.get_indexes('blombooru_album_media')]
+        if 'ix_blombooru_album_media_media_id' not in indexes:
+            logger.info("Adding index ix_blombooru_album_media_media_id...")
+            with engine.connect() as conn:
+                conn.execute(text(
+                    "CREATE INDEX ix_blombooru_album_media_media_id ON blombooru_album_media(media_id)"
+                ))
+                conn.commit()
+
+def migrate_add_album_cached_columns(engine, inspector):
+    """Add cached_rating, cached_media_count, cached_direct_media_count to blombooru_albums and backfill."""
+    from sqlalchemy import text
+    from sqlalchemy.orm import sessionmaker
+    
+    tables = inspector.get_table_names()
+    if 'blombooru_albums' not in tables:
+        return
+        
+    columns = [c['name'] for c in inspector.get_columns('blombooru_albums')]
+    newly_added = False
+
+    with engine.connect() as conn:
+        if 'cached_rating' not in columns:
+            logger.info("Adding cached_rating column to blombooru_albums...")
+            if engine.dialect.name == 'postgresql':
+                conn.execute(text("ALTER TABLE blombooru_albums ADD COLUMN cached_rating ratingenum DEFAULT 'safe'"))
+            else:
+                conn.execute(text("ALTER TABLE blombooru_albums ADD COLUMN cached_rating VARCHAR(20) DEFAULT 'safe'"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_blombooru_albums_cached_rating ON blombooru_albums(cached_rating)"))
+            newly_added = True
+
+        if 'cached_media_count' not in columns:
+            logger.info("Adding cached_media_count column to blombooru_albums...")
+            conn.execute(text("ALTER TABLE blombooru_albums ADD COLUMN cached_media_count INTEGER DEFAULT 0"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_blombooru_albums_cached_media_count ON blombooru_albums(cached_media_count)"))
+            newly_added = True
+
+        if 'cached_direct_media_count' not in columns:
+            logger.info("Adding cached_direct_media_count column to blombooru_albums...")
+            conn.execute(text("ALTER TABLE blombooru_albums ADD COLUMN cached_direct_media_count INTEGER DEFAULT 0"))
+            newly_added = True
+
+        conn.commit()
+
+    logger.info("Synchronizing and ensuring cached metrics for blombooru_albums...")
+    try:
+        from .utils.album_utils import recalculate_all_album_metrics
+        from .utils.cache import invalidate_album_cache
+        Session = sessionmaker(bind=engine)
+        db = Session()
+        try:
+            recalculate_all_album_metrics(db)
+        finally:
+            db.close()
+        invalidate_album_cache()
+        logger.info("Album metrics synchronization completed successfully.")
+    except Exception as e:
+        logger.error(f"Error synchronizing album metrics during migration: {e}")
+
+def migrate_add_manual_sort_positions(engine, inspector):
+    """Add sort_position columns to blombooru_albums, blombooru_album_media, and blombooru_album_hierarchy."""
+    from sqlalchemy import text
+
+    tables = inspector.get_table_names()
+    with engine.connect() as conn:
+        if 'blombooru_albums' in tables:
+            album_cols = [c['name'] for c in inspector.get_columns('blombooru_albums')]
+            if 'sort_position' not in album_cols:
+                logger.info("Adding sort_position column to blombooru_albums...")
+                conn.execute(text("ALTER TABLE blombooru_albums ADD COLUMN sort_position INTEGER"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_blombooru_albums_sort_position ON blombooru_albums(sort_position)"))
+
+        if 'blombooru_album_media' in tables:
+            media_cols = [c['name'] for c in inspector.get_columns('blombooru_album_media')]
+            if 'sort_position' not in media_cols:
+                logger.info("Adding sort_position column to blombooru_album_media...")
+                conn.execute(text("ALTER TABLE blombooru_album_media ADD COLUMN sort_position INTEGER"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_blombooru_album_media_sort_position ON blombooru_album_media(sort_position)"))
+
+        if 'blombooru_album_hierarchy' in tables:
+            hierarchy_cols = [c['name'] for c in inspector.get_columns('blombooru_album_hierarchy')]
+            if 'sort_position' not in hierarchy_cols:
+                logger.info("Adding sort_position column to blombooru_album_hierarchy...")
+                conn.execute(text("ALTER TABLE blombooru_album_hierarchy ADD COLUMN sort_position INTEGER"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_blombooru_album_hierarchy_sort_position ON blombooru_album_hierarchy(sort_position)"))
+
         conn.commit()

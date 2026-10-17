@@ -1,28 +1,31 @@
-import random
-from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import and_, asc, desc, func, or_, text
-from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy import case, desc, func, literal
+from sqlalchemy.orm import Session, selectinload
 
-from ..auth import User, get_current_admin_user, require_admin_mode
+from ..auth import User, require_admin_mode
 from ..config import settings
 from ..database import get_db
 from ..models import (Album, Media, RatingEnum, blombooru_album_hierarchy,
                       blombooru_album_media)
-from ..schemas import (AlbumCreate, AlbumListResponse, AlbumResponse,
-                       AlbumUpdate, MediaIds)
-from ..utils.album_utils import (get_album_popular_tags, get_album_rating,
-                                 get_album_tags, get_bulk_album_metrics,
-                                 get_media_count, get_parent_ids,
-                                 get_random_thumbnails,
-                                 update_album_last_modified)
+from ..schemas import (AlbumCreate, AlbumHierarchyResponse, AlbumListResponse, 
+                        AlbumResponse, AlbumStatsResponse,
+                        AlbumUpdate, MediaIds,
+                        AlbumReorderRequest, MediaReorderRequest)
+from ..utils.album_utils import (add_media_to_album, apply_media_filters,
+                                 delete_album_cascade,
+                                 get_album_matching_media_counts,
+                                 get_album_popular_tags, get_album_stats,
+                                 get_album_tree_data, get_bulk_album_thumbnails,
+                                 get_bulk_parent_ids, get_matching_album_ids,
+                                 get_parent_ids, is_album_filter_active,
+                                 recalculate_album_metrics, recalculate_all_album_metrics,
+                                 prune_all_albums, remove_media_from_album, reparent_album)
 from ..utils.cache import cache_response, invalidate_album_cache
-from ..utils.logger import logger
-from ..utils.media_sort import apply_album_sort, apply_media_sort
-from ..utils.search_parser import (apply_custom_filters_or,
-                                   apply_search_criteria, parse_search_query)
+from ..utils.media_sort import (apply_album_sort, apply_media_sort,
+                                get_album_sort_clauses, get_media_sort_clauses)
+from ..utils.search_parser import parse_search_query
 
 router = APIRouter(prefix="/api/albums", tags=["albums"])
 
@@ -32,89 +35,214 @@ def get_effective_limit(limit: Optional[int]) -> int:
         return settings.get_items_per_page()
     return limit
 
+
 @router.get("/", response_model=dict)
 @router.get("", response_model=dict)
-@cache_response(expire=3600, key_prefix="album_list")
 async def get_albums(
     request: Request,
     page: int = 1,
     limit: Optional[int] = Query(default=None),
     sort: Optional[str] = Query(default="created_at"),
     order: Optional[str] = Query(default="desc"),
+    fallback_sort: Optional[str] = Query(default=None),
+    fallback_order: Optional[str] = Query(default=None),
     seed: Optional[str] = Query(default=None),
     rating: Optional[str] = None,
+    custom_filter: Optional[List[str]] = Query(default=None),
+    q: Optional[str] = Query(default=None),
     root_only: bool = Query(default=False),
     db: Session = Depends(get_db)
 ):
-    """Get paginated album list"""
-    limit = get_effective_limit(limit)
-    if not isinstance(page, int) or page <= 0:
-        page = 1
-    
+    """Get paginated album list using database-level sorting, filtering, and windowed thumbnails."""
     # Build query
     query = db.query(Album)
     
-    if root_only:
+    if isinstance(root_only, bool) and root_only:
         # Only show albums that are not children of any other album
         query = query.filter(~Album.id.in_(db.query(blombooru_album_hierarchy.c.child_album_id)))
     
-    if not isinstance(sort, str):
-        sort = "created_at"
-    if not isinstance(order, str):
-        order = "desc"
-    sort_order = order.lower() if order else "desc"
-    if sort_order not in ("asc", "desc"):
-        sort_order = "desc"
-    query = apply_album_sort(query, sort or "created_at", sort_order, seed)
+    filter_active = is_album_filter_active(rating=rating, custom_filter=custom_filter, q=q)
+    if filter_active:
+        matching_ids = get_matching_album_ids(db, rating=rating, custom_filter=custom_filter, q=q)
+        if not matching_ids:
+            query = query.filter(literal(False))
+        else:
+            query = query.filter(Album.id.in_(matching_ids))
     
-    # Get all albums
-    all_albums = query.all()
-    all_album_ids = [a.id for a in all_albums]
-    all_metrics = get_bulk_album_metrics(all_album_ids, db)
+    sort_str = sort if isinstance(sort, str) and sort else "created_at"
+    sort_order = order.lower() if isinstance(order, str) and order.lower() in ("asc", "desc") else "desc"
+    seed_str = seed if isinstance(seed, str) else None
+
+    # Manual sort only applies to root albums (where sort_position is defined)
+    if sort_str == "manual" and root_only:
+        fb_sort = fallback_sort if isinstance(fallback_sort, str) and fallback_sort.strip() else "created_at"
+        fb_order = fallback_order.lower() if isinstance(fallback_order, str) and fallback_order.lower() in ("asc", "desc") else "desc"
+        fb_clauses = get_album_sort_clauses(fb_sort, fb_order, seed_str)
+        query = query.order_by(Album.sort_position.asc().nulls_last(), *fb_clauses)
+    else:
+        query = apply_album_sort(query, sort_str, sort_order, seed_str)
     
-    # Filter and build list
-    filtered_albums = []
-    for album in all_albums:
-        metrics = all_metrics.get(album.id, {'rating': RatingEnum.safe, 'count': 0})
-        album_rating = metrics['rating']
-        
-        # Apply rating filter
-        if rating:
-            ratings_list = [r.strip().lower() for r in rating.split(",") if r.strip()]
-            valid_ratings = [RatingEnum[r] for r in ratings_list if r in RatingEnum.__members__]
-            if valid_ratings and album_rating not in valid_ratings:
-                continue
-        
-        filtered_albums.append((album, album_rating, metrics['count']))
+    total = query.count()
+    limit = get_effective_limit(limit)
+    if not isinstance(page, int) or page <= 0:
+        page = 1
+    offset = (page - 1) * limit
+    page_albums = query.offset(offset).limit(limit).all()
+    pages = max(1, (total + limit - 1) // limit)
     
-    total = len(filtered_albums)
+    page_album_ids = [a.id for a in page_albums]
+    thumbnails_map = get_bulk_album_thumbnails(
+        page_album_ids, db, count=4, rating=rating, custom_filter=custom_filter, q=q
+    )
+    if filter_active:
+        counts_map = get_album_matching_media_counts(
+            page_album_ids, db, rating=rating, custom_filter=custom_filter, q=q
+        )
+    else:
+        counts_map = {a.id: (a.cached_media_count or 0) for a in page_albums}
     
-    # Paginate the filtered list
-    start = (page - 1) * limit
-    end = start + limit
-    paginated_albums = filtered_albums[start:end]
-    
-    # Build response
     album_list = []
-    for album, album_rating, media_count in paginated_albums:
-        thumbnails = get_random_thumbnails(album.id, db, count=4)
-        
-        album_list.append(AlbumListResponse(
-            id=album.id,
-            name=album.name,
-            last_modified=album.last_modified,
-            thumbnail_paths=thumbnails,
-            rating=album_rating,
-            media_count=media_count
-        ))
+    for album in page_albums:
+        thumb_info = thumbnails_map.get(album.id, {"paths": [], "ratings": []})
+        album_list.append(
+            AlbumListResponse(
+                id=album.id,
+                name=album.name,
+                last_modified=album.last_modified,
+                thumbnail_paths=thumb_info.get("paths", []),
+                thumbnail_ratings=thumb_info.get("ratings", []),
+                rating=album.cached_rating or RatingEnum.safe,
+                media_count=counts_map[album.id]
+            )
+        )
     
     return {
         "items": album_list,
         "total": total,
         "page": page,
         "limit": limit,
-        "pages": max(1, (total + limit - 1) // limit)
+        "pages": pages
     }
+
+@router.put("/reorder")
+async def reorder_root_albums(
+    data: AlbumReorderRequest,
+    current_user: User = Depends(require_admin_mode),
+    db: Session = Depends(get_db)
+):
+    """Set manual sort positions for root albums."""
+    for position, album_id in enumerate(data.album_ids):
+        db.query(Album).filter(Album.id == album_id).update(
+            {Album.sort_position: position},
+            synchronize_session=False
+        )
+    db.commit()
+    invalidate_album_cache()
+    return {"message": "Root album order updated"}
+
+@router.delete("/reorder")
+async def clear_root_albums_order(
+    current_user: User = Depends(require_admin_mode),
+    db: Session = Depends(get_db)
+):
+    """Clear manual sort positions for root albums."""
+    db.query(Album).update({Album.sort_position: None}, synchronize_session=False)
+    db.commit()
+    invalidate_album_cache()
+    return {"message": "Root album manual order cleared"}
+
+@router.get("/tree", response_model=AlbumHierarchyResponse)
+@cache_response(expire=3600, key_prefix="album_tree")
+async def get_albums_tree(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Get full album hierarchy in a single fast query for tree views, pickers, and selects."""
+    tree_nodes = get_album_tree_data(db)
+    return {"items": tree_nodes}
+
+@router.get("/stats", response_model=AlbumStatsResponse)
+async def get_album_statistics(
+    db: Session = Depends(get_db)
+):
+    """Get aggregate album statistics (total, root, media) in fast queries."""
+    return get_album_stats(db)
+
+@router.post("/recalculate")
+async def recalculate_all_albums_endpoint(
+    current_user: User = Depends(require_admin_mode),
+    db: Session = Depends(get_db)
+):
+    """Recalculate all album cached metrics and purge cache."""
+    recalculate_all_album_metrics(db)
+    invalidate_album_cache()
+    return {"message": "All album metrics successfully recalculated and cache invalidated"}
+
+@router.post("/prune")
+async def prune_all_albums_endpoint(
+    current_user: User = Depends(require_admin_mode),
+    db: Session = Depends(get_db)
+):
+    """Prune all albums that contains no media and that have no children."""
+    pruned = prune_all_albums(db)
+    invalidate_album_cache()
+    return {"message": "Albums have been pruned successfully", "count": pruned}
+
+@router.get("/autocomplete")
+@cache_response(expire=3600, key_prefix="album_autocomplete")
+async def autocomplete_albums(
+    request: Request,
+    q: str = Query(..., min_length=1),
+    limit: int = Query(default=50, ge=1, le=100),
+    db: Session = Depends(get_db)
+):
+    if not isinstance(limit, int) or limit <= 0:
+        limit = 50
+
+    q_clean = q.strip().lower() if isinstance(q, str) else ""
+    if not q_clean:
+        return []
+
+    priority = case(
+        (func.lower(Album.name) == q_clean, 1),
+        (Album.name.ilike(f"{q_clean}%"), 2),
+        else_=3
+    )
+
+    albums = db.query(Album).filter(
+        Album.name.ilike(f"%{q_clean}%")
+    ).order_by(
+        priority,
+        desc(Album.cached_media_count),
+        func.length(Album.name),
+        Album.name
+    ).limit(limit).all()
+
+    album_ids = [a.id for a in albums]
+    parent_crumbs = get_bulk_parent_ids(album_ids, db)
+
+    all_parent_ids = set()
+    for crumbs in parent_crumbs.values():
+        all_parent_ids.update(crumbs)
+
+    parent_names = {}
+    if all_parent_ids:
+        for pid, pname in db.query(Album.id, Album.name).filter(Album.id.in_(all_parent_ids)).all():
+            parent_names[pid] = pname
+
+    results = []
+    for a in albums:
+        crumbs = parent_crumbs.get(a.id, [])
+        path_str = " > ".join(parent_names[pid] for pid in crumbs if pid in parent_names) if crumbs else None
+        results.append({
+            "id": a.id,
+            "name": a.name,
+            "parent_path": path_str,
+            "media_count": a.cached_media_count or 0,
+            "rating": a.cached_rating or RatingEnum.safe
+        })
+
+    return results
 
 @router.get("/{album_id}", response_model=AlbumResponse)
 async def get_album(
@@ -126,12 +254,9 @@ async def get_album(
     if not album:
         raise HTTPException(status_code=404, detail="Album not found")
     
-    # Compute fields
-    album_rating = get_album_rating(album.id, db)
-    media_count = get_media_count(album.id, db)
     children_count = db.query(func.count(blombooru_album_hierarchy.c.child_album_id)).filter(
         blombooru_album_hierarchy.c.parent_album_id == album_id
-    ).scalar()
+    ).scalar() or 0
     parent_ids = get_parent_ids(album.id, db)
     
     return AlbumResponse(
@@ -140,9 +265,9 @@ async def get_album(
         created_at=album.created_at,
         updated_at=album.updated_at,
         last_modified=album.last_modified,
-        media_count=media_count,
+        media_count=album.cached_media_count or 0,
         children_count=children_count,
-        rating=album_rating,
+        rating=album.cached_rating or RatingEnum.safe,
         parent_ids=parent_ids
     )
 
@@ -159,8 +284,12 @@ async def create_album(
         if not parent:
             raise HTTPException(status_code=404, detail="Parent album not found")
     
-    # Create album
-    new_album = Album(name=album_data.name)
+    new_album = Album(
+        name=album_data.name,
+        cached_rating=RatingEnum.safe,
+        cached_media_count=0,
+        cached_direct_media_count=0
+    )
     db.add(new_album)
     db.flush()
     
@@ -172,6 +301,7 @@ async def create_album(
                 child_album_id=new_album.id
             )
         )
+        recalculate_album_metrics(db, [album_data.parent_album_id])
     
     db.commit()
     db.refresh(new_album)
@@ -198,7 +328,7 @@ async def update_album(
     current_user: User = Depends(require_admin_mode),
     db: Session = Depends(get_db)
 ):
-    """Update album name/parent (admin only)"""
+    """Update album name/parent with deep cycle safety (admin only)"""
     album = db.query(Album).filter(Album.id == album_id).first()
     if not album:
         raise HTTPException(status_code=404, detail="Album not found")
@@ -206,41 +336,16 @@ async def update_album(
     # Update name
     if album_data.name is not None:
         album.name = album_data.name
+        db.flush()
     
     # Update parent relationship
     if album_data.parent_album_id is not None:
-        # Check for circular reference
-        if album_data.parent_album_id == album_id:
-            raise HTTPException(status_code=400, detail="Album cannot be its own parent")
-        
-        # Check if new parent exists
-        if album_data.parent_album_id:
-            parent = db.query(Album).filter(Album.id == album_data.parent_album_id).first()
-            if not parent:
-                raise HTTPException(status_code=404, detail="Parent album not found")
-        
-        # Remove old parent relationship
-        db.execute(
-            blombooru_album_hierarchy.delete().where(
-                blombooru_album_hierarchy.c.child_album_id == album_id
-            )
-        )
-        
-        # Add new parent relationship
-        if album_data.parent_album_id:
-            db.execute(
-                blombooru_album_hierarchy.insert().values(
-                    parent_album_id=album_data.parent_album_id,
-                    child_album_id=album_id
-                )
-            )
+        reparent_album(db, album_id, album_data.parent_album_id or None)
+    else:
+        db.commit()
+        invalidate_album_cache()
     
-    db.commit()
     db.refresh(album)
-    
-    # Invalidate cache
-    invalidate_album_cache()
-    
     return await get_album(album_id, db)
 
 @router.delete("/{album_id}")
@@ -250,110 +355,33 @@ async def delete_album(
     current_user: User = Depends(require_admin_mode),
     db: Session = Depends(get_db)
 ):
-    """Delete album (admin only)"""
-    album = db.query(Album).filter(Album.id == album_id).first()
-    if not album:
-        raise HTTPException(status_code=404, detail="Album not found")
-    
-    if cascade:
-        # Delete child albums recursively
-        def delete_children(parent_id: int):
-            children = db.query(blombooru_album_hierarchy.c.child_album_id).filter(
-                blombooru_album_hierarchy.c.parent_album_id == parent_id
-            ).all()
-            
-            for child_tuple in children:
-                child_id = child_tuple[0]
-                delete_children(child_id)
-                child_album = db.query(Album).filter(Album.id == child_id).first()
-                if child_album:
-                    db.delete(child_album)
-        
-        delete_children(album_id)
-    else:
-        # Just remove parent relationships for children (orphan them)
-        db.execute(
-            blombooru_album_hierarchy.delete().where(
-                blombooru_album_hierarchy.c.parent_album_id == album_id
-            )
-        )
-    
-    db.delete(album)
-    db.commit()
-    
-    # Invalidate cache
-    invalidate_album_cache()
-    
+    """Delete album (admin only), updating ancestor metrics."""
+    delete_album_cascade(db, album_id, cascade=cascade)
     return {"message": "Album deleted successfully"}
 
 @router.post("/{album_id}/media")
-async def add_media_to_album(
+async def add_media_to_album_endpoint(
     album_id: int,
     data: MediaIds,
     current_user: User = Depends(require_admin_mode),
     db: Session = Depends(get_db)
 ):
-    """Add media items to album (bulk operation, admin only)"""
-    album = db.query(Album).filter(Album.id == album_id).first()
-    if not album:
-        raise HTTPException(status_code=404, detail="Album not found")
-    
-    # Verify which media IDs exist
-    valid_ids = {row[0] for row in db.query(Media.id).filter(Media.id.in_(data.media_ids)).all()}
-    
-    # Find which are already in this album
-    existing_ids = {row[0] for row in db.query(blombooru_album_media.c.media_id).filter(
-        and_(
-            blombooru_album_media.c.album_id == album_id,
-            blombooru_album_media.c.media_id.in_(valid_ids)
-        )
-    ).all()}
-    
-    # Insert only new memberships
-    new_ids = valid_ids - existing_ids
-    if new_ids:
-        db.execute(
-            blombooru_album_media.insert(),
-            [{"album_id": album_id, "media_id": mid} for mid in new_ids]
-        )
-    
-    update_album_last_modified(album_id, db)
-    invalidate_album_cache()
-    
-    return {"message": f"Added {len(new_ids)} media item(s) to album"}
+    """Add media items to album (bulk operation with duplicate check, admin only)"""
+    new_count = add_media_to_album(db, album_id, data.media_ids)
+    return {"message": f"Added {new_count} media item(s) to album"}
 
 @router.delete("/{album_id}/media")
-async def remove_media_from_album(
+async def remove_media_from_album_endpoint(
     album_id: int,
     data: MediaIds,
     current_user: User = Depends(require_admin_mode),
     db: Session = Depends(get_db)
 ):
     """Remove media items from album (bulk operation, admin only)"""
-    album = db.query(Album).filter(Album.id == album_id).first()
-    if not album:
-        raise HTTPException(status_code=404, detail="Album not found")
-    
-    db.execute(
-        blombooru_album_media.delete().where(
-            and_(
-                blombooru_album_media.c.album_id == album_id,
-                blombooru_album_media.c.media_id.in_(data.media_ids)
-            )
-        )
-    )
-    
-    # Update last_modified
-    update_album_last_modified(album_id, db)
-    
-    # Invalidate cache
-    invalidate_album_cache()
-    
+    remove_media_from_album(db, album_id, data.media_ids)
     return {"message": "Media removed from album"}
 
-
 @router.get("/{album_id}/contents")
-@cache_response(expire=3600, key_prefix="album_contents")
 async def get_album_contents(
     request: Request,
     album_id: int,
@@ -364,6 +392,8 @@ async def get_album_contents(
     custom_filter: Optional[List[str]] = Query(default=None),
     sort: str = Query(default="uploaded_at"),
     order: str = Query(default="desc"),
+    fallback_sort: Optional[str] = Query(default=None),
+    fallback_order: Optional[str] = Query(default=None),
     seed: Optional[str] = Query(default=None),
     db: Session = Depends(get_db)
 ):
@@ -372,9 +402,6 @@ async def get_album_contents(
     if not album:
         raise HTTPException(status_code=404, detail="Album not found")
     
-    # Get effective limit from settings if not provided
-    limit = get_effective_limit(limit)
-    
     if not isinstance(page, int) or page <= 0:
         page = 1
     if not isinstance(sort, str):
@@ -382,10 +409,10 @@ async def get_album_contents(
     if not isinstance(order, str):
         order = "desc"
     
-    # Normalize order string
-    sort_order = order.lower() if order else "desc"
-    if sort_order not in ("asc", "desc"):
-        sort_order = "desc"
+    sort_order = order.lower() if order and order.lower() in ("asc", "desc") else "desc"
+    fb_sort = fallback_sort if isinstance(fallback_sort, str) and fallback_sort.strip() else "uploaded_at"
+    fb_order = fallback_order.lower() if isinstance(fallback_order, str) and fallback_order.lower() in ("asc", "desc") else "desc"
+    seed_str = seed if isinstance(seed, str) else None
     
     # --- 1. MEDIA ITEMS ---
     from ..schemas import MediaResponse
@@ -398,49 +425,51 @@ async def get_album_contents(
         blombooru_album_media.c.album_id == album_id
     ).options(selectinload(Media.tags))
     
-    # Apply tag filtering if query provided
-    if q and isinstance(q, str):
-        parsed = parse_search_query(q)
-        
-        # Merge rating filter into parsed query if provided and not already in query
-        if rating and 'rating' not in parsed['meta']:
-            parsed['meta']['rating'] = [{'value': rating.lower(), 'negated': False}]
-        
-        # Apply search criteria to media query
-        media_query = apply_search_criteria(media_query, parsed, db)
-    else:
-        # Filter Rating (only if no tag query provided)
-        if rating:
-            ratings_list = [r.strip().lower() for r in rating.split(",") if r.strip()]
-            valid_ratings = [RatingEnum[r] for r in ratings_list if r in RatingEnum.__members__]
-            if valid_ratings:
-                media_query = media_query.filter(Media.rating.in_(valid_ratings))
-    
-    if custom_filter:
-        media_query = apply_custom_filters_or(media_query, custom_filter, db)
+    parsed_q = parse_search_query(q) if (q and isinstance(q, str) and q.strip()) else None
+    media_query = apply_media_filters(
+        media_query, db, rating=rating, custom_filter=custom_filter, q=q, parsed_q=parsed_q, apply_sort=True
+    )
     
     # Sort Media
-    if not q or not isinstance(q, str) or ('order' not in parsed['meta'] and 'sort' not in parsed['meta']):
+    has_q_sort = bool(parsed_q and ('order' in parsed_q.get('meta', {}) or 'sort' in parsed_q.get('meta', {})))
+    if not has_q_sort:
         media_query = media_query.order_by(None)
-        media_query = apply_media_sort(
-            media_query,
-            sort,
-            sort_order,
-            db,
-            seed,
-            column_overrides={
-                'uploaded_at': Media.id,
-                'last_modified': Media.id,
-                'name': Media.filename,
-            },
-        )
+        if sort == "manual":
+            fb_media_clauses = get_media_sort_clauses(
+                fb_sort,
+                fb_order,
+                db,
+                seed_str,
+                column_overrides={
+                    'uploaded_at': Media.id,
+                    'last_modified': Media.id,
+                    'name': Media.filename,
+                },
+            )
+            media_query = media_query.order_by(
+                blombooru_album_media.c.sort_position.asc().nulls_last(),
+                *fb_media_clauses
+            )
+        else:
+            media_query = apply_media_sort(
+                media_query,
+                sort,
+                sort_order,
+                db,
+                seed_str,
+                column_overrides={
+                    'uploaded_at': Media.id,
+                    'last_modified': Media.id,
+                    'name': Media.filename,
+                },
+            )
 
     # Get total count BEFORE pagination
     total_media = media_query.count()
-    
-    # Calculate offset and apply pagination
+    limit = get_effective_limit(limit)
     offset = (page - 1) * limit
     media_items = media_query.offset(offset).limit(limit).all()
+    total_pages = max(1, (total_media + limit - 1) // limit)
     
     # --- 2. SUB-ALBUMS ---
     child_albums_query = db.query(Album).join(
@@ -450,41 +479,54 @@ async def get_album_contents(
         blombooru_album_hierarchy.c.parent_album_id == album_id
     )
     
-    child_albums_query = apply_album_sort(child_albums_query, sort, sort_order, seed)
+    child_filter_active = is_album_filter_active(rating=rating, custom_filter=custom_filter, q=q)
+    if child_filter_active:
+        matching_child_ids = get_matching_album_ids(db, rating=rating, custom_filter=custom_filter, q=q)
+        if not matching_child_ids:
+            child_albums_query = child_albums_query.filter(literal(False))
+        else:
+            child_albums_query = child_albums_query.filter(Album.id.in_(matching_child_ids))
+    
+    if sort == "manual":
+        fb_subalbum_clauses = get_album_sort_clauses(
+            fb_sort,
+            fb_order,
+            seed_str
+        )
+        child_albums_query = child_albums_query.order_by(
+            blombooru_album_hierarchy.c.sort_position.asc().nulls_last(),
+            *fb_subalbum_clauses
+        )
+    else:
+        child_albums_query = apply_album_sort(child_albums_query, sort, sort_order, seed_str)
+
     child_albums = child_albums_query.all()
     
-    # Build Album Response List (with rating logic)
-    child_album_list = []
+    child_ids = [c.id for c in child_albums]
+    child_thumbnails_map = get_bulk_album_thumbnails(
+        child_ids, db, count=4, rating=rating, custom_filter=custom_filter, q=q
+    )
+    if child_filter_active:
+        child_counts_map = get_album_matching_media_counts(
+            child_ids, db, rating=rating, custom_filter=custom_filter, q=q
+        )
+    else:
+        child_counts_map = {c.id: (c.cached_media_count or 0) for c in child_albums}
     
-    if child_albums:
-        child_ids = [c.id for c in child_albums]
-        all_metrics = get_bulk_album_metrics(child_ids, db)
-        
-        for child in child_albums:
-            metrics = all_metrics.get(child.id, {'rating': RatingEnum.safe, 'count': 0})
-            child_rating = metrics['rating']
-            
-            # Skip if rating does not match current filter
-            if rating:
-                ratings_list = [r.strip().lower() for r in rating.split(",") if r.strip()]
-                valid_ratings = [RatingEnum[r] for r in ratings_list if r in RatingEnum.__members__]
-                if valid_ratings and child_rating not in valid_ratings:
-                    continue
-                
-            thumbnails = get_random_thumbnails(child.id, db, count=4)
-            media_count = metrics['count']
-            
-            child_album_list.append(AlbumListResponse(
+    child_album_list = []
+    for child in child_albums:
+        thumb_info = child_thumbnails_map.get(child.id, {"paths": [], "ratings": []})
+        child_album_list.append(
+            AlbumListResponse(
                 id=child.id,
                 name=child.name,
                 last_modified=child.last_modified,
-                thumbnail_paths=thumbnails,
-                rating=child_rating,
-                media_count=media_count
-            ))
-    
-    # Calculate total pages
-    total_pages = max(1, (total_media + limit - 1) // limit)
+                thumbnail_paths=thumb_info.get("paths", []),
+                thumbnail_ratings=thumb_info.get("ratings", []),
+                rating=child.cached_rating or RatingEnum.safe,
+                media_count=child_counts_map[child.id]
+            )
+        )
     
     return {
         "media": [MediaResponse.model_validate(m) for m in media_items],
@@ -495,13 +537,95 @@ async def get_album_contents(
         "pages": total_pages
     }
 
+@router.put("/{album_id}/media/reorder")
+async def reorder_album_media(
+    album_id: int,
+    data: MediaReorderRequest,
+    current_user: User = Depends(require_admin_mode),
+    db: Session = Depends(get_db)
+):
+    """Set manual sort positions for media within an album."""
+    album = db.query(Album).filter(Album.id == album_id).first()
+    if not album:
+        raise HTTPException(status_code=404, detail="Album not found")
+
+    for position, media_id in enumerate(data.media_ids):
+        db.execute(
+            blombooru_album_media.update()
+            .where(
+                blombooru_album_media.c.album_id == album_id,
+                blombooru_album_media.c.media_id == media_id
+            )
+            .values(sort_position=position)
+        )
+    db.commit()
+    invalidate_album_cache()
+    return {"message": "Album media order updated"}
+
+@router.delete("/{album_id}/media/reorder")
+async def clear_album_media_order(
+    album_id: int,
+    current_user: User = Depends(require_admin_mode),
+    db: Session = Depends(get_db)
+):
+    """Clear manual media order for an album."""
+    db.execute(
+        blombooru_album_media.update()
+        .where(blombooru_album_media.c.album_id == album_id)
+        .values(sort_position=None)
+    )
+    db.commit()
+    invalidate_album_cache()
+    return {"message": "Manual media order cleared"}
+
+@router.put("/{album_id}/sub-albums/reorder")
+async def reorder_sub_albums(
+    album_id: int,
+    data: AlbumReorderRequest,
+    current_user: User = Depends(require_admin_mode),
+    db: Session = Depends(get_db)
+):
+    """Set manual sort positions for child albums under this parent."""
+    album = db.query(Album).filter(Album.id == album_id).first()
+    if not album:
+        raise HTTPException(status_code=404, detail="Album not found")
+
+    for position, child_id in enumerate(data.album_ids):
+        db.execute(
+            blombooru_album_hierarchy.update()
+            .where(
+                blombooru_album_hierarchy.c.parent_album_id == album_id,
+                blombooru_album_hierarchy.c.child_album_id == child_id
+            )
+            .values(sort_position=position)
+        )
+    db.commit()
+    invalidate_album_cache()
+    return {"message": "Sub-album order updated"}
+
+@router.delete("/{album_id}/sub-albums/reorder")
+async def clear_sub_albums_order(
+    album_id: int,
+    current_user: User = Depends(require_admin_mode),
+    db: Session = Depends(get_db)
+):
+    """Clear manual sub-album order for an album."""
+    db.execute(
+        blombooru_album_hierarchy.update()
+        .where(blombooru_album_hierarchy.c.parent_album_id == album_id)
+        .values(sort_position=None)
+    )
+    db.commit()
+    invalidate_album_cache()
+    return {"message": "Manual sub-album order cleared"}
+
 @router.get("/{album_id}/tags")
 async def get_album_tags_endpoint(
     album_id: int,
     limit: int = Query(default=20),
     db: Session = Depends(get_db)
 ):
-    """Get popular tags within an album and its children"""
+    """Get popular tags within an album and its children in 1 query."""
     album = db.query(Album).filter(Album.id == album_id).first()
     if not album:
         raise HTTPException(status_code=404, detail="Album not found")
@@ -514,7 +638,7 @@ async def get_child_albums(
     album_id: int,
     db: Session = Depends(get_db)
 ):
-    """Get direct child albums"""
+    """Get direct child albums with windowed thumbnails"""
     album = db.query(Album).filter(Album.id == album_id).first()
     if not album:
         raise HTTPException(status_code=404, detail="Album not found")
@@ -524,26 +648,28 @@ async def get_child_albums(
         Album.id == blombooru_album_hierarchy.c.child_album_id
     ).filter(
         blombooru_album_hierarchy.c.parent_album_id == album_id
-    ).all()
+    ).order_by(Album.name.asc()).all()
+    
+    if not children:
+        return []
+    
+    child_ids = [c.id for c in children]
+    thumbnails_map = get_bulk_album_thumbnails(child_ids, db, count=4)
     
     result = []
-    if children:
-        child_ids = [c.id for c in children]
-        all_metrics = get_bulk_album_metrics(child_ids, db)
-        
-        for child in children:
-            metrics = all_metrics.get(child.id, {'rating': RatingEnum.safe, 'count': 0})
-            thumbnails = get_random_thumbnails(child.id, db, count=4)
-            
-            result.append(AlbumListResponse(
+    for child in children:
+        thumb_info = thumbnails_map.get(child.id, {"paths": [], "ratings": []})
+        result.append(
+            AlbumListResponse(
                 id=child.id,
                 name=child.name,
                 last_modified=child.last_modified,
-                thumbnail_paths=thumbnails,
-                rating=metrics['rating'],
-                media_count=metrics['count']
-            ))
-    
+                thumbnail_paths=thumb_info.get("paths", []),
+                thumbnail_ratings=thumb_info.get("ratings", []),
+                rating=child.cached_rating or RatingEnum.safe,
+                media_count=child.cached_media_count or 0
+            )
+        )
     return result
 
 @router.get("/{album_id}/parents")
@@ -551,7 +677,7 @@ async def get_parent_albums(
     album_id: int,
     db: Session = Depends(get_db)
 ):
-    """Get parent album chain (breadcrumb)"""
+    """Get parent album chain (breadcrumb) in 1 query"""
     album = db.query(Album).filter(Album.id == album_id).first()
     if not album:
         raise HTTPException(status_code=404, detail="Album not found")
@@ -560,12 +686,9 @@ async def get_parent_albums(
     if not parent_ids:
         return {"parents": []}
     
-    # Fetch all parents
-    parent_map = {a.id: a for a in db.query(Album).filter(Album.id.in_(parent_ids)).all()}
-    
-    # Preserve breadcrumb order from parent_ids
+    parent_map = {a.id: a.name for a in db.query(Album.id, Album.name).filter(Album.id.in_(parent_ids)).all()}
     parents = [
-        {"id": parent_map[pid].id, "name": parent_map[pid].name}
+        {"id": pid, "name": parent_map[pid]}
         for pid in parent_ids if pid in parent_map
     ]
     

@@ -43,8 +43,15 @@ def calculate_file_hash(file_path: Path) -> str:
 
 def get_mime_type(file_path: Path) -> str:
     """Get MIME type of a file"""
-    mime = magic.Magic(mime=True)
-    return mime.from_file(str(file_path))
+    try:
+        mime = magic.Magic(mime=True)
+        detected = mime.from_file(str(file_path))
+        if detected and detected != "application/octet-stream":
+            return detected
+    except Exception:
+        pass
+    from .format_registry import format_registry
+    return format_registry.get_mime_type(file_path.name, default="application/octet-stream")
 
 def determine_file_type(mime_type: str, filename: str, file_path: Path = None) -> FileTypeEnum:
     """Determine if file is image, video, or gif"""

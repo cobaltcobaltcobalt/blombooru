@@ -1,27 +1,14 @@
-import tempfile
 import unittest
-from pathlib import Path
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
-from backend.app.database import Base
 from backend.app.enums import FileTypeEnum, RatingEnum, TagCategoryEnum
 from backend.app.models import Media, Tag
 from backend.app.services.similarity import SimilarityIndex
+from tests.test_base import BackupTestBase
 
-class TestSimilarityIndex(unittest.TestCase):
+class TestSimilarityIndex(BackupTestBase):
     def setUp(self):
-        self.temp_dir = tempfile.mkdtemp()
-        db_file = Path(self.temp_dir) / "test_sim.db"
-        self.engine = create_engine(f"sqlite:///{db_file}")
-        Base.metadata.create_all(bind=self.engine)
-        self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
-        self.db = self.SessionLocal()
+        super().setUp()
         self.index = SimilarityIndex()
-
-    def tearDown(self):
-        self.db.close()
 
     def _create_media(self, media_id: int, filename: str) -> Media:
         media = Media(
@@ -340,6 +327,33 @@ class TestSimilarityIndex(unittest.TestCase):
         # Verify ordering is monotonically non-increasing
         scores = [s for _, s in results]
         self.assertEqual(scores, sorted(scores, reverse=True))
+
+    def test_excluded_media_ids(self):
+        """Verify that passing excluded_media_ids removes those media from results."""
+        t_artist = self._create_tag(1, "artist_a", TagCategoryEnum.artist, 4)
+        m1 = self._create_media(1, "m1.jpg")
+        m2 = self._create_media(2, "m2.jpg")
+        m3 = self._create_media(3, "m3.jpg")
+        m4 = self._create_media(4, "m4.jpg")
+        self.db.commit()
+
+        m1.tags = [t_artist]
+        m2.tags = [t_artist]
+        m3.tags = [t_artist]
+        m4.tags = [t_artist]
+        self.db.commit()
+
+        self.index.rebuild(self.db)
+
+        # Normal query: m2, m3, m4 are returned
+        results = self.index.get_similar_media(1, limit=10)
+        result_ids = [mid for mid, _ in results]
+        self.assertCountEqual(result_ids, [2, 3, 4])
+
+        # Query with excluded IDs
+        results_excluded = self.index.get_similar_media(1, limit=10, excluded_media_ids={2, 3})
+        result_ids_excluded = [mid for mid, _ in results_excluded]
+        self.assertEqual(result_ids_excluded, [4])
 
 if __name__ == "__main__":
     unittest.main()

@@ -64,7 +64,7 @@ class BulkAITagsModal extends BulkTagModalBase {
             const aiPrompt = AITagUtils.extractAIPrompt(metadata);
             if (!aiPrompt) continue;
 
-            const promptTags = AITagUtils.parsePromptTags(aiPrompt);
+            const promptTags = AITagUtils.extractPromptTags(metadata);
             if (promptTags.length === 0) continue;
 
             itemsWithPrompts.push({
@@ -141,7 +141,7 @@ class BulkAITagsModal extends BulkTagModalBase {
             if (!aiPrompt) return null;
 
             const mediaData = mediaRes.ok ? await mediaRes.json() : { tags: [] };
-            const promptTags = AITagUtils.parsePromptTags(aiPrompt);
+            const promptTags = AITagUtils.extractPromptTags(metadata);
             const currentTags = (mediaData.tags || []).map(t => (typeof t === 'object' && t !== null ? t.name : t));
 
             const resolvedResults = await this.resolveCombinedTagsBatch([{
@@ -182,7 +182,7 @@ class BulkAITagsModal extends BulkTagModalBase {
 
                 const prefilledSet = new Set(item.prefilledTags.map(t => t.toLowerCase()));
                 const renderedContent = item.newTags.map(tag => {
-                    const escaped = this.escapeHtml(tag);
+                    const escaped = escapeHtml(tag);
                     if (prefilledSet.has(tag.toLowerCase())) {
                         return `<span class="new-tag">${escaped}</span>`;
                     }

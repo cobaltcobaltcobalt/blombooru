@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from .enums import (ApiKeyPermissionEnum, FileTypeEnum, RatingEnum,
                     TagCategoryEnum)
@@ -21,6 +21,9 @@ class TagResponse(TagBase):
     
     model_config = ConfigDict(from_attributes=True)
 
+class TagListItem(TagResponse):
+    aliases: List[str] = []
+
 class MediaBase(BaseModel):
     rating: RatingEnum = RatingEnum.safe
 
@@ -33,6 +36,7 @@ class MediaUpdate(BaseModel):
     tags: Optional[List[str]] = None
     source: Optional[str] = None
     description: Optional[str] = None
+    description_enlarged: Optional[bool] = None
     parent_id: Optional[int] = None
 
 class MediaResponse(MediaBase):
@@ -54,11 +58,27 @@ class MediaResponse(MediaBase):
     share_language: Optional[str] = None
     source: Optional[str] = None
     description: Optional[str] = None
+    description_enlarged: Optional[bool] = False
     parent_id: Optional[int] = None
     has_children: bool = False
     tags: List[TagResponse] = []
     
     model_config = ConfigDict(from_attributes=True)
+
+class MediaDetailResponse(MediaResponse):
+    @computed_field
+    @property
+    def description_html(self) -> Optional[str]:
+        if not self.description:
+            return None
+        try:
+            from .utils.markdown import render_description_markdown
+            return render_description_markdown(self.description)
+        except Exception as e:
+            import html as html_lib
+            import logging
+            logging.getLogger(__name__).error(f"Error rendering media description: {e}")
+            return f'<p class="mb-3 text-xs last:mb-0 leading-relaxed">{html_lib.escape(self.description)}</p>'
 
 class SharedTagResponse(TagBase):
     model_config = ConfigDict(from_attributes=True)
@@ -67,6 +87,7 @@ class SharedMediaResponse(MediaBase):
     filename: str
     file_type: FileTypeEnum
     mime_type: Optional[str]
+    transcoded_path: Optional[str] = None
     file_size: int
     width: Optional[int]
     height: Optional[int]
@@ -164,8 +185,12 @@ class SettingsUpdate(BaseModel):
     sidebar_filter_mode: Optional[Literal["rating", "custom", "both", "off"]] = None
     sidebar_custom_buttons: Optional[List[dict]] = None
     media_type_tags: Optional[dict] = None
+    auto_apply_ai_tags: Optional[bool] = None
     custom_background: Optional[CustomBackgroundSettings] = None
     similarity_weights: Optional[SimilarityWeights] = None
+    stripped_cache_max_mb: Optional[int] = None
+    booru_proxy_url: Optional[str] = None
+    blur_explicit_thumbnails: Optional[bool] = None
 
 class ShareSettingsUpdate(BaseModel):
     share_ai_metadata: Optional[bool] = None
@@ -197,12 +222,45 @@ class AlbumListResponse(AlbumBase):
     id: int
     last_modified: datetime
     thumbnail_paths: List[str] = []
+    thumbnail_ratings: List[str] = []
     rating: RatingEnum = RatingEnum.safe
     media_count: int = 0
     
     model_config = ConfigDict(from_attributes=True)
 
+class AlbumTreeNode(AlbumBase):
+    id: int
+    parent_id: Optional[int] = None
+    depth: int = 0
+    media_count: int = 0
+    direct_media_count: int = 0
+    children_count: int = 0
+    rating: RatingEnum = RatingEnum.safe
+
+    model_config = ConfigDict(from_attributes=True)
+
+class AlbumHierarchyResponse(BaseModel):
+    items: List[AlbumTreeNode]
+
+class AlbumStatsResponse(BaseModel):
+    total_albums: int
+    root_albums: int
+    total_media_in_albums: int
+
+class AlbumAutocompleteItem(BaseModel):
+    id: int
+    name: str
+    parent_path: Optional[str] = None
+    media_count: int = 0
+    rating: RatingEnum = RatingEnum.safe
+
 class MediaIds(BaseModel):
+    media_ids: List[int]
+
+class AlbumReorderRequest(BaseModel):
+    album_ids: List[int]
+
+class MediaReorderRequest(BaseModel):
     media_ids: List[int]
 
 class ApiKeyCreate(BaseModel):
@@ -298,9 +356,27 @@ class UploadSessionItemUpdate(BaseModel):
     album_ids: Optional[List[int]] = None
     suggested_album_path: Optional[str] = None
 
+class UploadSessionAddUntrackedRequest(BaseModel):
+    file_path: str
+    relative_path: Optional[str] = None
+    base_rating: Optional[str] = None
+    base_source: Optional[str] = None
+    base_tags: Optional[str] = None
+    base_album_ids: Optional[str] = None
+    category_hints: Optional[str] = None
+    user_assigned_tags: Optional[str] = None
+    base_description: Optional[str] = None
+
+class AlbumPathSegment(BaseModel):
+    name: str
+    existing_id: Optional[int] = None
+    depth: int = 0
+
 class UploadSessionItem(BaseModel):
     item_id: str
     filename: str
+    source_path: Optional[str] = None
+    is_untracked: bool = False
     relative_path: Optional[str] = None
     file_size: int = 0
     width: Optional[int] = None
@@ -315,6 +391,9 @@ class UploadSessionItem(BaseModel):
     tags: List[ProposedTag] = []
     album_ids: List[int] = []
     suggested_album_path: Optional[str] = None
+    suggested_album_segments: Optional[List[AlbumPathSegment]] = None
+    folder_album_removed: Optional[bool] = False
+    folder_album_custom_path: Optional[str] = None
     is_duplicate: bool = False
     duplicate_of: Optional[str] = None
 
@@ -327,7 +406,13 @@ class PendingTagEntity(BaseModel):
 
 class PendingAlbumEntity(BaseModel):
     path: str
+    name: Optional[str] = None
+    parent_path: Optional[str] = None
+    depth: int = 0
+    existing_id: Optional[int] = None
     used_by: List[str] = []
+    item_count: int = 0
+    single_item_warning: bool = False
 
 class PendingEntitiesResponse(BaseModel):
     pending_tags: List[PendingTagEntity] = []
@@ -338,6 +423,17 @@ class PendingTagUpdate(BaseModel):
     category: Optional[TagCategoryEnum] = None
     merge_into: Optional[str] = None
     remove: Optional[bool] = False
+
+class PendingAlbumUpdate(BaseModel):
+    path: str
+    new_name: Optional[str] = None
+    merge_into_id: Optional[int] = None
+    remove: Optional[bool] = False
+    promote_to_parent: Optional[bool] = False
+
+class FolderMappingRequest(BaseModel):
+    enabled: bool = True
+    root_mode: str = "use_root"
 
 class UploadSessionCommitItemResult(BaseModel):
     item_id: str
@@ -351,3 +447,4 @@ class UploadSessionCommitResponse(BaseModel):
     total_created: int
     total_duplicates: int
     total_failed: int
+

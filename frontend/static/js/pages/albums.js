@@ -16,6 +16,7 @@ class AlbumsOverview extends BaseGallery {
         this.currentPage = parseInt(this.getUrlParam('page', 1));
         this.addSortOption('last_modified', window.i18n.t('albums.sort_last_modified'));
 
+        this.setupManualReorder();
         await this.loadContent();
     }
 
@@ -34,6 +35,9 @@ class AlbumsOverview extends BaseGallery {
             if (this.currentRating) {
                 params.set('rating', this.currentRating);
             }
+            if (this.selectedCustomFilters && this.selectedCustomFilters.size > 0) {
+                this.selectedCustomFilters.forEach(cf => params.append('custom_filter', cf));
+            }
             this.appendSortParams(params);
 
             const response = await fetch(`/api/albums?${params}`);
@@ -41,6 +45,11 @@ class AlbumsOverview extends BaseGallery {
 
             const data = await response.json();
             this.totalPages = data.pages || 1;
+
+            if (this.adjustPageIfNeeded(data.pages)) {
+                this.isLoading = false;
+                return await this.loadContent();
+            }
 
             // Filter empty albums before rendering
             const rawItems = data.items || [];
@@ -70,48 +79,46 @@ class AlbumsOverview extends BaseGallery {
         this.elements.grid.innerHTML = albums.map(album => this.createAlbumCard(album)).join('');
     }
 
-    createAlbumCard(album) {
-        const thumbnails = album.thumbnail_paths || [];
-        let collageHTML;
+    setupManualReorder() {
+        if (typeof ManualReorder === 'undefined') return;
 
-        if (thumbnails.length >= 4) {
-            collageHTML = `
-                <div class="grid grid-cols-2 gap-0.5 aspect-square overflow-hidden">
-                    ${thumbnails.slice(0, 4).map(thumb => `
-                        <div class="relative overflow-hidden">
-                            <img src="${thumb}" class="w-full h-full object-cover" loading="lazy"
-                                 onerror="this.src='/static/images/no-thumbnail.png'">
-                        </div>
-                    `).join('')}
-                </div>
-            `;
-        } else if (thumbnails.length > 0) {
-            collageHTML = `
-                <div class="aspect-square overflow-hidden">
-                    <img src="${thumbnails[0]}" class="w-full h-full object-cover" loading="lazy"
-                         onerror="this.src='/static/images/no-thumbnail.png'">
-                </div>
-            `;
-        } else {
-            collageHTML = `
-                <div class="aspect-square surface-light flex items-center justify-center">
-                    <img src="/static/images/no-thumbnail.png" class="w-full h-full object-cover" loading="lazy">
-                </div>
-            `;
-        }
-
-        return `
-            <a href="/album/${album.id}" class="album-card block surface border hover:border-primary focus:border-primary focus:outline-none transition-colors">
-                ${collageHTML}
-                <div class="p-2 border-t">
-                    <div class="text-xs font-bold truncate mb-1">${album.name}</div>
-                    <div class="flex justify-between items-center text-xs text-secondary">
-                        <span>${window.i18n.t('common.items_count', { count: album.media_count || 0 })}</span>
-                        <span>${album.rating[0].toUpperCase()}</span>
-                    </div>
-                </div>
-            </a>
-        `;
+        this.initManualReorder({
+            grid: this.elements.grid,
+            itemSelector: '.album-card',
+            idExtractor: (el) => parseInt(el.dataset.id || el.href.split('/album/')[1]),
+            saveEndpoint: '/api/albums/reorder',
+            savePayloadKey: 'album_ids',
+            fetchChunk: async (page, limit) => {
+                const params = new URLSearchParams({
+                    root_only: 'true',
+                    page
+                });
+                if (limit) params.set('limit', limit);
+                if (this.currentRating) params.set('rating', this.currentRating);
+                if (this.selectedCustomFilters && this.selectedCustomFilters.size > 0) {
+                    this.selectedCustomFilters.forEach(cf => params.append('custom_filter', cf));
+                }
+                this.appendSortParams(params);
+                const res = await fetch(`/api/albums?${params}`);
+                if (!res.ok) return null;
+                const data = await res.json();
+                const items = data.items || [];
+                if (page === 1) this.elements.grid.innerHTML = '';
+                const newIds = [];
+                items.forEach(album => {
+                    const temp = document.createElement('div');
+                    temp.innerHTML = this.createAlbumCard(album).trim();
+                    this.elements.grid.appendChild(temp.firstChild);
+                    newIds.push(album.id);
+                });
+                return {
+                    newIds,
+                    total: data.total || 0,
+                    totalPages: data.pages || 1,
+                    limit: data.limit
+                };
+            }
+        });
     }
 }
 

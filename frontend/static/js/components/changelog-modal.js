@@ -57,7 +57,7 @@ class ChangelogModal {
                     ${data.current_version ? `<span class="font-mono text-xs px-2 py-0.5 bg border text-secondary">v${data.current_version.replace(/^v/, '')}</span>` : ''}
                 </div>
                 ${showNotice ? `<p class="text-xs text-secondary italic">${t('changelog.english_only_notice')}</p>` : ''}
-                <div class="changelog-content overflow-y-auto custom-scrollbar flex-1 text-left text-sm mt-2 space-y-3" style="overscroll-behavior: contain;">
+                <div class="overflow-y-auto custom-scrollbar flex-1 text-left text-sm mt-2 space-y-3" style="overscroll-behavior: contain;">
                     ${data.html}
                 </div>
                 <div class="flex pt-4 border-t justify-center">

@@ -1,4 +1,4 @@
-{% from "components/icons.html" import dice_icon, chevron_down_icon, check_icon, select_arrow_icon %}
+{% from "components/icons.html" import dice_icon, chevron_down_icon, check_icon, select_arrow_icon, icon_use %}
 
 {# Rating Filter Component #}
 {% macro rating_filter(location='desktop', mode='rating', custom_buttons=[]) %}
@@ -12,7 +12,9 @@
         <summary
             class="flex items-center justify-between cursor-pointer font-bold text-xs uppercase tracking-wider hover:text-primary transition-colors list-none [&::-webkit-details-marker]:hidden select-none">
             <span>{{ t('gallery.filtering') }}</span>
-            {{ chevron_down_icon(size=14, class="transition-transform duration-200 group-open:rotate-180 flex-shrink-0") }}
+            {{
+            chevron_down_icon(size=14, class="transition-transform duration-200 group-open:rotate-180 flex-shrink-0")
+            }}
         </summary>
         <div class="mt-2.5 pt-2.5 border-t space-y-2.5">
             <div>
@@ -40,9 +42,11 @@
         <summary
             class="text-sm font-bold pb-1 border-b flex items-center justify-between cursor-pointer hover:text-primary transition-colors list-none [&::-webkit-details-marker]:hidden select-none group-open:mb-2.5">
             <span>{{ t('gallery.filtering') }}</span>
-            {{ chevron_down_icon(size=14, class="transition-transform duration-200 group-open:rotate-180 flex-shrink-0") }}
+            {{
+            chevron_down_icon(size=14, class="transition-transform duration-200 group-open:rotate-180 flex-shrink-0")
+            }}
         </summary>
-        <div class="space-y-2.5 mb-1">
+        <div class="space-y-2.5">
             <div>
                 <div class="text-[10px] font-bold uppercase tracking-wider mb-1 opacity-70">{{
                     t('gallery.rating_filter') }}</div>
@@ -128,7 +132,7 @@
 {# Sorting Options Component #}
 
 {% macro sorting_options(sort_options=none, default_sort='uploaded_at', default_order='desc', show_wrapper=true,
-location='desktop') %}
+location='desktop', is_admin=false) %}
 {% set standard_sort_options = {
 'uploaded_at': t('admin.settings.upload_date'),
 'filename': t('admin.settings.file_name'),
@@ -180,6 +184,13 @@ location='desktop') %}
                     aria-label="{{ t('gallery.sort_regen_random') }}" title="{{ t('gallery.sort_regen_random') }}">
                     {{ dice_icon() }}
                 </button>
+                {% if is_admin %}
+                <button id="sort-edit-order{{ suffix }}" type="button"
+                    class="js-sort-edit-order sort-edit-order p-1 border bg text hover:border-primary transition-colors flex-shrink-0 cursor-pointer hidden"
+                    aria-label="{{ t('gallery.sort_edit_order') }}" title="{{ t('gallery.sort_edit_order') }}">
+                    {{ icon_use("edit", size=16) }}
+                </button>
+                {% endif %}
             </div>
 
             {% if location != 'mobile' %}
@@ -194,6 +205,49 @@ location='desktop') %}
 
 {% macro _select_arrow() %}
 {{ select_arrow_icon(size=12) }}
+{% endmacro %}
+
+{# Category Filter Component for Tags Gallery #}
+{% macro category_filter(location='desktop') %}
+{% if location == 'mobile' %}
+<div class="surface p-3 mb-3 border block lg:hidden">
+    <details class="group">
+        <summary
+            class="flex items-center justify-between cursor-pointer font-bold text-xs uppercase tracking-wider hover:text-primary transition-colors list-none [&::-webkit-details-marker]:hidden select-none">
+            <span>{{ t('admin.tags_management.categories') }}</span>
+            {{ chevron_down_icon(size=14, class="transition-transform duration-200 group-open:rotate-180 flex-shrink-0")
+            }}
+        </summary>
+        <div class="mt-2.5 pt-2.5 border-t">
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {{ _category_options('py-2') }}
+            </div>
+        </div>
+    </details>
+</div>
+{% else %}
+<div class="hidden lg:block pt-3 border-t">
+    <h3 class="text-sm font-bold mb-3 pb-1 border-b">{{ t('admin.tags_management.categories') }}</h3>
+    <div id="category-filters-container" class="grid grid-cols-1 gap-2">
+        {{ _category_options('py-1') }}
+    </div>
+</div>
+{% endif %}
+{% endmacro %}
+
+{% macro _category_options(padding='py-1') %}
+{% for cat in ['general', 'artist', 'character', 'copyright', 'meta'] %}
+<label class="flex-1">
+    <input type="checkbox" name="tag_category" value="{{ cat }}"
+        class="hidden category-filter-input category-filter-checkbox" checked>
+    <span
+        class="relative block text-center px-3 {{ padding }} border-1 cursor-pointer bg transition-colors category-filter-label category-filter-label-{{ cat }} select-none"
+        data-category="{{ cat }}">
+        {{ check_icon(size=12, stroke_width=3, class="absolute left-2 top-1/2 -translate-y-1/2 filter-check-icon") }}
+        <span>{{ t('common.tag_category_' + cat) }}</span>
+    </span>
+</label>
+{% endfor %}
 {% endmacro %}
 
 {# Bulk Actions Component #}
@@ -221,14 +275,34 @@ location='desktop') %}
             {{ t('common.manage_tags') }}
         </button>
         {% endif %}
-        {% if 'remove' in buttons %}
-        <button id="bulk-remove-btn" class="btn-danger px-3 py-1 cursor-pointer">
-            {{ t('gallery.remove_from_album') }}
-        </button>
-        {% endif %}
         {% if 'rating' in buttons %}
         <button id="bulk-rating-btn" class="btn px-3 py-1 flex items-center gap-1.5 cursor-pointer">
             {{ t('modal.bulk_rating.title') }}
+        </button>
+        {% endif %}
+        {% if 'tag_category' in buttons %}
+        <button id="bulk-tag-category-btn" class="btn px-3 py-1 cursor-pointer">
+            {{ t('admin.tags_management.tag_category') }}
+        </button>
+        {% endif %}
+        {% if 'tag_implies' in buttons %}
+        <button id="bulk-tag-implies-btn" class="btn px-3 py-1 cursor-pointer">
+            {{ t('admin.tags_implications.implies_tags') }}
+        </button>
+        {% endif %}
+        {% if 'tag_merge' in buttons %}
+        <button id="bulk-tag-merge-btn" class="btn px-3 py-1 cursor-pointer">
+            {{ t('admin.tags_management.merge_into') }}
+        </button>
+        {% endif %}
+        {% if 'tag_remove' in buttons %}
+        <button id="bulk-tag-remove-btn" class="btn-danger px-3 py-1 cursor-pointer">
+            {{ t('common.remove') }}
+        </button>
+        {% endif %}
+        {% if 'remove' in buttons %}
+        <button id="bulk-remove-btn" class="btn-danger px-3 py-1 cursor-pointer">
+            {{ t('modal.bulk_remove_from_album.title') }}
         </button>
         {% endif %}
         {% if 'delete' in buttons %}
@@ -283,8 +357,8 @@ location='desktop') %}
 {% endmacro %}
 
 {# Sidebar Container #}
-{% macro sidebar_start() %}
-<div class="xl:col-span-1 lg:col-span-1">
+{% macro sidebar_start(class="") %}
+<div class="xl:col-span-1 lg:col-span-1{{ ' ' + class if class else '' }}">
     <div class="surface p-3 border top-4">
         {% endmacro %}
 

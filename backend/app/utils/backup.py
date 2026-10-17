@@ -14,14 +14,16 @@ from sqlalchemy.orm import Session, joinedload
 
 from ..config import settings
 from ..enums import FileTypeEnum, RatingEnum, TagCategoryEnum
-from ..models import (Album, BooruConfig, Media, Tag, TagAlias, TagImplication,
+from ..models import (Album, Media, Tag, TagAlias, TagImplication,
                       blombooru_album_hierarchy, blombooru_album_media,
                       blombooru_media_tags)
 from ..routes.media import update_tag_counts
+from ..services.booru import normalize_domain, upsert_booru_config
+from ..utils.album_utils import recalculate_all_album_metrics
 from ..utils.cache import (invalidate_album_cache, invalidate_media_cache,
                            invalidate_tag_cache)
 from ..utils.logger import logger
-from ..utils.thumbnail_generator import generate_thumbnail
+from ..utils.thumbnail_generator import generate_thumbnail, THUMBNAIL_EXT
 from ..utils.transcoder import transcode_media_if_needed
 
 # Constants for batch processing
@@ -397,7 +399,7 @@ def import_media_logical(db: Session, zf: zipfile.ZipFile, media_list: List[dict
         transcoded_rel_path = str(transcoded_file.relative_to(settings.BASE_DIR)) if transcoded_file else None
 
         # Generate thumbnail
-        thumb_filename = f"{target_path.stem}.jpg"
+        thumb_filename = f"{target_path.stem}{THUMBNAIL_EXT}"
         thumb_path = settings.THUMBNAIL_DIR / thumb_filename
         thumb_source = transcoded_file if transcoded_file else target_path
         try:
@@ -406,12 +408,7 @@ def import_media_logical(db: Session, zf: zipfile.ZipFile, media_list: List[dict
             logger.error(f"Failed to generate thumbnail for {thumb_source}: {e}")
 
         # Parse rating
-        rating_str = media_data.get('rating', 'safe')
-        rating_enum = RatingEnum.safe
-        if rating_str == 'questionable':
-            rating_enum = RatingEnum.questionable
-        elif rating_str == 'explicit':
-            rating_enum = RatingEnum.explicit
+        rating_enum = RatingEnum.normalize(media_data.get('rating')) or RatingEnum.safe
 
         # Parse uploaded_at
         uploaded_at_val = None
@@ -438,6 +435,7 @@ def import_media_logical(db: Session, zf: zipfile.ZipFile, media_list: List[dict
             rating=rating_enum,
             source=media_data.get('source'),
             description=media_data.get('description'),
+            description_enlarged=bool(media_data.get('description_enlarged', False)),
             uploaded_at=uploaded_at_val,
             is_shared=bool(media_data.get('is_shared', False)),
             share_uuid=media_data.get('share_uuid'),
@@ -547,12 +545,17 @@ def import_albums_logical(db: Session, albums_list: List[dict]) -> dict:
             except Exception:
                 last_modified = None
         
+        sort_position = alb_data.get('sort_position')
+        
         if name in existing_albums:
             id_map[json_id] = existing_albums[name].id
+            if sort_position is not None:
+                existing_albums[name].sort_position = sort_position
             albums_existing += 1
         else:
             new_album = Album(
                 name=name,
+                sort_position=sort_position,
                 created_at=created_at or datetime.now(timezone.utc),
                 updated_at=updated_at or datetime.now(timezone.utc),
                 last_modified=last_modified or datetime.now(timezone.utc)
@@ -585,7 +588,7 @@ def import_albums_logical(db: Session, albums_list: List[dict]) -> dict:
         # Support both new 'media' object list and legacy 'media_hashes' string list
         media_items = alb_data.get('media', [])
         if not media_items and 'media_hashes' in alb_data:
-            media_items = [{'hash': h, 'added_at': None} for h in alb_data['media_hashes']]
+            media_items = [{'hash': h, 'added_at': None, 'sort_position': None} for h in alb_data['media_hashes']]
 
         for item in media_items:
             m_hash = item.get('hash') if isinstance(item, dict) else item
@@ -593,21 +596,35 @@ def import_albums_logical(db: Session, albums_list: List[dict]) -> dict:
                 continue
 
             media_id = media_map[m_hash]
-            if media_id not in existing_links:
-                added_at_val = None
-                if isinstance(item, dict) and item.get('added_at'):
+            added_at_val = None
+            sort_pos_val = None
+            if isinstance(item, dict):
+                if item.get('added_at'):
                     try:
                         added_at_val = datetime.fromisoformat(item['added_at'])
                     except Exception:
                         added_at_val = None
+                sort_pos_val = item.get('sort_position')
 
+            if media_id not in existing_links:
                 album_media_inserts.append({
                     'album_id': db_id,
                     'media_id': media_id,
-                    'added_at': added_at_val or datetime.now(timezone.utc)
+                    'added_at': added_at_val or datetime.now(timezone.utc),
+                    'sort_position': sort_pos_val
                 })
                 existing_links.add(media_id)
                 links_created += 1
+            else:
+                if sort_pos_val is not None:
+                    db.execute(
+                        blombooru_album_media.update()
+                        .where(
+                            blombooru_album_media.c.album_id == db_id,
+                            blombooru_album_media.c.media_id == media_id
+                        )
+                        .values(sort_position=sort_pos_val)
+                    )
 
     if album_media_inserts:
         for i in range(0, len(album_media_inserts), DB_BATCH_SIZE):
@@ -623,28 +640,52 @@ def import_albums_logical(db: Session, albums_list: List[dict]) -> dict:
             continue
             
         parent_db_id = id_map[parent_json_id]
-        child_json_ids = alb_data.get('child_ids', [])
+        
+        # Support both 'children' object list and legacy 'child_ids' list
+        children_data = alb_data.get('children')
+        if children_data is None:
+            children_data = alb_data.get('child_ids', [])
         
         existing_children = set(
             r[0] for r in db.query(blombooru_album_hierarchy.c.child_album_id)
             .filter(blombooru_album_hierarchy.c.parent_album_id == parent_db_id).all()
         )
         
-        for child_json_id in child_json_ids:
+        for item in children_data:
+            if isinstance(item, dict):
+                child_json_id = item.get('id')
+                sort_pos = item.get('sort_position')
+            else:
+                child_json_id = item
+                sort_pos = None
+
             if child_json_id in id_map:
                 child_db_id = id_map[child_json_id]
                 if child_db_id != parent_db_id and child_db_id not in existing_children:
                     hierarchy_inserts.append({
                         'parent_album_id': parent_db_id,
-                        'child_album_id': child_db_id
+                        'child_album_id': child_db_id,
+                        'sort_position': sort_pos
                     })
                     existing_children.add(child_db_id)
+                elif child_db_id != parent_db_id and child_db_id in existing_children:
+                    if sort_pos is not None:
+                        db.execute(
+                            blombooru_album_hierarchy.update()
+                            .where(
+                                blombooru_album_hierarchy.c.parent_album_id == parent_db_id,
+                                blombooru_album_hierarchy.c.child_album_id == child_db_id
+                            )
+                            .values(sort_position=sort_pos)
+                        )
 
     if hierarchy_inserts:
         for i in range(0, len(hierarchy_inserts), DB_BATCH_SIZE):
             chunk = hierarchy_inserts[i:i+DB_BATCH_SIZE]
             db.execute(blombooru_album_hierarchy.insert(), chunk)
             db.commit()
+
+    recalculate_all_album_metrics(db)
             
     return {
         "albums_created": albums_created,
@@ -727,32 +768,19 @@ def import_booru_config_logical(db: Session, booru_config_list: List[dict]) -> d
     imported_count = 0
 
     for cfg in booru_config_list:
-        domain = (cfg.get('domain') or '').strip().lower()
-        if "://" in domain:
-            domain = domain.split("://")[1]
-        if domain.endswith("/"):
-            domain = domain[:-1]
-
+        domain = normalize_domain(cfg.get('domain'))
         if not domain:
             continue
 
         username = cfg.get('username')
         api_key = cfg.get('api_key')
 
-        existing = db.query(BooruConfig).filter(BooruConfig.domain == domain).first()
-        if existing:
-            if username is not None:
-                existing.username = username
-            if api_key is not None:
-                existing.api_key = api_key
-            existing.updated_at = datetime.now(timezone.utc)
-        else:
-            new_cfg = BooruConfig(
-                domain=domain,
-                username=username,
-                api_key=api_key
-            )
-            db.add(new_cfg)
+        upsert_booru_config(
+            db,
+            domain=domain,
+            username=username,
+            api_key=api_key,
+        )
         imported_count += 1
 
     db.commit()

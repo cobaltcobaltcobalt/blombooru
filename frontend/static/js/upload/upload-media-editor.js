@@ -40,6 +40,12 @@ class UploadMediaEditor {
         this.selectedIds = newSelectedIds;
         this.activeItemId = newActiveItemId;
 
+        if (newSelectedIds.size === 0) {
+            clearTimeout(this.saveTimeout);
+            clearTimeout(this.tagSaveTimeout);
+            clearTimeout(this.bulkTagSaveTimeout);
+        }
+
         if (isSame && this.container.firstElementChild && !force) {
             return;
         }
@@ -52,21 +58,6 @@ class UploadMediaEditor {
         if (!this.container.firstElementChild) {
             this.render();
         }
-    }
-
-    escapeHtml(text) {
-        if (!text) return '';
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-
-    formatFileSize(bytes) {
-        if (!bytes || bytes === 0) return '0 B';
-        const k = 1024;
-        const sizes = ['B', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
     render() {
@@ -108,8 +99,8 @@ class UploadMediaEditor {
             if (alb) {
                 html += `
                     <div class="bg px-2 py-0.5 border text-xs flex items-center gap-1.5">
-                        <span class="font-mono">${this.escapeHtml(alb.name)}</span>
-                        <button type="button" class="editor-remove-album-btn text-secondary hover:text-danger transition-colors cursor-pointer p-0.5 flex items-center justify-center" data-id="${id}">
+                        <span class="font-mono">${escapeHtml(alb.name)}</span>
+                        <button type="button" class="editor-remove-album-btn text-danger hover:text-danger transition-colors cursor-pointer p-0.5 flex items-center justify-center" data-id="${id}">
                             ${window.Icons.trash({ size: 12, class: 'transition-colors' })}
                         </button>
                     </div>
@@ -119,12 +110,73 @@ class UploadMediaEditor {
         return html;
     }
 
+    getAlbumFullPath(album, albumMap) {
+        if (!album) return '';
+        const parts = [album.name];
+        let curr = album.parent_id;
+        const visited = new Set([album.id]);
+        while (curr && albumMap.has(curr) && !visited.has(curr)) {
+            visited.add(curr);
+            const parent = albumMap.get(curr);
+            if (parent && parent.name) {
+                parts.unshift(parent.name);
+                curr = parent.parent_id;
+            } else {
+                break;
+            }
+        }
+        return parts.join('/');
+    }
+
+    getFolderAlbumExcludedIds(item) {
+        const ids = new Set();
+        if (!item) return ids;
+
+        if (item.suggested_album_segments && Array.isArray(item.suggested_album_segments)) {
+            item.suggested_album_segments.forEach(seg => {
+                if (seg.existing_id) {
+                    ids.add(seg.existing_id);
+                }
+            });
+        }
+
+        if (item.suggested_album_path && this.allAlbums && this.allAlbums.length > 0) {
+            const albumMap = new Map(this.allAlbums.map(a => [a.id, a]));
+            const normPath = item.suggested_album_path.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').toLowerCase();
+
+            this.allAlbums.forEach(alb => {
+                const fullPath = this.getAlbumFullPath(alb, albumMap).toLowerCase();
+                if (fullPath && fullPath === normPath) {
+                    ids.add(alb.id);
+                }
+            });
+        }
+
+        return ids;
+    }
+
+    getCommonFolderAlbumExcludedIds() {
+        const items = Array.from(this.selectedIds).map(id => this.session.getItem(id)).filter(Boolean);
+        if (items.length === 0) return new Set();
+
+        const sets = items.map(it => this.getFolderAlbumExcludedIds(it));
+        const common = new Set(sets[0]);
+        for (let i = 1; i < sets.length; i++) {
+            for (const id of common) {
+                if (!sets[i].has(id)) {
+                    common.delete(id);
+                }
+            }
+        }
+        return common;
+    }
+
     renderAlbumOptionsHtml(excludedIds = []) {
         const excludeSet = new Set(excludedIds || []);
         const available = this.allAlbums.filter(a => !excludeSet.has(a.id));
         let html = `<div class="custom-select-option px-3 py-1.5 cursor-pointer hover:surface text-xs selected" data-value="">${window.i18n.t('upload.base_settings.select_album')}</div>`;
         available.forEach(alb => {
-            html += `<div class="custom-select-option px-3 py-1.5 cursor-pointer hover:surface text-xs" data-value="${alb.id}">${this.escapeHtml(alb.name)}</div>`;
+            html += `<div class="custom-select-option px-3 py-1.5 cursor-pointer hover:surface text-xs" data-value="${alb.id}">${escapeHtml(alb.name)}</div>`;
         });
         return html;
     }
@@ -136,6 +188,8 @@ class UploadMediaEditor {
         const tagsPlainText = allTags.map(t => t.name).join(' ');
         const hasAlbums = item.album_ids && item.album_ids.length > 0;
         const descPlaceholder = window.i18n.t('media.info.description_placeholder');
+        const folderExcluded = Array.from(this.getFolderAlbumExcludedIds(item));
+        const singleExcludedIds = Array.from(new Set([...(item.album_ids || []), ...folderExcluded]));
 
         this.container.innerHTML = `
             <div class="surface border p-4 text-xs">
@@ -143,11 +197,15 @@ class UploadMediaEditor {
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-3 mb-3">
                     <div class="flex items-center gap-1.5 min-w-0 flex-wrap sm:flex-nowrap">
                         <span class="text-xs font-bold truncate min-w-0">
-                            ${window.i18n.t('upload.preview.editing')} ${this.escapeHtml(item.filename)}
+                            ${window.i18n.t('upload.preview.editing')} ${escapeHtml(item.filename)}
                         </span>
                         <span class="text-[11px] text-secondary shrink-0 whitespace-nowrap">
-                            (${item.width && item.height ? `${item.width}x${item.height}, ` : ''}${this.formatFileSize(item.file_size)})
+                            (${item.width && item.height ? `${item.width}x${item.height}, ` : ''}${formatFileSize(item.file_size)})
                         </span>
+                        ${item.metadata_source ? `
+                        <span class="badge bg-primary primary-text border border-primary text-[10px] px-1.5 py-0.5 shrink-0" title="${escapeHtml(item.metadata_source)}">
+                            ${escapeHtml(item.metadata_source)}
+                        </span>` : ''}
                     </div>
 
                     <div class="flex items-center gap-2 shrink-0">
@@ -169,7 +227,7 @@ class UploadMediaEditor {
                         <div id="editor-single-rating" class="custom-select w-full" data-value="${item.rating || 'safe'}">
                             <div class="custom-select-trigger w-full flex items-center justify-between gap-2 px-3 py-1.5 bg border text-xs cursor-pointer focus:outline-none hover:border-primary transition-colors">
                                 <span class="custom-select-value text capitalize">${item.rating || 'safe'}</span>
-                                ${window.Icons.selectArrow({ size: 10, class: 'custom-select-arrow flex-shrink-0 text-secondary' })}
+                                ${window.Icons.chevronDown({ size: 10, class: 'custom-select-arrow flex-shrink-0 transition-transform duration-200 text-secondary', style: 'display: block;' })}
                             </div>
                             <div class="custom-select-dropdown bg border border-primary max-h-40 overflow-y-auto shadow-lg z-50">
                                 <div class="custom-select-option px-3 py-1.5 cursor-pointer hover:surface text-xs ${item.rating === 'safe' ? 'selected' : ''}" data-value="safe">${window.i18n.t('common.safe')}</div>
@@ -186,7 +244,7 @@ class UploadMediaEditor {
                         </label>
                         <input type="url" id="editor-single-source"
                             class="w-full bg px-3 py-1.5 border text-xs focus:outline-none focus:border-primary hover:border-primary transition-colors"
-                            value="${this.escapeHtml(item.source || '')}"
+                            value="${escapeHtml(item.source || '')}"
                             placeholder="https://example.com/source">
                     </div>
                 </div>
@@ -197,9 +255,27 @@ class UploadMediaEditor {
                         ${window.i18n.t('common.description')}
                     </label>
                     <textarea id="editor-single-description" rows="2"
-                        class="w-full bg px-3 py-1.5 border text-xs focus:outline-none focus:border-primary hover:border-primary transition-colors"
-                        placeholder="${this.escapeHtml(descPlaceholder)}">${this.escapeHtml(item.description || '')}</textarea>
+                        class="auto-expand-textarea w-full bg px-3 py-1.5 border text-xs focus:outline-none focus:border-primary hover:border-primary transition-colors"
+                        placeholder="${escapeHtml(descPlaceholder)}">${escapeHtml(item.description || '')}</textarea>
                 </div>
+
+                <!-- Folder Album (from folder structure) -->
+                ${item.suggested_album_path ? `
+                <div class="mb-3" id="editor-single-folder-album">
+                    <label class="block text-xs font-bold mb-1">
+                        ${window.i18n.t('upload.preview.folder_album')}
+                    </label>
+                    <div class="bg px-2 py-1 border text-xs flex items-center justify-between gap-2">
+                        <div class="flex items-center gap-1.5 min-w-0">
+                            <span class="text-secondary shrink-0">${window.Icons.folder({ size: 12 })}</span>
+                            <span class="font-mono text-xs truncate" title="${escapeHtml(item.suggested_album_path)}">${escapeHtml(item.suggested_album_path)}</span>
+                        </div>
+                        <button type="button" id="editor-single-remove-folder-album-btn" class="text-danger hover:text-danger transition-colors cursor-pointer p-0.5 flex items-center justify-center shrink-0" title="${window.i18n.t('upload.folder.remove_album_path')}">
+                            ${window.Icons.trash({ size: 12, class: 'transition-colors' })}
+                        </button>
+                    </div>
+                </div>
+                ` : ''}
 
                 <!-- Albums -->
                 <div class="mb-3">
@@ -212,10 +288,10 @@ class UploadMediaEditor {
                     <div id="editor-single-album-select" class="custom-select w-full" data-value="">
                         <div class="custom-select-trigger w-full flex items-center justify-between gap-2 px-3 py-1.5 bg border text-xs cursor-pointer focus:outline-none hover:border-primary transition-colors">
                             <span class="custom-select-value text text-secondary">${window.i18n.t('upload.base_settings.select_album')}</span>
-                            ${window.Icons.selectArrow({ size: 10, class: 'custom-select-arrow flex-shrink-0 text-secondary' })}
+                            ${window.Icons.chevronDown({ size: 10, class: 'custom-select-arrow flex-shrink-0 transition-transform duration-200 text-secondary', style: 'display: block;' })}
                         </div>
                         <div class="custom-select-dropdown bg border border-primary max-h-40 overflow-y-auto shadow-lg z-50">
-                            ${this.renderAlbumOptionsHtml(item.album_ids || [])}
+                            ${this.renderAlbumOptionsHtml(singleExcludedIds)}
                         </div>
                     </div>
                 </div>
@@ -228,7 +304,7 @@ class UploadMediaEditor {
                     <div class="relative">
                         <div id="editor-single-tags-input" contenteditable="true" data-placeholder="original highres cat_ears"
                             class="w-full bg px-3 py-1.5 border text-xs focus:outline-none focus:border-primary hover:border-primary transition-colors min-h-7.5"
-                            style="white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;">${this.escapeHtml(tagsPlainText)}</div>
+                            style="white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;">${escapeHtml(tagsPlainText)}</div>
                     </div>
                 </div>
 
@@ -237,12 +313,23 @@ class UploadMediaEditor {
                     <label class="block text-xs font-bold mb-1">
                         ${window.i18n.t('upload.preview.final_tags')}
                     </label>
-                    <div id="editor-single-final-tags-chips" class="p-2 bg border min-h-8.5 flex flex-wrap gap-1 text-xs items-center"></div>
+                    <div id="editor-single-final-tags-chips" class="p-2 bg border min-h-8.5 flex flex-wrap gap-1 text-xs items-center max-w-full min-w-0"></div>
                 </div>
             </div>
         `;
 
         this.setupSingleEvents(item);
+    }
+
+    getCommonSuggestedAlbumPath() {
+        const items = Array.from(this.selectedIds).map(id => this.session.getItem(id)).filter(Boolean);
+        if (items.length === 0) return null;
+        const firstPath = items[0].suggested_album_path;
+        if (!firstPath) return null;
+        for (let i = 1; i < items.length; i++) {
+            if (items[i].suggested_album_path !== firstPath) return null;
+        }
+        return firstPath;
     }
 
     getCommonAlbumIds() {
@@ -305,7 +392,10 @@ class UploadMediaEditor {
 
         const count = this.selectedIds.size;
         const shared = this.getSharedValues();
+        const commonSuggestedPath = this.getCommonSuggestedAlbumPath();
         const commonAlbumIds = this.getCommonAlbumIds();
+        const commonFolderExcluded = Array.from(this.getCommonFolderAlbumExcludedIds());
+        const bulkExcludedIds = Array.from(new Set([...commonAlbumIds, ...commonFolderExcluded]));
         const commonTags = this.getCommonTags();
         const tagsPlainText = commonTags.map(t => t.name).join(' ');
         const descPlaceholder = window.i18n.t('media.info.description_placeholder');
@@ -339,7 +429,7 @@ class UploadMediaEditor {
                         <div id="editor-bulk-rating" class="custom-select w-full" data-value="${shared.rating || ''}">
                             <div class="custom-select-trigger w-full flex items-center justify-between gap-2 px-3 py-1.5 bg border text-xs cursor-pointer focus:outline-none hover:border-primary transition-colors">
                                 <span class="custom-select-value text ${shared.rating ? 'capitalize' : 'text-secondary'}">${shared.rating ? shared.rating : (window.i18n.t('upload.bulk.choose_rating'))}</span>
-                                ${window.Icons.selectArrow({ size: 10, class: 'custom-select-arrow flex-shrink-0 text-secondary' })}
+                                ${window.Icons.chevronDown({ size: 10, class: 'custom-select-arrow flex-shrink-0 transition-transform duration-200 text-secondary', style: 'display: block;' })}
                             </div>
                             <div class="custom-select-dropdown bg border border-primary max-h-40 overflow-y-auto shadow-lg z-50">
                                 <div class="custom-select-option px-3 py-1.5 cursor-pointer hover:surface text-xs ${!shared.rating ? 'selected' : ''}" data-value="">${window.i18n.t('upload.bulk.choose_rating')}</div>
@@ -358,9 +448,9 @@ class UploadMediaEditor {
                         <div class="flex items-center gap-1.5">
                             <input type="url" id="editor-bulk-source"
                                 class="flex-1 bg px-3 py-1.5 border text-xs focus:outline-none focus:border-primary hover:border-primary transition-colors"
-                                value="${this.escapeHtml(shared.source || '')}"
+                                value="${escapeHtml(shared.source || '')}"
                                 placeholder="https://example.com/source">
-                            <button type="button" id="editor-bulk-source-apply-btn" class="btn-primary text-xs px-3 py-1.5 cursor-pointer">
+                            <button type="button" id="editor-bulk-apply-source-btn" class="btn-primary text-xs px-2.5 py-1.5 cursor-pointer shrink-0">
                                 ${window.i18n.t('common.apply')}
                             </button>
                         </div>
@@ -372,15 +462,35 @@ class UploadMediaEditor {
                     <label class="block text-xs font-bold mb-1">
                         ${window.i18n.t('common.description')}
                     </label>
-                    <div class="flex items-start gap-1.5">
+                    <div class="flex flex-col gap-1.5">
                         <textarea id="editor-bulk-description" rows="2"
-                            class="flex-1 bg px-3 py-1.5 border text-xs focus:outline-none focus:border-primary hover:border-primary transition-colors"
-                            placeholder="${this.escapeHtml(descPlaceholder)}">${this.escapeHtml(shared.description || '')}</textarea>
-                        <button type="button" id="editor-bulk-description-apply-btn" class="btn-primary text-xs px-3 py-1.5 cursor-pointer">
-                            ${window.i18n.t('common.apply')}
+                            class="auto-expand-textarea w-full bg px-3 py-1.5 border text-xs focus:outline-none focus:border-primary hover:border-primary transition-colors"
+                            placeholder="${escapeHtml(descPlaceholder)}">${escapeHtml(shared.description || '')}</textarea>
+                        <div class="flex justify-end">
+                            <button type="button" id="editor-bulk-apply-desc-btn" class="btn-primary text-xs px-2.5 py-1 cursor-pointer">
+                                ${window.i18n.t('common.apply')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Common Folder Album -->
+                ${commonSuggestedPath ? `
+                <div class="mb-3" id="editor-bulk-folder-album">
+                    <label class="block text-xs font-bold mb-1">
+                        ${window.i18n.t('upload.bulk.common_folder_album')}
+                    </label>
+                    <div class="bg px-2 py-1 border text-xs flex items-center justify-between gap-2">
+                        <div class="flex items-center gap-1.5 min-w-0">
+                            <span class="text-secondary shrink-0">${window.Icons.folder({ size: 12 })}</span>
+                            <span class="font-mono text-xs truncate" title="${escapeHtml(commonSuggestedPath)}">${escapeHtml(commonSuggestedPath)}</span>
+                        </div>
+                        <button type="button" id="editor-bulk-remove-folder-album-btn" class="text-danger hover:text-danger transition-colors cursor-pointer p-0.5 flex items-center justify-center shrink-0" title="${window.i18n.t('upload.folder.remove_album_path')}">
+                            ${window.Icons.trash({ size: 12, class: 'transition-colors' })}
                         </button>
                     </div>
                 </div>
+                ` : ''}
 
                 <!-- Bulk Albums -->
                 <div class="mb-3">
@@ -394,10 +504,10 @@ class UploadMediaEditor {
                         <div id="editor-bulk-album-select" class="custom-select flex-1" data-value="">
                             <div class="custom-select-trigger w-full flex items-center justify-between gap-2 px-3 py-1.5 bg border text-xs cursor-pointer focus:outline-none hover:border-primary transition-colors">
                                 <span class="custom-select-value text text-secondary">${window.i18n.t('upload.base_settings.select_album')}</span>
-                                ${window.Icons.selectArrow({ size: 10, class: 'custom-select-arrow flex-shrink-0 text-secondary' })}
+                                ${window.Icons.chevronDown({ size: 10, class: 'custom-select-arrow flex-shrink-0 transition-transform duration-200 text-secondary', style: 'display: block;' })}
                             </div>
                             <div class="custom-select-dropdown bg border border-primary max-h-40 overflow-y-auto shadow-lg z-50">
-                                ${this.renderAlbumOptionsHtml(commonAlbumIds)}
+                                ${this.renderAlbumOptionsHtml(bulkExcludedIds)}
                             </div>
                         </div>
                     </div>
@@ -411,7 +521,7 @@ class UploadMediaEditor {
                     <div class="relative">
                         <div id="editor-bulk-tags-input" contenteditable="true" data-placeholder="original highres cat_ears"
                             class="w-full bg px-3 py-1.5 border text-xs focus:outline-none focus:border-primary hover:border-primary transition-colors min-h-7.5"
-                            style="white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;">${this.escapeHtml(tagsPlainText)}</div>
+                            style="white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;">${escapeHtml(tagsPlainText)}</div>
                     </div>
                 </div>
 
@@ -420,7 +530,7 @@ class UploadMediaEditor {
                     <label class="block text-xs font-bold mb-1">
                         ${window.i18n.t('upload.bulk.common_tags')}
                     </label>
-                    <div id="editor-bulk-common-tags-chips" class="p-2 bg border min-h-8.5 flex flex-wrap gap-1 text-xs items-center"></div>
+                    <div id="editor-bulk-common-tags-chips" class="p-2 bg border min-h-8.5 flex flex-wrap gap-1 text-xs items-center max-w-full min-w-0"></div>
                 </div>
             </div>
         `;
@@ -442,26 +552,23 @@ class UploadMediaEditor {
         if (removeBulkBtn) {
             removeBulkBtn.addEventListener('click', () => {
                 if (itemIds.length === 0) return;
+                const doDelete = () => {
+                    itemIds.forEach(id => this.session.deleteItem(id));
+                    if (this.options.onItemsDeleted) {
+                        this.options.onItemsDeleted(itemIds);
+                    }
+                };
                 if (typeof ModalHelper !== 'undefined') {
                     new ModalHelper({
                         type: 'danger',
                         title: window.i18n.t('modal.bulk_delete.title_single'),
                         message: window.i18n.t('upload.bulk.delete_confirm', { count: itemIds.length }),
                         confirmText: window.i18n.t('common.yes_remove'),
-                        onConfirm: () => {
-                            itemIds.forEach(id => this.session.deleteItem(id));
-                            if (this.options.onItemsDeleted) {
-                                this.options.onItemsDeleted(itemIds);
-                            }
-                        }
+                        cancelText: window.i18n.t('common.cancel'),
+                        onConfirm: doDelete
                     }).show();
                 } else {
-                    if (confirm(window.i18n.t('upload.bulk.delete_confirm', { count: itemIds.length }))) {
-                        itemIds.forEach(id => this.session.deleteItem(id));
-                        if (this.options.onItemsDeleted) {
-                            this.options.onItemsDeleted(itemIds);
-                        }
-                    }
+                    doDelete();
                 }
             });
         }
@@ -504,6 +611,12 @@ class UploadMediaEditor {
 
         // Bulk Description
         const descInput = this.container.querySelector('#editor-bulk-description');
+        if (descInput) {
+            this.autoResizeTextarea(descInput);
+            descInput.addEventListener('input', (e) => {
+                this.autoResizeTextarea(e.target);
+            });
+        }
         const descApplyBtn = this.container.querySelector('#editor-bulk-description-apply-btn');
         const applyBulkDescription = async () => {
             const description = descInput?.value.trim();
@@ -516,6 +629,23 @@ class UploadMediaEditor {
             }
         };
         if (descApplyBtn) descApplyBtn.addEventListener('click', applyBulkDescription);
+
+        // Bulk Folder Album remove
+        const bulkRemoveFolderAlbumBtn = this.container.querySelector('#editor-bulk-remove-folder-album-btn');
+        if (bulkRemoveFolderAlbumBtn) {
+            bulkRemoveFolderAlbumBtn.addEventListener('click', async () => {
+                itemIds.forEach(id => {
+                    const it = this.session.getItem(id);
+                    if (it) {
+                        it.suggested_album_path = null;
+                        it.suggested_album_segments = null;
+                    }
+                });
+                await this.session.bulkUpdate(itemIds, { suggested_album_path: null });
+                this.renderBulkEditor();
+                if (this.options.onItemChanged) this.options.onItemChanged();
+            });
+        }
 
         // Bulk Album Badges
         this.setupBulkAlbumBadgeEvents(itemIds);
@@ -587,6 +717,8 @@ class UploadMediaEditor {
 
     refreshBulkAlbumBadges() {
         const commonIds = this.getCommonAlbumIds();
+        const commonFolderExcluded = Array.from(this.getCommonFolderAlbumExcludedIds());
+        const excluded = Array.from(new Set([...commonIds, ...commonFolderExcluded]));
         const badgesContainer = this.container.querySelector('#editor-bulk-albums-badges');
         if (badgesContainer) {
             badgesContainer.innerHTML = this.renderAlbumBadgesHtml(commonIds);
@@ -595,7 +727,7 @@ class UploadMediaEditor {
         }
         if (this.bulkAlbumSelect) {
             const options = [{ value: '', text: window.i18n.t('upload.base_settings.select_album'), selected: true }];
-            this.allAlbums.filter(a => !commonIds.includes(a.id)).forEach(alb => {
+            this.allAlbums.filter(a => !excluded.includes(a.id)).forEach(alb => {
                 options.push({ value: alb.id, text: alb.name });
             });
             this.bulkAlbumSelect.setOptions(options);
@@ -693,26 +825,23 @@ class UploadMediaEditor {
         if (removeBtn) {
             removeBtn.addEventListener('click', () => {
                 const id = item.item_id;
+                const doDelete = () => {
+                    this.session.deleteItem(id);
+                    if (this.options.onItemsDeleted) {
+                        this.options.onItemsDeleted([id]);
+                    }
+                };
                 if (typeof ModalHelper !== 'undefined') {
                     new ModalHelper({
                         type: 'danger',
                         title: window.i18n.t('upload.preview.remove_item_title'),
                         message: window.i18n.t('upload.preview.remove_confirm'),
                         confirmText: window.i18n.t('common.yes'),
-                        onConfirm: () => {
-                            this.session.deleteItem(id);
-                            if (this.options.onItemsDeleted) {
-                                this.options.onItemsDeleted([id]);
-                            }
-                        }
+                        cancelText: window.i18n.t('common.cancel'),
+                        onConfirm: doDelete
                     }).show();
                 } else {
-                    if (confirm(window.i18n.t('upload.preview.remove_confirm'))) {
-                        this.session.deleteItem(id);
-                        if (this.options.onItemsDeleted) {
-                            this.options.onItemsDeleted([id]);
-                        }
-                    }
+                    doDelete();
                 }
             });
         }
@@ -740,9 +869,27 @@ class UploadMediaEditor {
         // Description textarea
         const descInput = this.container.querySelector('#editor-single-description');
         if (descInput) {
+            this.autoResizeTextarea(descInput);
             descInput.addEventListener('input', (e) => {
+                this.autoResizeTextarea(e.target);
                 item.description = e.target.value.trim();
                 this.debouncedSave(item.item_id, { description: item.description });
+            });
+        }
+
+        // Folder album remove
+        const removeFolderAlbumBtn = this.container.querySelector('#editor-single-remove-folder-album-btn');
+        if (removeFolderAlbumBtn) {
+            removeFolderAlbumBtn.addEventListener('click', async () => {
+                item.suggested_album_path = null;
+                item.suggested_album_segments = null;
+                const updated = await this.session.updateItem(item.item_id, { suggested_album_path: null });
+                if (updated) {
+                    item.suggested_album_path = updated.suggested_album_path;
+                    item.suggested_album_segments = updated.suggested_album_segments;
+                }
+                this.renderSingleEditor(item);
+                if (this.options.onItemChanged) this.options.onItemChanged(item);
             });
         }
 
@@ -841,7 +988,8 @@ class UploadMediaEditor {
             this.setupSingleAlbumBadgeEvents(item);
         }
         if (this.singleAlbumSelect) {
-            const excluded = item.album_ids || [];
+            const folderExcluded = Array.from(this.getFolderAlbumExcludedIds(item));
+            const excluded = Array.from(new Set([...(item.album_ids || []), ...folderExcluded]));
             const options = [{ value: '', text: window.i18n.t('upload.base_settings.select_album'), selected: true }];
             this.allAlbums.filter(a => !excluded.includes(a.id)).forEach(alb => {
                 options.push({ value: alb.id, text: alb.name });
@@ -897,6 +1045,30 @@ class UploadMediaEditor {
         this.saveTimeout = setTimeout(() => {
             this.session.updateItem(itemId, data, { silent: true });
         }, 500);
+    }
+
+    autoResizeTextarea(textarea) {
+        if (!textarea) return;
+        textarea.style.height = 'auto';
+        const computed = window.getComputedStyle(textarea);
+        let lineHeight = parseFloat(computed.lineHeight);
+        if (isNaN(lineHeight)) {
+            const fontSize = parseFloat(computed.fontSize) || 12;
+            lineHeight = fontSize * 1.4;
+        }
+        const paddingTop = parseFloat(computed.paddingTop) || 0;
+        const paddingBottom = parseFloat(computed.paddingBottom) || 0;
+        const borderTop = parseFloat(computed.borderTopWidth) || 0;
+        const borderBottom = parseFloat(computed.borderBottomWidth) || 0;
+        const verticalPadding = paddingTop + paddingBottom + borderTop + borderBottom;
+
+        const minHeight = (lineHeight * 2) + verticalPadding;
+        const maxHeight = (lineHeight * 5) + verticalPadding;
+
+        const scrollHeight = textarea.scrollHeight;
+        const targetHeight = Math.min(Math.max(scrollHeight, minHeight), maxHeight);
+        textarea.style.height = `${targetHeight}px`;
+        textarea.style.overflowY = scrollHeight > maxHeight ? 'auto' : 'hidden';
     }
 }
 

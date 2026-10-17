@@ -28,6 +28,10 @@ class MediaViewer extends MediaViewerBase {
             characterThreshold: 0.85,
             modelName: 'wd-eva02-large-tagger-v3'
         };
+        this._descPreviewRequestId = 0;
+        this.isDescEnlarged = false;
+        this._isTogglingEnlarge = false;
+        this.loadedGifs = new Set();
 
         this.init();
     }
@@ -69,6 +73,9 @@ class MediaViewer extends MediaViewerBase {
         try {
             const res = await fetch(`/api/media/${this.mediaId}`);
             this.currentMedia = await res.json();
+            this.isDescEnlarged = Boolean(this.currentMedia && this.currentMedia.description_enlarged);
+            this.applyDescriptionLayout();
+
             if (this.currentMedia && Array.isArray(this.currentMedia.tags)) {
                 for (const tag of this.currentMedia.tags) {
                     if (tag.name && tag.category) {
@@ -79,6 +86,16 @@ class MediaViewer extends MediaViewerBase {
             this.renderMedia(this.currentMedia);
             this.renderInfo(this.currentMedia);
             this.renderTags(this.currentMedia, { clickable: true });
+
+            // Show rendered description for non-admin viewers
+            if (this.currentMedia.description && !app.isAdminMode) {
+                const html = this.currentMedia.description_html
+                    || escapeHtml(this.currentMedia.description);
+                const displayText = this.el('description-display-text');
+                if (displayText) displayText.innerHTML = html;
+                const enlargedDisplayText = this.el('enlarged-desc-display-text');
+                if (enlargedDisplayText) enlargedDisplayText.innerHTML = html;
+            }
 
             // Hide AI metadata toggle by default
             const aiMetadataShareToggle = this.el('ai-metadata-share-toggle');
@@ -100,16 +117,6 @@ class MediaViewer extends MediaViewerBase {
 
             await this.renderHierarchy(this.currentMedia.hierarchy);
             await this.loadRelatedMedia();
-
-            // Show description for all users when it is set and not in admin mode
-            if (this.currentMedia.description && !app.isAdminMode) {
-                const displaySection = this.el('description-display-section');
-                const displayText = this.el('description-display-text');
-                if (displaySection && displayText) {
-                    displayText.textContent = this.currentMedia.description;
-                    displaySection.style.display = 'block';
-                }
-            }
         } catch (e) {
             console.error('loadMedia error', e);
         }
@@ -118,7 +125,6 @@ class MediaViewer extends MediaViewerBase {
     setupAdminMode() {
         this.el('edit-tags-section').style.display = 'block';
         this.el('edit-source-section').style.display = 'block';
-        this.el('edit-description-section').style.display = 'block';
         this.el('admin-actions').style.display = 'flex';
         this.setupTagInput();
         this.setupEditTagsToggle();
@@ -130,11 +136,18 @@ class MediaViewer extends MediaViewerBase {
             sourceInput.value = this.currentMedia.source || '';
         }
 
-        // Set description input value
+        // Set description input value and tabs
+        const desc = (this.currentMedia && this.currentMedia.description) || '';
         const descriptionInput = this.el('description-input');
         if (descriptionInput) {
-            descriptionInput.value = this.currentMedia.description || '';
+            descriptionInput.value = desc;
         }
+        const enlargedDescriptionInput = this.el('enlarged-description-input');
+        if (enlargedDescriptionInput) {
+            enlargedDescriptionInput.value = desc;
+        }
+        this.setupDescriptionTabs();
+        this.applyDescriptionLayout();
 
         // Initialize tag autocomplete
         const tagsInput = this.el('tags-input');
@@ -255,7 +268,17 @@ class MediaViewer extends MediaViewerBase {
 
             const source = document.createElement('source');
             source.src = `/api/media/${media.id}/file?chunked=true${media.hash ? '&v=' + media.hash : ''}`;
-            source.type = media.mime_type;
+
+            let videoType = media.mime_type || 'video/mp4';
+            const fmt = window.FormatRegistry ? window.FormatRegistry.getFormat(media.filename) : null;
+            if (media.transcoded_path) {
+                const transcodedFmt = window.FormatRegistry ? window.FormatRegistry.getFormat(media.transcoded_path) : null;
+                videoType = transcodedFmt ? transcodedFmt.mime_type : 'video/mp4';
+            } else if (fmt && fmt.requires_transcode && fmt.category === 'video') {
+                const targetFmt = fmt.transcode_target && window.FormatRegistry ? window.FormatRegistry.getFormat(fmt.transcode_target) : null;
+                videoType = targetFmt ? targetFmt.mime_type : 'video/mp4';
+            }
+            source.type = videoType;
 
             video.appendChild(source);
 
@@ -546,8 +569,6 @@ class MediaViewer extends MediaViewerBase {
         for (const tag of items) {
             const item = document.createElement('div');
             item.className = 'popular-tag-item';
-            item.style.borderBottom = 'none';
-            item.style.padding = '0.25rem 0';
 
             const btn = document.createElement('button');
             btn.type = 'button';
@@ -698,6 +719,7 @@ class MediaViewer extends MediaViewerBase {
         if (relatedMediaSection) relatedMediaSection.style.display = 'block';
         if (relatedMediaLoading) relatedMediaLoading.style.display = 'none';
         if (relatedMediaEl) {
+            this.unloadAllGifs();
             relatedMediaEl.style.display = 'grid';
             relatedMediaEl.classList.add('grid');
             relatedMediaEl.innerHTML = '';
@@ -755,7 +777,14 @@ class MediaViewer extends MediaViewerBase {
             markLoaded();
         }
 
-        link.appendChild(img);
+        const blurWrapperOrImg = window.wrapBlurThumbnail(img, media, item);
+        link.appendChild(blurWrapperOrImg);
+
+        const targetContainer = (blurWrapperOrImg === img) ? link : blurWrapperOrImg;
+        if (window.setupGifPreview) {
+            window.setupGifPreview(item, media, targetContainer, img, this.loadedGifs);
+        }
+
         item.appendChild(link);
 
         if (media.is_shared) {
@@ -796,6 +825,10 @@ class MediaViewer extends MediaViewerBase {
         });
 
         this.el('save-description-btn')?.addEventListener('click', async () => {
+            await this.saveDescription();
+        });
+
+        this.el('enlarged-save-description-btn')?.addEventListener('click', async () => {
             await this.saveDescription();
         });
 
@@ -1061,12 +1094,19 @@ class MediaViewer extends MediaViewerBase {
         const seed = urlParams.get('seed');
         if (seed) queryParams.set('seed', seed);
 
+        const fallbackSort = urlParams.get('fallback_sort');
+        if (fallbackSort) queryParams.set('fallback_sort', fallbackSort);
+
+        const fallbackOrder = urlParams.get('fallback_order');
+        if (fallbackOrder) queryParams.set('fallback_order', fallbackOrder);
+
         try {
             const res = await fetch(`/api/media/${this.mediaId}/adjacent?${queryParams.toString()}`);
             if (!res.ok) return;
 
             const data = await res.json();
-            const { prev_id, prev_hash, next_id, next_hash } = data;
+            const { prev_id, prev_hash, prev_rating, next_id, next_hash, next_rating } = data;
+            const shouldBlur = window.shouldBlurExplicit();
 
             if (!prev_id && !next_id) {
                 if (navBar) navBar.style.display = 'none';
@@ -1090,8 +1130,14 @@ class MediaViewer extends MediaViewerBase {
                     if (prevThumb) {
                         prevThumb.src = `/api/media/${prev_id}/thumbnail${prev_hash ? '?v=' + prev_hash : ''}`;
                     }
+                    if (prev_rating === 'explicit' && shouldBlur) {
+                        prevBtn.classList.add('blur-content');
+                    } else {
+                        prevBtn.classList.remove('blur-content');
+                    }
                 } else {
                     prevBtn.style.visibility = 'hidden';
+                    prevBtn.classList.remove('blur-content');
                 }
             }
 
@@ -1103,8 +1149,14 @@ class MediaViewer extends MediaViewerBase {
                     if (nextThumb) {
                         nextThumb.src = `/api/media/${next_id}/thumbnail${next_hash ? '?v=' + next_hash : ''}`;
                     }
+                    if (next_rating === 'explicit' && shouldBlur) {
+                        nextBtn.classList.add('blur-content');
+                    } else {
+                        nextBtn.classList.remove('blur-content');
+                    }
                 } else {
                     nextBtn.style.visibility = 'hidden';
+                    nextBtn.classList.remove('blur-content');
                 }
             }
 
@@ -1116,6 +1168,21 @@ class MediaViewer extends MediaViewerBase {
         }
     }
 
+    isAnyModalOpen() {
+        const candidateModals = document.querySelectorAll(
+            '.modal, .age-verification-overlay, [id*="modal"], .mpicker-backdrop, dialog[open]'
+        );
+        for (const el of candidateModals) {
+            const target = el.classList.contains('mpicker-backdrop') ? el.parentElement : el;
+            if (!target) continue;
+            const style = window.getComputedStyle(target);
+            if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0' && (target.offsetWidth > 0 || target.offsetHeight > 0)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     setupKeybindings() {
         document.addEventListener('keydown', (e) => {
             const activeEl = document.activeElement;
@@ -1123,9 +1190,9 @@ class MediaViewer extends MediaViewerBase {
                 activeEl.tagName === 'INPUT' ||
                 activeEl.tagName === 'TEXTAREA' ||
                 activeEl.isContentEditable ||
-                activeEl.closest('.modal')
+                activeEl.closest('.modal, .age-verification-overlay, [id*="modal"], .mpicker-backdrop')
             );
-            if (isTyping) return;
+            if (isTyping || this.isAnyModalOpen()) return;
 
             if (window.keybindings && window.keybindings.matches(e, 'media_fullscreen')) {
                 e.preventDefault();
@@ -1374,17 +1441,317 @@ class MediaViewer extends MediaViewerBase {
         }
     }
 
-    async saveDescription() {
-        const descriptionInput = this.el('description-input');
-        const descriptionValue = descriptionInput ? descriptionInput.value.trim() : '';
+    setupDescriptionTabs() {
+        const toggleBtn = this.el('desc-toggle-mode-btn');
+        const enlargedToggleBtn = this.el('enlarged-desc-toggle-mode-btn');
+        const enlargeBtn = this.el('desc-enlarge-btn');
+        const shrinkBtn = this.el('enlarged-desc-shrink-btn');
+
+        if (!this._descEventsInitialized) {
+            this._descEventsInitialized = true;
+
+            const handleToggleMode = () => {
+                const nextMode = this.descMode === 'preview' ? 'edit' : 'preview';
+                this.showDescriptionMode(nextMode);
+                if (nextMode === 'edit') {
+                    const input = this.isDescEnlarged ? this.el('enlarged-description-input') : this.el('description-input');
+                    if (input) input.focus();
+                }
+            };
+
+            if (toggleBtn) toggleBtn.addEventListener('click', handleToggleMode);
+            if (enlargedToggleBtn) enlargedToggleBtn.addEventListener('click', handleToggleMode);
+
+            if (enlargeBtn) enlargeBtn.addEventListener('click', () => this.toggleDescriptionEnlarged());
+            if (shrinkBtn) shrinkBtn.addEventListener('click', () => this.toggleDescriptionEnlarged());
+
+            const descriptionInput = this.el('description-input');
+            const enlargedInput = this.el('enlarged-description-input');
+
+            if (descriptionInput) {
+                descriptionInput.addEventListener('input', () => {
+                    if (enlargedInput) enlargedInput.value = descriptionInput.value;
+                    this.updateSaveDescriptionButtonVisibility();
+                    this.updateDescriptionToggleVisibility();
+                    this.autoResizeDescriptionInput();
+                });
+            }
+
+            if (enlargedInput) {
+                enlargedInput.addEventListener('input', () => {
+                    if (descriptionInput) descriptionInput.value = enlargedInput.value;
+                    this.updateSaveDescriptionButtonVisibility();
+                    this.updateDescriptionToggleVisibility();
+                    this.autoResizeDescriptionInput();
+                });
+            }
+        }
+
+        // Preview mode by default when a description exists, edit mode when empty
+        this.showDescriptionMode(this.currentMedia && this.currentMedia.description ? 'preview' : 'edit');
+        this.updateSaveDescriptionButtonVisibility();
+        this.updateDescriptionToggleVisibility();
+    }
+
+    applyDescriptionLayout() {
+        const isEnlarged = Boolean(this.isDescEnlarged);
+        const enlargedSection = this.el('enlarged-description-section');
+        const sidebarDisplay = this.el('description-display-section');
+        const sidebarEdit = this.el('edit-description-section');
+        const enlargedDisplay = this.el('enlarged-desc-display-section');
+        const enlargedAdmin = this.el('enlarged-desc-admin-section');
+        const hasDesc = Boolean(this.currentMedia && this.currentMedia.description);
+
+        if (isEnlarged) {
+            if (sidebarDisplay) sidebarDisplay.style.display = 'none';
+            if (sidebarEdit) sidebarEdit.style.display = 'none';
+
+            if (app.isAdminMode) {
+                if (enlargedSection) enlargedSection.style.display = 'block';
+                if (enlargedAdmin) enlargedAdmin.style.display = 'block';
+                if (enlargedDisplay) enlargedDisplay.style.display = 'none';
+                this.autoResizeDescriptionInput();
+            } else if (hasDesc) {
+                if (enlargedSection) enlargedSection.style.display = 'block';
+                if (enlargedDisplay) enlargedDisplay.style.display = 'block';
+                if (enlargedAdmin) enlargedAdmin.style.display = 'none';
+            } else {
+                if (enlargedSection) enlargedSection.style.display = 'none';
+            }
+        } else {
+            if (enlargedSection) enlargedSection.style.display = 'none';
+
+            if (app.isAdminMode) {
+                if (sidebarEdit) sidebarEdit.style.display = 'block';
+                if (sidebarDisplay) sidebarDisplay.style.display = 'none';
+                this.autoResizeDescriptionInput();
+            } else if (hasDesc) {
+                if (sidebarDisplay) sidebarDisplay.style.display = 'block';
+                if (sidebarEdit) sidebarEdit.style.display = 'none';
+            } else {
+                if (sidebarDisplay) sidebarDisplay.style.display = 'none';
+                if (sidebarEdit) sidebarEdit.style.display = 'none';
+            }
+        }
+    }
+
+    async toggleDescriptionEnlarged() {
+        if (this._isTogglingEnlarge) return;
+        this._isTogglingEnlarge = true;
+
+        const previousState = this.isDescEnlarged;
+        const nextState = !previousState;
+        this.isDescEnlarged = nextState;
+        if (this.currentMedia) {
+            this.currentMedia.description_enlarged = nextState;
+        }
+
+        const activeInput = nextState ? this.el('description-input') : this.el('enlarged-description-input');
+        const targetInput = nextState ? this.el('enlarged-description-input') : this.el('description-input');
+        if (activeInput && targetInput) {
+            targetInput.value = activeInput.value;
+        }
+
+        this.applyDescriptionLayout();
+        this.updateDescriptionToggleVisibility();
 
         try {
             await app.apiCall(`/api/media/${this.mediaId}`, {
                 method: 'PATCH',
+                body: JSON.stringify({ description_enlarged: nextState })
+            });
+        } catch (e) {
+            this.isDescEnlarged = previousState;
+            if (this.currentMedia) {
+                this.currentMedia.description_enlarged = previousState;
+            }
+            this.applyDescriptionLayout();
+            this.updateDescriptionToggleVisibility();
+            app.showNotification(e.message, 'error');
+        } finally {
+            this._isTogglingEnlarge = false;
+        }
+    }
+
+    updateDescriptionToggleVisibility() {
+        const toggleBtn = this.el('desc-toggle-mode-btn');
+        const enlargedToggleBtn = this.el('enlarged-desc-toggle-mode-btn');
+        const enlargeBtn = this.el('desc-enlarge-btn');
+        const shrinkBtn = this.el('enlarged-desc-shrink-btn');
+        const input = this.isDescEnlarged ? this.el('enlarged-description-input') : this.el('description-input');
+        const hasContent = input ? input.value.trim().length > 0 : false;
+        const hasSavedDesc = Boolean(this.currentMedia && this.currentMedia.description && this.currentMedia.description.trim().length > 0);
+
+        if (toggleBtn) toggleBtn.style.display = hasContent ? 'block' : 'none';
+        if (enlargedToggleBtn) enlargedToggleBtn.style.display = hasContent ? 'block' : 'none';
+        if (enlargeBtn) enlargeBtn.style.display = hasSavedDesc ? 'block' : 'none';
+        if (shrinkBtn) shrinkBtn.style.display = this.isDescEnlarged ? 'block' : 'none';
+    }
+
+    autoResizeDescriptionInput() {
+        const textarea = this.isDescEnlarged ? this.el('enlarged-description-input') : this.el('description-input');
+        if (!textarea) return;
+
+        if (!textarea.offsetParent) return;
+
+        textarea.style.height = 'auto';
+
+        const computed = window.getComputedStyle(textarea);
+        const borderTop = parseFloat(computed.borderTopWidth) || 0;
+        const borderBottom = parseFloat(computed.borderBottomWidth) || 0;
+        const borderVertical = borderTop + borderBottom;
+
+        const minHeight = parseFloat(computed.minHeight) || (this.isDescEnlarged ? 112 : 80);
+        const maxHeight = parseFloat(computed.maxHeight) || (this.isDescEnlarged ? 512 : 320);
+
+        const totalContentHeight = textarea.scrollHeight + borderVertical;
+        const targetHeight = Math.min(Math.max(totalContentHeight, minHeight), maxHeight);
+
+        textarea.style.height = `${targetHeight}px`;
+        textarea.style.overflowY = totalContentHeight > maxHeight ? 'auto' : 'hidden';
+    }
+
+    updateSaveDescriptionButtonVisibility() {
+        const input = this.isDescEnlarged ? this.el('enlarged-description-input') : this.el('description-input');
+        const saveBtn = this.el('save-description-btn');
+        const enlargedSaveBtn = this.el('enlarged-save-description-btn');
+
+        const currentVal = input ? input.value.trim() : '';
+        const savedVal = (this.currentMedia && this.currentMedia.description) ? this.currentMedia.description.trim() : '';
+        const isDifferent = currentVal !== savedVal;
+        const displayStyle = isDifferent ? 'block' : 'none';
+
+        if (saveBtn) saveBtn.style.display = displayStyle;
+        if (enlargedSaveBtn) enlargedSaveBtn.style.display = displayStyle;
+    }
+
+    async showDescriptionMode(mode) {
+        const sidebarEditPane = this.el('desc-edit-pane');
+        const sidebarPreviewPane = this.el('desc-preview-pane');
+        const sidebarToggleBtn = this.el('desc-toggle-mode-btn');
+        const sidebarPreviewIcon = this.el('desc-preview-icon');
+        const sidebarEditIcon = this.el('desc-edit-icon');
+
+        const enlargedEditPane = this.el('enlarged-desc-edit-pane');
+        const enlargedPreviewPane = this.el('enlarged-desc-preview-pane');
+        const enlargedToggleBtn = this.el('enlarged-desc-toggle-mode-btn');
+        const enlargedPreviewIcon = this.el('enlarged-desc-preview-icon');
+        const enlargedEditIcon = this.el('enlarged-desc-edit-icon');
+
+        this.descMode = mode;
+        const isPreview = mode === 'preview';
+
+        if (sidebarEditPane) sidebarEditPane.style.display = isPreview ? 'none' : 'block';
+        if (sidebarPreviewPane) sidebarPreviewPane.style.display = isPreview ? 'block' : 'none';
+        if (enlargedEditPane) enlargedEditPane.style.display = isPreview ? 'none' : 'block';
+        if (enlargedPreviewPane) enlargedPreviewPane.style.display = isPreview ? 'block' : 'none';
+
+        const updateToggleUI = (btn, previewIcon, editIcon) => {
+            if (!btn) return;
+            if (isPreview) {
+                if (previewIcon) previewIcon.style.display = 'none';
+                if (editIcon) editIcon.style.display = 'block';
+                const label = window.i18n.t('common.edit');
+                btn.title = label;
+                btn.setAttribute('aria-label', label);
+            } else {
+                if (previewIcon) previewIcon.style.display = 'block';
+                if (editIcon) editIcon.style.display = 'none';
+                const label = window.i18n.t('common.preview');
+                btn.title = label;
+                btn.setAttribute('aria-label', label);
+            }
+        };
+
+        updateToggleUI(sidebarToggleBtn, sidebarPreviewIcon, sidebarEditIcon);
+        updateToggleUI(enlargedToggleBtn, enlargedPreviewIcon, enlargedEditIcon);
+
+        if (isPreview) {
+            await this.renderDescriptionPreview();
+        } else {
+            this.autoResizeDescriptionInput();
+        }
+        this.updateDescriptionToggleVisibility();
+    }
+
+    async renderDescriptionPreview() {
+        const requestId = ++this._descPreviewRequestId;
+        const sidebarContent = this.el('desc-preview-content');
+        const enlargedContent = this.el('enlarged-desc-preview-content');
+        const activeInput = this.isDescEnlarged ? this.el('enlarged-description-input') : this.el('description-input');
+        if (!activeInput) return;
+
+        const text = activeInput.value;
+        if (!text.trim()) {
+            if (sidebarContent) sidebarContent.innerHTML = '';
+            if (enlargedContent) enlargedContent.innerHTML = '';
+            return;
+        }
+
+        if (this.currentMedia && this.currentMedia.description === text && this.currentMedia.description_html) {
+            if (sidebarContent) sidebarContent.innerHTML = this.currentMedia.description_html;
+            if (enlargedContent) enlargedContent.innerHTML = this.currentMedia.description_html;
+            return;
+        }
+        try {
+            const res = await app.apiCall('/api/media/preview-description', {
+                method: 'POST',
+                body: JSON.stringify({ text })
+            });
+            if (requestId !== this._descPreviewRequestId) return;
+            const html = res.html || '';
+            if (sidebarContent) sidebarContent.innerHTML = html;
+            if (enlargedContent) enlargedContent.innerHTML = html;
+        } catch (e) {
+            if (requestId !== this._descPreviewRequestId) return;
+            if (sidebarContent) sidebarContent.textContent = text;
+            if (enlargedContent) enlargedContent.textContent = text;
+            app.showNotification(e.message, 'error');
+        }
+    }
+
+    async saveDescription() {
+        const activeInput = this.isDescEnlarged ? this.el('enlarged-description-input') : this.el('description-input');
+        const descriptionValue = activeInput ? activeInput.value.trim() : '';
+
+        try {
+            const updated = await app.apiCall(`/api/media/${this.mediaId}`, {
+                method: 'PATCH',
                 body: JSON.stringify({ description: descriptionValue || null })
             });
+            this.currentMedia.description = updated.description;
+            this.currentMedia.description_html = updated.description_html;
+            this.currentMedia.description_enlarged = updated.description_enlarged;
+
+            this.isDescEnlarged = Boolean(updated.description_enlarged);
+            this.applyDescriptionLayout();
+
+            const val = updated.description || '';
+            const descInput = this.el('description-input');
+            const enlargedDescInput = this.el('enlarged-description-input');
+            if (descInput) descInput.value = val;
+            if (enlargedDescInput) enlargedDescInput.value = val;
+
+            const html = updated.description_html || '';
+            const previewContent = this.el('desc-preview-content');
+            const enlargedPreviewContent = this.el('enlarged-desc-preview-content');
+            if (previewContent) previewContent.innerHTML = html;
+            if (enlargedPreviewContent) enlargedPreviewContent.innerHTML = html;
+
+            const displayText = this.el('description-display-text');
+            const enlargedDisplayText = this.el('enlarged-desc-display-text');
+            if (displayText) displayText.innerHTML = html;
+            if (enlargedDisplayText) enlargedDisplayText.innerHTML = html;
+
+            if (updated.description) {
+                await this.showDescriptionMode('preview');
+            } else {
+                await this.showDescriptionMode('edit');
+            }
+            this.updateSaveDescriptionButtonVisibility();
+            this.updateDescriptionToggleVisibility();
+
             app.showNotification(window.i18n.t('notifications.media.description_updated'), 'success');
-            location.reload();
         } catch (e) {
             app.showNotification(e.message, 'error', window.i18n.t('notifications.media.error_updating_description'));
         }
@@ -1511,7 +1878,7 @@ class MediaViewer extends MediaViewerBase {
                 return;
             }
 
-            const promptTags = AITagUtils.parsePromptTags(aiPrompt);
+            const promptTags = AITagUtils.extractPromptTags(metadata);
 
             const validTags = [];
             for (const tag of promptTags) {
@@ -2141,6 +2508,13 @@ class MediaViewer extends MediaViewerBase {
         }
         if (this.tagInputHelper) {
             this.tagInputHelper.destroy();
+        }
+        this.unloadAllGifs();
+    }
+
+    unloadAllGifs() {
+        if (window.unloadAllGifs) {
+            window.unloadAllGifs(this.loadedGifs, this.el('related-media'));
         }
     }
 }

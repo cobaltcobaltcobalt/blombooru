@@ -2,47 +2,58 @@ import json
 import shutil
 import uuid
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Set
 
 from fastapi import (APIRouter, BackgroundTasks, Depends, File, Form,
                      HTTPException, Query, Request, UploadFile)
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from ..auth import require_admin_mode
 from ..config import settings
+from ..enums import parse_rating_filter, rating_to_str, RatingEnum
 from ..utils.request_helpers import safe_error_detail
 from ..database import get_db
 from ..models import (Album, Media, Tag, User, blombooru_album_media,
                       blombooru_media_tags)
 from ..schemas import (AlbumListResponse, BatchMediaRequest, BatchMetadataRequest,
-                       BulkTagUpdateRequest, BulkTagUpdateResponse, MediaCreate,
-                       MediaResponse, MediaUpdate, RatingEnum, ShareSettingsUpdate)
-from ..utils.album_utils import (get_bulk_album_metrics, get_flattened_media_ids,
-                                update_album_last_modified)
-from ..utils.cache import (cache_response, invalidate_album_cache,
-                           invalidate_media_cache, invalidate_media_item_cache,
-                           invalidate_tag_cache)
+                       BulkTagUpdateRequest, BulkTagUpdateResponse,
+                       MediaDetailResponse, MediaResponse,
+                       MediaUpdate, ShareSettingsUpdate)
+from ..utils.album_utils import (get_bulk_album_thumbnails, get_flattened_media_ids,
+                                handle_media_deleted, handle_media_rating_changed,
+                                set_media_albums)
+from ..utils.cache import (cache_response, invalidate_media_cache, 
+                            invalidate_media_item_cache, invalidate_tag_cache)
 from ..utils.format_registry import format_registry
 from ..utils.logger import logger
 from ..utils.media_helpers import (create_stripped_media_cache,
-                                   delete_media_cache, extract_image_metadata,
-                                   get_unique_filename, sanitize_filename,
+                                   delete_media_cache, extract_media_metadata,
+                                   get_effective_media_path,
+                                   get_unique_filename,
+                                   rebuild_stripped_cache_if_needed,
+                                   sanitize_filename,
                                    serve_media_file)
 from ..utils.media_processor import calculate_file_hash, process_media_file
-from ..utils.media_sort import apply_media_sort
+from ..utils.media_sort import apply_media_sort, get_media_sort_clauses
 from ..utils.search_parser import (apply_custom_filters_or,
                                    apply_search_criteria, parse_search_query)
-from ..utils.thumbnail_generator import generate_thumbnail
+from ..utils.thumbnail_generator import generate_thumbnail, THUMBNAIL_EXT, thumbnail_mime_type
 from ..utils.transcoder import (get_transcoded_path_for_original,
                                 transcode_media_if_needed)
+from ..utils.url_fetch import UrlFetchError, safe_request
 
 router = APIRouter(prefix="/api/media", tags=["media"])
 
 # Maximum number of IDs per SQL IN-clause to avoid parameter limits
 BATCH_CHUNK_SIZE = 500
+
+def sync_description_enlarged(media: Media) -> None:
+    """Ensure media cannot be marked as enlarged if it has no description."""
+    if not media.description:
+        media.description_enlarged = False
 
 class PostUpdateRequest(BaseModel):
     """Request body for the Update Post (from-source) endpoint.
@@ -64,10 +75,11 @@ class PostUpdateRequest(BaseModel):
     update_file: bool = False
     file_url: Optional[str] = None
 
-@router.patch("/{media_id}/update-from-source", response_model=MediaResponse)
+@router.patch("/{media_id}/update-from-source", response_model=MediaDetailResponse)
 async def update_from_source(
     media_id: int,
     req: PostUpdateRequest,
+    background_tasks: BackgroundTasks = None,
     current_user: User = Depends(require_admin_mode),
     db: Session = Depends(get_db),
 ):
@@ -99,18 +111,26 @@ async def update_from_source(
         new_tag_ids = [tag.id for tag in media.tags]
         affected_tag_ids = list(set(old_tag_ids + new_tag_ids))
 
+    rating_changed = False
+    filename_changed = False
+    file_updated = False
     if req.update_rating and req.rating:
-        media.rating = req.rating
+        norm_rating = RatingEnum.normalize(req.rating)
+        if norm_rating and media.rating != norm_rating:
+            media.rating = norm_rating
+            rating_changed = True
 
     if req.update_source:
         media.source = req.source or None
 
     if req.update_description:
         media.description = req.description or None
+        sync_description_enlarged(media)
 
     if req.update_filename and req.filename:
         new_filename = sanitize_filename(req.filename)
         if new_filename and new_filename != media.filename:
+            filename_changed = True
             old_path = settings.BASE_DIR / media.path
             new_unique = get_unique_filename(settings.ORIGINAL_DIR, new_filename)
             new_path = settings.ORIGINAL_DIR / new_unique
@@ -125,7 +145,7 @@ async def update_from_source(
                 if media.transcoded_path:
                     old_transc_path = settings.BASE_DIR / media.transcoded_path
                     if old_transc_path.exists():
-                        delete_media_cache(old_transc_path)
+                        delete_media_cache(media)
                         new_transc_path.parent.mkdir(parents=True, exist_ok=True)
                         old_transc_path.rename(new_transc_path)
                         media.transcoded_path = str(new_transc_path.relative_to(settings.BASE_DIR))
@@ -139,13 +159,13 @@ async def update_from_source(
                 if media.transcoded_path:
                     old_transc_path = settings.BASE_DIR / media.transcoded_path
                     if old_transc_path.exists():
-                        delete_media_cache(old_transc_path)
+                        delete_media_cache(media)
                         old_transc_path.unlink(missing_ok=True)
                     media.transcoded_path = None
 
             if media.thumbnail_path:
                 old_thumb = settings.BASE_DIR / media.thumbnail_path
-                new_thumb_name = Path(new_unique).stem + ".jpg"
+                new_thumb_name = Path(new_unique).stem + old_thumb.suffix
                 new_thumb = settings.THUMBNAIL_DIR / new_thumb_name
                 if old_thumb.exists():
                     old_thumb.rename(new_thumb)
@@ -160,9 +180,19 @@ async def update_from_source(
 
         import requests as _requests
         try:
-            headers = {"User-Agent": "Blombooru/1.0 (booru-import)"}
-            dl = _requests.get(req.file_url, headers=headers, timeout=60, stream=True)
+            from ..services.booru import get_user_agent_for_url
+            user_agent = get_user_agent_for_url(req.file_url, db=db)
+            dl = safe_request(
+                "GET",
+                req.file_url,
+                timeout=60,
+                stream=True,
+                user_agent=user_agent,
+                proxies=settings.get_booru_proxies(),
+            )
             dl.raise_for_status()
+        except UrlFetchError as e:
+            raise HTTPException(status_code=e.status_code, detail=e.message)
         except _requests.HTTPError as e:
             raise HTTPException(status_code=502, detail=safe_error_detail("Failed to download replacement file", e))
         except _requests.RequestException as e:
@@ -189,12 +219,11 @@ async def update_from_source(
                 raise HTTPException(status_code=409, detail=f"Media already exists (duplicate of {duplicate.filename})")
 
             old_file = settings.BASE_DIR / media.path
-            delete_media_cache(old_file)
+            delete_media_cache(media)
             old_file.unlink(missing_ok=True)
 
             if media.transcoded_path:
                 old_transc = settings.BASE_DIR / media.transcoded_path
-                delete_media_cache(old_transc)
                 old_transc.unlink(missing_ok=True)
                 media.transcoded_path = None
 
@@ -208,7 +237,7 @@ async def update_from_source(
                 old_thumb = settings.BASE_DIR / media.thumbnail_path
                 old_thumb.unlink(missing_ok=True)
 
-            thumb_name = Path(media.filename).stem + ".jpg"
+            thumb_name = Path(media.filename).stem + THUMBNAIL_EXT
             thumb_path = settings.THUMBNAIL_DIR / thumb_name
             thumb_source = (settings.BASE_DIR / new_meta["transcoded_path"]) if new_meta.get("transcoded_path") else old_file
             generate_thumbnail(thumb_source, thumb_path, new_meta["file_type"])
@@ -222,6 +251,7 @@ async def update_from_source(
             media.width = new_meta["width"]
             media.height = new_meta["height"]
             media.duration = new_meta["duration"]
+            file_updated = True
 
         except HTTPException:
             raise
@@ -233,6 +263,9 @@ async def update_from_source(
 
     db.commit()
 
+    if rating_changed:
+        handle_media_rating_changed(db, media_id, req.rating)
+
     if affected_tag_ids:
         update_tag_counts(db, affected_tag_ids)
         db.commit()
@@ -242,13 +275,17 @@ async def update_from_source(
     invalidate_media_item_cache(media_id)
     invalidate_tag_cache()
 
-    return MediaResponse.model_validate(media)
+    if file_updated or filename_changed:
+        await rebuild_stripped_cache_if_needed(media, background_tasks)
 
-@router.post("/{media_id}/update-file-finalize", response_model=MediaResponse)
+    return MediaDetailResponse.model_validate(media)
+
+@router.post("/{media_id}/update-file-finalize", response_model=MediaDetailResponse)
 async def update_file_finalize(
     media_id: int,
     upload_id: str = Form(...),
     update_filename: bool = Form(False),
+    background_tasks: BackgroundTasks = None,
     current_user: User = Depends(require_admin_mode),
     db: Session = Depends(get_db),
 ):
@@ -327,12 +364,11 @@ async def update_file_finalize(
         old_file = settings.BASE_DIR / media.path
 
         if old_file.exists():
-            delete_media_cache(old_file)
+            delete_media_cache(media)
             old_file.unlink(missing_ok=True)
 
         if media.transcoded_path:
             old_transc = settings.BASE_DIR / media.transcoded_path
-            delete_media_cache(old_transc)
             old_transc.unlink(missing_ok=True)
             media.transcoded_path = None
 
@@ -347,7 +383,7 @@ async def update_file_finalize(
             old_thumb = settings.BASE_DIR / media.thumbnail_path
             old_thumb.unlink(missing_ok=True)
 
-        thumb_name = Path(target_filename).stem + ".jpg"
+        thumb_name = Path(target_filename).stem + THUMBNAIL_EXT
         thumb_path = settings.THUMBNAIL_DIR / thumb_name
         thumb_source = (settings.BASE_DIR / new_meta["transcoded_path"]) if new_meta.get("transcoded_path") else target_file
         generate_thumbnail(thumb_source, thumb_path, new_meta["file_type"])
@@ -369,7 +405,9 @@ async def update_file_finalize(
         invalidate_media_cache()
         invalidate_media_item_cache(media_id)
 
-        return MediaResponse.model_validate(media)
+        await rebuild_stripped_cache_if_needed(media, background_tasks)
+
+        return MediaDetailResponse.model_validate(media)
 
     except HTTPException:
         raise
@@ -558,7 +596,7 @@ def process_and_save_media(
     metadata = process_media_file(file_path, precalculated_hash=file_hash)
     logger.debug(f"Media processed: {metadata}")
 
-    thumbnail_filename = Path(unique_filename).stem + ".jpg"
+    thumbnail_filename = Path(unique_filename).stem + THUMBNAIL_EXT
     thumbnail_path = settings.THUMBNAIL_DIR / thumbnail_filename
 
     logger.debug(f"Generating thumbnail: {thumbnail_filename}")
@@ -603,7 +641,7 @@ def process_and_save_media(
         tag_ids_to_update = [tag.id for tag in media.tags]
         logger.debug(f"Tags added: {tag_list}")
 
-    affected_album_ids = []
+    a_ids = []
     if album_ids:
         try:
             a_ids = [
@@ -611,11 +649,6 @@ def process_and_save_media(
                 for id_str in album_ids.split(",")
                 if id_str.strip().isdigit()
             ]
-            if a_ids:
-                albums = db.query(Album).filter(Album.id.in_(a_ids)).all()
-                media.albums = albums
-                affected_album_ids = [album.id for album in albums]
-                logger.debug(f"Added to albums: {affected_album_ids}")
         except Exception as e:
             logger.error(f"Error parsing album_ids: {e}")
 
@@ -627,11 +660,8 @@ def process_and_save_media(
         update_tag_counts(db, tag_ids_to_update)
         db.commit()
 
-    if affected_album_ids:
-        for a_id in affected_album_ids:
-            update_album_last_modified(a_id, db)
-        db.commit()
-        invalidate_album_cache()
+    if a_ids:
+        set_media_albums(db, media.id, a_ids)
 
     db.refresh(media)
 
@@ -664,8 +694,7 @@ async def get_media_list(
         query = db.query(Media).options(selectinload(Media.tags))
         
         if rating:
-            ratings_list = [r.strip().lower() for r in rating.split(",") if r.strip()]
-            valid_ratings = [RatingEnum[r] for r in ratings_list if r in RatingEnum.__members__]
+            valid_ratings = parse_rating_filter(rating)
             if valid_ratings:
                 query = query.filter(Media.rating.in_(valid_ratings))
 
@@ -751,7 +780,7 @@ def _fetch_media_batch_tags_only(db: Session, media_ids: List[int], include_meta
                         fpath = settings.BASE_DIR / rel_path
                         if fpath.exists():
                             try:
-                                meta = extract_image_metadata(fpath)
+                                meta = extract_media_metadata(fpath)
                             except Exception:
                                 pass
                     item_dict["metadata"] = meta
@@ -846,7 +875,7 @@ async def post_media_batch_metadata(
                     file_path = settings.BASE_DIR / rel_path
                     if file_path.exists():
                         try:
-                            meta = extract_image_metadata(file_path)
+                            meta = extract_media_metadata(file_path)
                             if meta:
                                 results[str(mid)] = meta
                         except Exception:
@@ -1026,24 +1055,42 @@ async def get_related_media(
     if isinstance(album_id, int):
         album_media_ids = set(get_flattened_media_ids(db, album_id))
 
+    # Exclude parent, siblings, and children of current media
+    excluded_hierarchy_ids: Set[int] = set()
+    curr_media = db.query(Media.parent_id).filter(Media.id == media_id).first()
+    if curr_media:
+        parent_id = curr_media[0]
+        if parent_id is not None:
+            # Parent
+            excluded_hierarchy_ids.add(parent_id)
+            # Siblings (and self)
+            for (sid,) in db.query(Media.id).filter(Media.parent_id == parent_id).all():
+                excluded_hierarchy_ids.add(sid)
+        # Children
+        for (cid,) in db.query(Media.id).filter(Media.parent_id == media_id).all():
+            excluded_hierarchy_ids.add(cid)
+
     has_filters = bool(rating or custom_filter)
     fetch_limit = max(limit * 5, 50) if has_filters else limit
 
     similar_pairs = similarity_index.get_similar_media(
         media_id=media_id,
         limit=fetch_limit,
-        album_media_ids=album_media_ids
+        album_media_ids=album_media_ids,
+        excluded_media_ids=excluded_hierarchy_ids,
     )
 
     if not similar_pairs:
         return {"items": [], "status": "ready"}
 
-    similar_ids = [mid for mid, _ in similar_pairs]
+    similar_ids = [mid for mid, _ in similar_pairs if mid not in excluded_hierarchy_ids]
+    if not similar_ids:
+        return {"items": [], "status": "ready"}
+
     media_query = db.query(Media).options(selectinload(Media.tags)).filter(Media.id.in_(similar_ids))
 
     if rating:
-        ratings_list = [r.strip().lower() for r in rating.split(",") if r.strip()]
-        valid_ratings = [RatingEnum[r] for r in ratings_list if r in RatingEnum.__members__]
+        valid_ratings = parse_rating_filter(rating)
         if valid_ratings:
             media_query = media_query.filter(Media.rating.in_(valid_ratings))
 
@@ -1055,7 +1102,7 @@ async def get_related_media(
 
     items = []
     for mid in similar_ids:
-        if mid in media_dict:
+        if mid in media_dict and mid not in excluded_hierarchy_ids:
             items.append(MediaResponse.model_validate(media_dict[mid]))
             if len(items) >= limit:
                 break
@@ -1073,6 +1120,8 @@ async def get_adjacent_media(
     sort: Optional[str] = None,
     order: Optional[str] = None,
     seed: Optional[str] = None,
+    fallback_sort: Optional[str] = None,
+    fallback_order: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     """Get previous and next media IDs relative to media_id within the given context."""
@@ -1092,8 +1141,7 @@ async def get_adjacent_media(
                 media_query = apply_search_criteria(media_query, parsed, db)
             else:
                 if rating:
-                    ratings_list = [r.strip().lower() for r in rating.split(",") if r.strip()]
-                    valid_ratings = [RatingEnum[r] for r in ratings_list if r in RatingEnum.__members__]
+                    valid_ratings = parse_rating_filter(rating)
                     if valid_ratings:
                         media_query = media_query.filter(Media.rating.in_(valid_ratings))
 
@@ -1101,21 +1149,47 @@ async def get_adjacent_media(
                 media_query = apply_custom_filters_or(media_query, custom_filter, db)
 
             if not q or ('order' not in parsed['meta'] and 'sort' not in parsed['meta']):
-                sort_by = sort if sort else settings.get_default_sort()
-                sort_order = order if order else settings.get_default_order()
+                sort_by = sort
+                if not sort_by:
+                    has_manual_media = db.query(blombooru_album_media.c.media_id).filter(
+                        blombooru_album_media.c.album_id == album_id,
+                        blombooru_album_media.c.sort_position.isnot(None)
+                    ).limit(1).scalar() is not None
+                    sort_by = "manual" if has_manual_media else settings.get_default_sort()
+
+                sort_order = order if order else ("asc" if sort_by == "manual" else settings.get_default_order())
                 media_query = media_query.order_by(None)
-                media_query = apply_media_sort(
-                    media_query,
-                    sort_by,
-                    sort_order,
-                    db,
-                    seed,
-                    column_overrides={
-                        'uploaded_at': Media.id,
-                        'last_modified': Media.id,
-                        'name': Media.filename,
-                    },
-                )
+                if sort_by == "manual":
+                    fb_sort = fallback_sort if isinstance(fallback_sort, str) and fallback_sort.strip() else "uploaded_at"
+                    fb_order = fallback_order.lower() if isinstance(fallback_order, str) and fallback_order.lower() in ("asc", "desc") else "desc"
+                    fb_media_clauses = get_media_sort_clauses(
+                        fb_sort,
+                        fb_order,
+                        db,
+                        seed,
+                        column_overrides={
+                            'uploaded_at': Media.id,
+                            'last_modified': Media.id,
+                            'name': Media.filename,
+                        },
+                    )
+                    media_query = media_query.order_by(
+                        blombooru_album_media.c.sort_position.asc().nulls_last(),
+                        *fb_media_clauses
+                    )
+                else:
+                    media_query = apply_media_sort(
+                        media_query,
+                        sort_by,
+                        sort_order,
+                        db,
+                        seed,
+                        column_overrides={
+                            'uploaded_at': Media.id,
+                            'last_modified': Media.id,
+                            'name': Media.filename,
+                        },
+                    )
         else:
             media_query = db.query(Media.id)
 
@@ -1145,25 +1219,46 @@ async def get_adjacent_media(
             next_id = None
 
         prev_hash = None
+        prev_rating = None
         next_hash = None
+        next_rating = None
         if prev_id:
-            m_prev = db.query(Media.hash).filter(Media.id == prev_id).first()
+            m_prev = db.query(Media.hash, Media.rating).filter(Media.id == prev_id).first()
             if m_prev:
                 prev_hash = m_prev.hash
+                prev_rating = rating_to_str(m_prev.rating)
         if next_id:
-            m_next = db.query(Media.hash).filter(Media.id == next_id).first()
+            m_next = db.query(Media.hash, Media.rating).filter(Media.id == next_id).first()
             if m_next:
                 next_hash = m_next.hash
+                next_rating = rating_to_str(m_next.rating)
 
         return {
             "prev_id": prev_id,
             "prev_hash": prev_hash,
+            "prev_rating": prev_rating,
             "next_id": next_id,
-            "next_hash": next_hash
+            "next_hash": next_hash,
+            "next_rating": next_rating
         }
     except Exception as e:
         logger.error(f"Error in get_adjacent_media: {e}")
         return {"prev_id": None, "prev_hash": None, "next_id": None, "next_hash": None}
+
+class DescriptionPreviewRequest(BaseModel):
+    text: str = Field("", max_length=50000)
+
+class DescriptionPreviewResponse(BaseModel):
+    html: str
+
+@router.post("/preview-description", response_model=DescriptionPreviewResponse)
+async def preview_media_description(
+    req: DescriptionPreviewRequest,
+    current_user: User = Depends(require_admin_mode),
+):
+    """Render a draft media description as Markdown (admin only)."""
+    from ..utils.markdown import render_description_markdown
+    return DescriptionPreviewResponse(html=render_description_markdown(req.text))
 
 @router.get("/{media_id}")
 async def get_media(media_id: int, db: Session = Depends(get_db)):
@@ -1172,7 +1267,7 @@ async def get_media(media_id: int, db: Session = Depends(get_db)):
     if not media:
         raise HTTPException(status_code=404, detail="Media not found")
     
-    result = MediaResponse.model_validate(media).model_dump()
+    result = MediaDetailResponse.model_validate(media).model_dump()
     result['share_ai_metadata'] = media.share_ai_metadata if hasattr(media, 'share_ai_metadata') else False
     
     # Add parent and siblings info
@@ -1233,7 +1328,7 @@ async def get_media_thumbnail(media_id: int):
     finally:
         db.close()
 
-    return await serve_media_file(thumb_path, "image/jpeg", "Thumbnail file not found")
+    return await serve_media_file(thumb_path, thumbnail_mime_type(thumb_path), "Thumbnail file not found")
 
 @router.get("/{media_id}/metadata")
 async def get_media_metadata(
@@ -1249,7 +1344,7 @@ async def get_media_metadata(
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Media file not found")
     
-    return extract_image_metadata(file_path)
+    return extract_media_metadata(file_path)
 
 @router.post("/", response_model=MediaResponse)
 async def upload_media(
@@ -1335,7 +1430,7 @@ async def upload_media(
 
         raise HTTPException(status_code=500, detail=safe_error_detail("Upload failed", e))
 
-@router.patch("/{media_id}", response_model=MediaResponse)
+@router.patch("/{media_id}", response_model=MediaDetailResponse)
 async def update_media(
     media_id: int,
     updates: MediaUpdate,
@@ -1347,14 +1442,22 @@ async def update_media(
     if not media:
         raise HTTPException(status_code=404, detail="Media not found")
     
+    rating_changed = False
     if updates.rating:
-        media.rating = updates.rating
+        if media.rating != updates.rating:
+            media.rating = updates.rating
+            rating_changed = True
     
     if 'source' in updates.model_fields_set:
         media.source = updates.source if updates.source else None
     
     if 'description' in updates.model_fields_set:
         media.description = updates.description if updates.description else None
+    
+    if 'description_enlarged' in updates.model_fields_set and updates.description_enlarged is not None:
+        media.description_enlarged = updates.description_enlarged
+
+    sync_description_enlarged(media)
     
     affected_tag_ids = []
     if updates.tags is not None:
@@ -1390,7 +1493,10 @@ async def update_media(
             media.parent_id = None
     
     db.commit()
-    
+
+    if rating_changed:
+        handle_media_rating_changed(db, media_id, updates.rating)
+
     if affected_tag_ids:
         update_tag_counts(db, affected_tag_ids)
         db.commit()
@@ -1409,7 +1515,7 @@ async def update_media(
         invalidate_media_cache()
         invalidate_tag_cache()
     
-    return MediaResponse.model_validate(media)
+    return MediaDetailResponse.model_validate(media)
 
 
 @router.delete("/{media_id}")
@@ -1426,18 +1532,18 @@ async def delete_media(
     tag_ids = [tag.id for tag in media.tags]
     
     file_path = settings.BASE_DIR / media.path
-    delete_media_cache(file_path)
+    delete_media_cache(media)
     file_path.unlink(missing_ok=True)
 
     if media.transcoded_path:
         transcoded_file_path = settings.BASE_DIR / media.transcoded_path
-        delete_media_cache(transcoded_file_path)
         transcoded_file_path.unlink(missing_ok=True)
     
     if media.thumbnail_path:
         thumb_path = settings.BASE_DIR / media.thumbnail_path
         thumb_path.unlink(missing_ok=True)
     
+    handle_media_deleted(db, [media_id])
     db.delete(media)
     db.commit()
     
@@ -1471,11 +1577,12 @@ async def share_media(
         media.share_uuid = str(uuid.uuid4())
         media.is_shared = True
         
-        # Trigger background stripping
-        effective_path = (settings.BASE_DIR / media.transcoded_path) if media.transcoded_path else (settings.BASE_DIR / media.path)
-        effective_mime = format_registry.get_mime_type(effective_path.name, default=media.mime_type)
-        if effective_mime and effective_mime.startswith('image/'):
-            background_tasks.add_task(create_stripped_media_cache, effective_path, effective_mime)
+        # Trigger background stripping if AI metadata not shared
+        if not getattr(media, "share_ai_metadata", False):
+            effective_path = get_effective_media_path(media)
+            effective_mime = format_registry.get_mime_type(effective_path.name, default=media.mime_type)
+            if effective_mime and effective_mime.startswith('image/'):
+                background_tasks.add_task(create_stripped_media_cache, media, effective_mime)
     
     db.commit()
     invalidate_media_item_cache(media_id)
@@ -1503,8 +1610,7 @@ async def unshare_media(
     
     # Cleanup cache
     try:
-        file_path = settings.BASE_DIR / media.path
-        delete_media_cache(file_path)
+        delete_media_cache(media)
     except Exception as e:
         logger.error(f"Failed to cleanup cache for unshared media: {e}")
     
@@ -1514,6 +1620,7 @@ async def unshare_media(
 async def update_share_settings(
     media_id: int,
     updates: ShareSettingsUpdate,
+    background_tasks: BackgroundTasks = None,
     current_user: User = Depends(require_admin_mode),
     db: Session = Depends(get_db)
 ):
@@ -1526,7 +1633,12 @@ async def update_share_settings(
         raise HTTPException(status_code=400, detail="Media is not shared")
     
     if updates.share_ai_metadata is not None:
-        media.share_ai_metadata = updates.share_ai_metadata
+        changed = updates.share_ai_metadata != media.share_ai_metadata
+        if changed:
+            media.share_ai_metadata = updates.share_ai_metadata
+            delete_media_cache(media)
+        if not media.share_ai_metadata:
+            await rebuild_stripped_cache_if_needed(media, background_tasks)
         
     if updates.share_language is not None:
         if updates.share_language == "default" or updates.share_language == "":
@@ -1563,45 +1675,22 @@ async def get_media_albums(
         return {"albums": []}
     
     album_ids = [a.id for a in albums]
-    
-    metrics = get_bulk_album_metrics(album_ids, db)
-    
-    rn_col = func.row_number().over(
-        partition_by=blombooru_album_media.c.album_id,
-        order_by=func.random()
-    ).label("rn")
-
-    subq = db.query(
-        blombooru_album_media.c.album_id,
-        Media.id.label("media_id"),
-        rn_col
-    ).join(
-        Media, Media.id == blombooru_album_media.c.media_id
-    ).filter(
-        blombooru_album_media.c.album_id.in_(album_ids),
-        Media.thumbnail_path.isnot(None)
-    ).subquery()
-
-    thumbnail_rows = db.query(
-        subq.c.album_id,
-        subq.c.media_id
-    ).filter(subq.c.rn <= 4).all()
-
-    thumbnails_map: dict = {aid: [] for aid in album_ids}
-    for aid, mid in thumbnail_rows:
-        thumbnails_map[aid].append(f"/api/media/{mid}/thumbnail")
+    thumbnails_map = get_bulk_album_thumbnails(album_ids, db, count=4)
     
     result = []
     for album in albums:
-        m = metrics.get(album.id, {"rating": "safe", "count": 0})
-        result.append(AlbumListResponse(
-            id=album.id,
-            name=album.name,
-            last_modified=album.last_modified,
-            thumbnail_paths=thumbnails_map.get(album.id, []),
-            rating=m["rating"],
-            media_count=m["count"]
-        ))
+        thumb_info = thumbnails_map.get(album.id, {"paths": [], "ratings": []})
+        result.append(
+            AlbumListResponse(
+                id=album.id,
+                name=album.name,
+                last_modified=album.last_modified,
+                thumbnail_paths=thumb_info.get("paths", []),
+                thumbnail_ratings=thumb_info.get("ratings", []),
+                rating=album.cached_rating or RatingEnum.safe,
+                media_count=album.cached_media_count or 0
+            )
+        )
     
     return {"albums": result}
 
@@ -1762,31 +1851,73 @@ async def extract_archive(
             + format_registry.get_supported_mime_types(FormatCategory.VIDEO)
         )
         file_index = 0
-        for extracted_file in extract_dir.rglob('*'):
-            if extracted_file.is_symlink():
+        raw_extracted_files = [p for p in extract_dir.rglob('*') if p.is_file() and not p.is_symlink()]
+
+        for extracted_file in raw_extracted_files:
+            if not extracted_file.exists():
                 continue
 
-            if extracted_file.is_file():
-                mime_type, _ = mimetypes.guess_type(extracted_file.name)
-                fmt = format_registry.get_format(extracted_file.name)
-                if mime_type in valid_types or (fmt and fmt.category in (FormatCategory.IMAGE, FormatCategory.VIDEO)):
-                    if not mime_type and fmt:
-                        mime_type = fmt.mime_type
-                    # Rename to a predictable indexed name for serving
-                    original_name = extracted_file.name
-                    ext = extracted_file.suffix
-                    indexed_name = f"{file_index}{ext}"
-                    target = extract_dir / indexed_name
-                    if extracted_file != target:
-                        extracted_file.rename(target)
+            mime_type, _ = mimetypes.guess_type(extracted_file.name)
+            fmt = format_registry.get_format(extracted_file.name)
+            if mime_type in valid_types or (fmt and fmt.category in (FormatCategory.IMAGE, FormatCategory.VIDEO)):
+                if not mime_type and fmt:
+                    mime_type = fmt.mime_type
+                original_name = extracted_file.name
+                rel_path = str(extracted_file.relative_to(extract_dir)).replace("\\", "/")
+                ext = extracted_file.suffix
+                media_name_lower = extracted_file.name.lower()
+                media_stem_lower = extracted_file.stem.lower()
 
-                    file_list.append({
-                        'file_id': file_index,
-                        'filename': original_name,
-                        'mime_type': mime_type,
-                        'url': f"/api/media/archive-file/{upload_id}/{file_index}",
-                    })
-                    file_index += 1
+                # Check for sibling sidecar in the nested directory BEFORE moving/renaming
+                sidecar_file_id = None
+                sidecar_filename = None
+
+                parent_dir = extracted_file.parent
+                found_sidecar: Optional[Path] = None
+                siblings = [s for s in parent_dir.iterdir() if s.is_file() and s != extracted_file]
+
+                # Exact match with extension (e.g. image.png.json, image.png.xmp)
+                for s in siblings:
+                    s_name = s.name.lower()
+                    if s_name == f"{media_name_lower}.json" or s_name == f"{media_name_lower}.xmp":
+                        found_sidecar = s
+                        break
+
+                # Stem match without extension (e.g. image.json, image.xmp)
+                if not found_sidecar:
+                    for s in siblings:
+                        s_name = s.name.lower()
+                        if s_name == f"{media_stem_lower}.json" or s_name == f"{media_stem_lower}.xmp":
+                            found_sidecar = s
+                            break
+
+                if found_sidecar and found_sidecar.exists():
+                    sidecar_ext = found_sidecar.suffix
+                    sidecar_target = extract_dir / f"{file_index}_sidecar{sidecar_ext}"
+                    sidecar_filename = found_sidecar.name
+                    sidecar_file_id = f"{file_index}_sidecar"
+                    found_sidecar.rename(sidecar_target)
+
+                # Rename to a predictable indexed name for serving
+                indexed_name = f"{file_index}{ext}"
+                target = extract_dir / indexed_name
+                if extracted_file != target:
+                    extracted_file.rename(target)
+
+                file_info = {
+                    'file_id': file_index,
+                    'filename': original_name,
+                    'path': rel_path,
+                    'mime_type': mime_type,
+                    'url': f"/api/media/archive-file/{upload_id}/{file_index}",
+                }
+                if sidecar_file_id:
+                    file_info['sidecar_file_id'] = sidecar_file_id
+                    file_info['sidecar_filename'] = sidecar_filename
+                    file_info['sidecar_url'] = f"/api/media/archive-file/{upload_id}/{sidecar_file_id}"
+
+                file_list.append(file_info)
+                file_index += 1
 
         # Update metadata so cleanup knows this is an extracted session
         with open(meta_path, 'w') as f:
@@ -1815,21 +1946,28 @@ async def extract_archive(
 @router.get("/archive-file/{upload_id}/{file_id}")
 async def get_archive_file(
     upload_id: str,
-    file_id: int,
+    file_id: str,
     current_user: User = Depends(require_admin_mode)
 ):
-    """Serve an individual extracted file from an archive session."""
+    """Serve an individual extracted file or sidecar from an archive session."""
     import re
 
     if not re.match(r'^[0-9a-f\-]{36}$', upload_id):
         raise HTTPException(status_code=400, detail="Invalid upload_id")
 
+    if not re.match(r'^\d+(_sidecar)?$', file_id):
+        raise HTTPException(status_code=400, detail="Invalid file_id")
+
     extract_dir = ARCHIVE_CHUNKS_DIR / upload_id / "extracted"
     if not extract_dir.exists():
         raise HTTPException(status_code=404, detail="No extracted files found")
 
-    # Find the file by index (could have various extensions)
-    matches = list(extract_dir.glob(f"{file_id}.*"))
+    # Find the file by index/id (could have various extensions)
+    if file_id.endswith("_sidecar"):
+        matches = list(extract_dir.glob(f"{file_id}.*"))
+    else:
+        matches = [p for p in extract_dir.glob(f"{file_id}.*") if "_sidecar" not in p.stem]
+
     if not matches:
         raise HTTPException(status_code=404, detail="File not found")
 

@@ -8,8 +8,8 @@ from sqlalchemy.engine import URL
 
 load_dotenv()
 
-APP_VERSION = "1.41.0-rc.3"
-SCHEMA_VERSION = 8
+APP_VERSION = "1.41.0"
+SCHEMA_VERSION = 12
 
 class Settings:
     def __init__(self):
@@ -19,6 +19,7 @@ class Settings:
         self.THUMBNAIL_DIR = self.MEDIA_DIR / "thumbnails"
         self.TRANSCODED_DIR = self.MEDIA_DIR / "transcoded"
         self.CACHE_DIR = self.MEDIA_DIR / "cache"
+        self.STRIPPED_CACHE_DIR = self.CACHE_DIR / "stripped"
         self.DATA_DIR = self.BASE_DIR / "data"
         self.MODELS_DIR = self.DATA_DIR / "models"
         self.SETTINGS_FILE = self.DATA_DIR / "settings.json"
@@ -27,6 +28,7 @@ class Settings:
         self.THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
         self.TRANSCODED_DIR.mkdir(parents=True, exist_ok=True)
         self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        self.STRIPPED_CACHE_DIR.mkdir(parents=True, exist_ok=True)
         self.DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.MODELS_DIR.mkdir(parents=True, exist_ok=True)
         
@@ -93,6 +95,7 @@ class Settings:
             "sidebar_filter_mode": "rating",
             "sidebar_custom_buttons": [],
             "media_type_tags": {"image": [], "gif": [], "video": []},
+            "auto_apply_ai_tags": False,
             "wd_tagger": {
                 "general_threshold": 0.35,
                 "character_threshold": 0.85,
@@ -121,7 +124,20 @@ class Settings:
                 "general": 1.0,
                 "copyright": 0.5,
                 "meta": 0.05
-            }
+            },
+            "metadata_parsers": {
+                "enabled": ["GalleryDlParser", "LoliSnatcherParser", "ExifXmpParser"],
+                "priority": ["GalleryDlParser", "LoliSnatcherParser", "ExifXmpParser"],
+                "exif_metadata_field_map": {
+                    "tags": ["XPKeywords", "dc:subject", "Keywords", "tags"],
+                    "rating": ["Rating", "xmp:Rating", "rating"],
+                    "source": ["dc:description", "ImageDescription", "source"],
+                    "description": ["UserComment", "Description", "description"]
+                }
+            },
+            "stripped_cache_max_mb": 0,
+            "booru_proxy_url": None,
+            "blur_explicit_thumbnails": False
         }
     
     def get_items_per_page(self) -> int:
@@ -276,6 +292,16 @@ class Settings:
         return self.settings.get("require_auth", False)
     
     @property
+    def BLUR_EXPLICIT_THUMBNAILS(self) -> bool:
+        val = self.file_settings.get("blur_explicit_thumbnails")
+        if val is not None:
+            return bool(val)
+        env_val = os.getenv("BLOMBOORU_BLUR_EXPLICIT_THUMBNAILS")
+        if env_val is not None:
+            return env_val.lower() in ("true", "1", "yes")
+        return bool(self.settings.get("blur_explicit_thumbnails", False))
+    
+    @property
     def SIDEBAR_FILTER_MODE(self) -> str:
         """Get sidebar filter mode: 'rating', 'custom', 'both', or 'off'"""
         if "sidebar_filter_mode" in self.file_settings:
@@ -319,6 +345,41 @@ class Settings:
         if val is not None:
             return val
         return self.settings.get("media_type_tags", {"image": [], "gif": [], "video": []})
+
+    @property
+    def AUTO_APPLY_AI_TAGS(self) -> bool:
+        """Whether to automatically apply tags parsed from AI metadata on upload."""
+        val = self.file_settings.get("auto_apply_ai_tags")
+        if val is not None:
+            return bool(val)
+        return bool(self.settings.get("auto_apply_ai_tags", False))
+
+    @property
+    def BOORU_PROXY_URL(self) -> Optional[str]:
+        """Get the configured proxy URL for booru requests and URL imports (SOCKS5/HTTP)."""
+        val = self.file_settings.get("booru_proxy_url")
+        if val is not None:
+            val_str = str(val).strip()
+            return val_str if val_str else None
+        env_val = os.getenv("BLOMBOORU_BOORU_PROXY_URL")
+        if env_val is not None:
+            env_str = env_val.strip()
+            return env_str if env_str else None
+        saved = self.settings.get("booru_proxy_url")
+        if saved:
+            saved_str = str(saved).strip()
+            return saved_str if saved_str else None
+        return None
+
+    def get_booru_proxies(self) -> Optional[dict]:
+        """Return a requests-compatible proxies dict if a booru proxy is configured, else None."""
+        proxy_url = self.BOORU_PROXY_URL
+        if not proxy_url:
+            return None
+        return {
+            "http": proxy_url,
+            "https": proxy_url,
+        }
 
     @property
     def CUSTOM_BACKGROUND(self) -> dict:
@@ -370,7 +431,7 @@ class Settings:
     
     @property
     def SHARED_TAG_DB_NAME(self) -> str:
-        return self.file_settings.get("shared_tags", {}).get("name") or os.getenv("SHARED_TAG_DB_NAME") or self.settings.get("shared_tags", {}).get("name", "shared_tags")
+        return self.file_settings.get("shared_tags", {}).get("name") or os.getenv("SHARED_TAG_DB_NAME") or os.getenv("SHARED_TAG_DB") or self.settings.get("shared_tags", {}).get("name", "shared_tags")
     
     @property
     def SHARED_TAG_DB_USER(self) -> str:
@@ -406,5 +467,42 @@ class Settings:
         merged = {**defaults, **saved}
         # Ensure all values are floats and positive, up to 99.99
         return {k: max(0.0, min(99.99, round(float(v), 2))) for k, v in merged.items()}
+
+    @property
+    def METADATA_PARSERS(self) -> dict:
+        """Get modular metadata parser settings (enabled, priority, field mapping)."""
+        defaults = {
+            "enabled": ["GalleryDlParser", "LoliSnatcherParser", "ExifXmpParser"],
+            "priority": ["GalleryDlParser", "LoliSnatcherParser", "ExifXmpParser"],
+            "exif_metadata_field_map": {
+                "tags": ["XPKeywords", "dc:subject", "Keywords", "tags"],
+                "rating": ["Rating", "xmp:Rating", "rating"],
+                "source": ["dc:description", "ImageDescription", "source"],
+                "description": ["UserComment", "Description", "description"]
+            }
+        }
+        saved = self.file_settings.get("metadata_parsers") or self.settings.get("metadata_parsers", {})
+        return {**defaults, **saved}
+
+    @property
+    def STRIPPED_CACHE_MAX_MB(self) -> int:
+        """Get max size of stripped cache in MB (0 = unlimited)."""
+        val = self.file_settings.get("stripped_cache_max_mb")
+        if val is not None:
+            try:
+                return max(0, int(val))
+            except (ValueError, TypeError):
+                pass
+        env_val = os.getenv("BLOMBOORU_STRIPPED_CACHE_MAX_MB")
+        if env_val:
+            try:
+                return max(0, int(env_val))
+            except (ValueError, TypeError):
+                pass
+        val = self.settings.get("stripped_cache_max_mb", 0)
+        try:
+            return max(0, int(val))
+        except (ValueError, TypeError):
+            return 0
 
 settings = Settings()

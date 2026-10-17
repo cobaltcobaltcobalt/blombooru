@@ -1,3 +1,83 @@
+function escapeHtml(text, options = {}) {
+    if (text === null || text === undefined) {
+        if (typeof options === 'object' && options?.preserveNull) {
+            return text;
+        }
+        return '';
+    }
+    const str = String(text);
+    if (!str) {
+        if (typeof options === 'object' && options?.preserveNull) {
+            return text;
+        }
+        return '';
+    }
+
+    const mode = typeof options === 'string' ? options : (options?.mode || options?.pattern || 'all');
+
+    if (mode === 'minimal' || mode === 'no-quotes') {
+        return str
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function escapeAttr(text, options = {}) {
+    const opts = typeof options === 'string' ? { pattern: options } : { pattern: 'attr', ...options };
+    return escapeHtml(text, opts);
+}
+
+function formatFileSize(bytes, options = {}) {
+    if (typeof options === 'string') {
+        options = { mode: options };
+    }
+    const mode = options.mode || 'default';
+    const fallback = options.fallback !== undefined ? options.fallback : (mode === 'compact' ? '...' : undefined);
+
+    const num = Number(bytes);
+    const isLong = mode === 'long' || options.units === 'long';
+
+    if (!num || isNaN(num) || num <= 0) {
+        if (fallback !== undefined && (!bytes || isNaN(num))) {
+            return fallback;
+        }
+        return isLong ? '0 Bytes' : '0 B';
+    }
+
+    const defaultUnits = isLong
+        ? ['Bytes', 'KB', 'MB', 'GB', 'TB']
+        : ['B', 'KB', 'MB', 'GB', 'TB'];
+    const sizes = Array.isArray(options.units) ? options.units : defaultUnits;
+
+    const defaultDecimals = (mode === 'compact' || mode === 'approx') ? 1 : 2;
+    const decimals = typeof options.decimals === 'number' ? options.decimals : defaultDecimals;
+
+    const stripZeros = options.fixed ? false : (options.stripZeros !== undefined ? options.stripZeros : (mode !== 'fixed' && mode !== 'long'));
+
+    const k = 1024;
+    const i = Math.min(Math.floor(Math.log(num) / Math.log(k)), sizes.length - 1);
+    const value = num / Math.pow(k, i);
+    const formatted = stripZeros ? parseFloat(value.toFixed(decimals)) : value.toFixed(decimals);
+    return `${formatted} ${sizes[i]}`;
+}
+
+function formatBytes(bytes, options = {}) {
+    return formatFileSize(bytes, options);
+}
+
+window.escapeHtml = escapeHtml;
+window.escapeAttr = escapeAttr;
+window.formatFileSize = formatFileSize;
+window.formatBytes = formatBytes;
+
 class I18n {
     constructor() {
         this.currentLang = window.CURRENT_LANGUAGE || 'en';
@@ -55,6 +135,9 @@ class I18n {
      */
     t(key, params = {}) {
         if (!key) return '';
+        if (typeof key === 'object') {
+            return this.t(key.key || key.message, { ...key.params, ...params });
+        }
         if (typeof key === 'string' && key.includes(':::')) {
             const [baseKey, arg] = key.split(':::');
             const mergedParams = { error: arg, filename: arg, ...params };
@@ -89,9 +172,151 @@ class I18n {
 
 window.i18n = new I18n();
 
+class AutoScrollEngine {
+    constructor(options = {}) {
+        this.scrollEl = options.scrollEl || null;
+        this.topZone = options.topZone !== undefined ? options.topZone : 100;
+        this.bottomZone = options.bottomZone !== undefined ? options.bottomZone : 100;
+        this.minSpeed = options.minSpeed !== undefined ? options.minSpeed : 4;
+        this.maxSpeed = options.maxSpeed !== undefined ? options.maxSpeed : 22;
+
+        this._speed = 0;
+        this._rafId = null;
+        this._lastPointerX = 0;
+        this._lastPointerY = 0;
+        this._onScroll = null;
+    }
+
+    getScrollElement(customEl = null) {
+        if (customEl) {
+            if (typeof customEl === 'function') return customEl();
+            return customEl;
+        }
+        if (this.scrollEl) {
+            if (typeof this.scrollEl === 'function') return this.scrollEl();
+            return this.scrollEl;
+        }
+        return document.getElementById('main-scroll') || document.scrollingElement || document.documentElement || window;
+    }
+
+    check(clientX, clientY, options = {}) {
+        const scrollEl = this.getScrollElement(options.scrollEl);
+        if (!scrollEl) return;
+
+        const viewportHeight = window.innerHeight;
+        const topZone = options.topZone !== undefined ? options.topZone : this.topZone;
+        const bottomZone = options.bottomZone !== undefined ? options.bottomZone : this.bottomZone;
+        const minSpeed = options.minSpeed !== undefined ? options.minSpeed : this.minSpeed;
+        const maxSpeed = options.maxSpeed !== undefined ? options.maxSpeed : this.maxSpeed;
+
+        let bottomLimit = viewportHeight;
+        if (options.bottomElement) {
+            const rect = options.bottomElement.getBoundingClientRect();
+            if (rect.top > 0 && rect.top < viewportHeight) {
+                bottomLimit = rect.top;
+            }
+        } else if (typeof options.bottomLimit === 'function') {
+            bottomLimit = options.bottomLimit();
+        } else if (typeof options.bottomLimit === 'number') {
+            bottomLimit = options.bottomLimit;
+        } else {
+            const bar = document.querySelector('.manual-reorder-bar:not(.hidden)');
+            if (bar && bar.offsetParent !== null) {
+                const rect = bar.getBoundingClientRect();
+                if (rect.top > 0 && rect.top < viewportHeight) {
+                    bottomLimit = rect.top;
+                }
+            }
+        }
+
+        if (clientY < topZone) {
+            const ratio = Math.max(0, Math.min(1, (topZone - clientY) / topZone));
+            const speed = -Math.round(minSpeed + ratio * (maxSpeed - minSpeed));
+            this.start(scrollEl, speed, clientX, clientY, options.onScroll);
+        } else if (clientY > bottomLimit - bottomZone) {
+            const dist = clientY - (bottomLimit - bottomZone);
+            const ratio = Math.max(0, Math.min(1, dist / bottomZone));
+            const speed = Math.round(minSpeed + ratio * (maxSpeed - minSpeed));
+            this.start(scrollEl, speed, clientX, clientY, options.onScroll);
+        } else {
+            this.stop();
+        }
+    }
+
+    start(scrollEl, speed, clientX, clientY, onScroll = null) {
+        this._speed = speed;
+        this._lastPointerX = clientX;
+        this._lastPointerY = clientY;
+        if (onScroll !== undefined && onScroll !== null) {
+            this._onScroll = onScroll;
+        }
+
+        if (this._rafId) return;
+
+        const step = () => {
+            if (!this._speed) {
+                this._rafId = null;
+                return;
+            }
+
+            const isWindow = scrollEl === window || scrollEl === document.documentElement || scrollEl === document.body;
+            const currentTop = isWindow ? window.scrollY : scrollEl.scrollTop;
+            const maxScroll = isWindow
+                ? Math.max(0, document.documentElement.scrollHeight - window.innerHeight)
+                : Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+
+            if (isWindow) {
+                window.scrollBy(0, this._speed);
+            } else {
+                scrollEl.scrollTop += this._speed;
+            }
+
+            const newTop = isWindow ? window.scrollY : scrollEl.scrollTop;
+
+            if (this._onScroll) {
+                this._onScroll(this._lastPointerX, this._lastPointerY);
+            }
+
+            if (newTop === currentTop && (
+                (this._speed < 0 && currentTop <= 0) ||
+                (this._speed > 0 && currentTop >= maxScroll)
+            )) {
+                this.stop();
+                return;
+            }
+
+            this._rafId = requestAnimationFrame(step);
+        };
+
+        this._rafId = requestAnimationFrame(step);
+    }
+
+    updatePointer(clientX, clientY) {
+        this._lastPointerX = clientX;
+        this._lastPointerY = clientY;
+    }
+
+    stop() {
+        if (this._rafId) {
+            cancelAnimationFrame(this._rafId);
+            this._rafId = null;
+        }
+        this._speed = 0;
+        this._onScroll = null;
+    }
+
+    get isScrolling() {
+        return this._speed !== 0;
+    }
+}
+
+window.AutoScrollEngine = AutoScrollEngine;
+window.autoScroll = new AutoScrollEngine();
+
 // Core functionality
 class Blombooru {
     constructor() {
+        this.autoScroll = window.autoScroll;
         this.isAdminMode = this.getCookie('admin_mode') === 'true';
         this.isAuthenticated = !!this.getCookie('admin_token');
         this.currentPage = 1;
@@ -162,12 +387,24 @@ class Blombooru {
             });
         }
 
+        // Search inputs sync
+        const searchInput = document.getElementById('search-input');
+        const searchInputMobile = document.getElementById('search-input-mobile');
+        if (searchInput && searchInputMobile) {
+            searchInput.addEventListener('input', () => {
+                searchInputMobile.value = searchInput.value;
+            });
+            searchInputMobile.addEventListener('input', () => {
+                searchInput.value = searchInputMobile.value;
+            });
+        }
+
         // Search form (desktop)
         const searchForm = document.getElementById('search-form');
         if (searchForm) {
             searchForm.addEventListener('submit', (e) => {
                 e.preventDefault();
-                this.performSearch();
+                this.performSearch(searchInput);
             });
         }
 
@@ -176,7 +413,7 @@ class Blombooru {
         if (searchFormMobile) {
             searchFormMobile.addEventListener('submit', (e) => {
                 e.preventDefault();
-                this.performSearch();
+                this.performSearch(searchInputMobile);
             });
         }
 
@@ -346,14 +583,24 @@ class Blombooru {
         });
     }
 
-    performSearch() {
+    performSearch(sourceInput = null) {
         const searchInput = document.getElementById('search-input');
         const searchInputMobile = document.getElementById('search-input-mobile');
 
-        // Get query from whichever input has a value (prioritize desktop, then mobile)
-        const rawQuery = (searchInput && searchInput.value.trim()) ||
-            (searchInputMobile && searchInputMobile.value.trim()) ||
-            '';
+        let targetInput = sourceInput;
+        if (!targetInput) {
+            if (document.activeElement === searchInputMobile) {
+                targetInput = searchInputMobile;
+            } else if (document.activeElement === searchInput) {
+                targetInput = searchInput;
+            } else if (searchInputMobile && (searchInputMobile.checkVisibility ? searchInputMobile.checkVisibility() : searchInputMobile.offsetParent !== null)) {
+                targetInput = searchInputMobile;
+            } else {
+                targetInput = searchInput || searchInputMobile;
+            }
+        }
+
+        const rawQuery = (targetInput && targetInput.value) ? targetInput.value.trim() : '';
 
         const query = canonicalizeQuery(rawQuery);
         if (searchInput) searchInput.value = query;
@@ -442,11 +689,16 @@ class Blombooru {
             const error = await response.json();
             let errorMessage = error.detail || 'API call failed';
 
-            // Check if error detail is an i18n key (starts with error_ or exists in notifications.admin)
-            if (typeof errorMessage === 'string' && (errorMessage.startsWith('error_') || errorMessage.includes('.'))) {
-                const translated = window.i18n.t(`notifications.admin.${errorMessage}`);
-                if (translated !== `notifications.admin.${errorMessage}`) {
-                    errorMessage = translated;
+            // Check if error detail is an i18n key (starts with error_, exists in notifications.admin, or is a direct key)
+            if (typeof errorMessage === 'string') {
+                const adminTranslated = window.i18n.t(`notifications.admin.${errorMessage}`);
+                if (adminTranslated !== `notifications.admin.${errorMessage}`) {
+                    errorMessage = adminTranslated;
+                } else {
+                    const directTranslated = window.i18n.t(errorMessage);
+                    if (directTranslated !== errorMessage) {
+                        errorMessage = directTranslated;
+                    }
                 }
             }
 
@@ -456,13 +708,36 @@ class Blombooru {
         return response.json();
     }
 
-    showSearchSyntaxGuide() {
+    async showSearchSyntaxGuide() {
+        const lang = window.CURRENT_LANGUAGE || 'en';
+        if (!this.cachedSearchGuideHtml) {
+            this.cachedSearchGuideHtml = {};
+        }
+
+        if (!this.cachedSearchGuideHtml[lang]) {
+            try {
+                const response = await fetch(`/api/search/syntax-guide?lang=${encodeURIComponent(lang)}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data && data.html) {
+                        this.cachedSearchGuideHtml[lang] = data.html;
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load search syntax guide:', error);
+            }
+        }
+
+        const html = this.cachedSearchGuideHtml[lang] || '';
+        const content = `<div class="text-left space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar">${html}</div>`;
+
         if (!this.searchGuideModal) {
             this.searchGuideModal = new ModalHelper({
                 id: 'search-syntax-modal',
                 type: 'info',
+                maxWidth: 'max-w-2xl',
                 title: window.i18n.t('common.search_syntax_guide'),
-                message: this.getSearchSyntaxContent(),
+                message: content,
                 showIcon: false,
                 confirmText: window.i18n.t('common.got_it'),
                 cancelText: window.i18n.t('common.keybindings'),
@@ -470,16 +745,27 @@ class Blombooru {
                 cancelId: 'search-guide-keybindings'
             });
 
-            const keybindingsBtn = document.getElementById('search-guide-keybindings');
-            if (keybindingsBtn) {
-                keybindingsBtn.onclick = (e) => {
-                    e.preventDefault();
-                    this.searchGuideModal.hide();
-                    this.showKeybindingsGuide();
-                };
-            }
+            this.setupSearchGuideKeybindingsBtn();
+        } else {
+            this.searchGuideModal.updateContent({
+                message: content
+            });
+            this.setupSearchGuideKeybindingsBtn();
         }
         this.searchGuideModal.show();
+    }
+
+    setupSearchGuideKeybindingsBtn() {
+        const keybindingsBtn = document.getElementById('search-guide-keybindings');
+        if (keybindingsBtn) {
+            keybindingsBtn.onclick = (e) => {
+                e.preventDefault();
+                if (this.searchGuideModal) {
+                    this.searchGuideModal.hide();
+                }
+                this.showKeybindingsGuide();
+            };
+        }
     }
 
     showKeybindingsGuide() {
@@ -584,80 +870,311 @@ class Blombooru {
         `;
     }
 
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = String(text ?? '');
-        return div.innerHTML;
+    escapeHtml(text, options) {
+        return escapeHtml(text, options);
     }
 
-    getSearchSyntaxContent() {
-        return `
-            <div class="text-left space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
-                <div class="bg p-2 border-2 border-info">
-                    <h3 class="font-bold text-lg mb-2 text-info">${window.i18n.t('search.basic_tags')}</h3>
-                    <ul class="list-disc pl-5 space-y-1 text-sm">
-                        <li><code class="surface">tag1 tag2</code>: ${window.i18n.t('search.basic_desc_both')}</li>
-                        <li><code class="surface">-tag1</code>: ${window.i18n.t('search.basic_desc_exclude')}</li>
-                        <li><code class="surface">tag*</code>: ${window.i18n.t('search.basic_desc_wildcard')}</li>
-                        <li><code class="surface">?tag</code>: ${window.i18n.t('search.basic_desc_fuzzy')}</li>
-                    </ul>
-                </div>
+    escapeAttr(text, options) {
+        return escapeAttr(text, options);
+    }
 
-                <div class="bg p-2 border-2 border-info">
-                    <h3 class="font-bold text-lg mb-2 text-info">${window.i18n.t('search.ranges')}</h3>
-                    <p class="mb-2 text-xs">${window.i18n.t('search.ranges_operators')}: <code>:</code>, <code>..</code>, <code>&gt;=</code>, <code>&gt;</code>, <code>&lt;=</code>, <code>&lt;</code>, <code>!=</code></p>
-                    <ul class="list-disc pl-5 space-y-1 text-sm">
-                        <li><code class="surface">id:100</code>: ${window.i18n.t('search.ranges_exact')}</li>
-                        <li><code class="surface">id:100..200</code>: ${window.i18n.t('search.ranges_between')}</li>
-                        <li><code class="surface">id:&gt;=100</code>: ${window.i18n.t('search.ranges_gte')}</li>
-                        <li><code class="surface">id:1,2,3</code>: ${window.i18n.t('search.ranges_in_list')}</li>
-                        <li><code class="surface">gentags:13,16,&lt;8,&gt;91</code>: ${window.i18n.t('search.ranges_multi_list')}</li>
-                        <li><code class="surface">gentags:6,4 gentags:8,&gt;4</code>: ${window.i18n.t('search.ranges_folding')} (<code class="surface">gentags:&gt;=4</code>)</li>
-                    </ul>
-                    <p class="mt-2 text-xs text-secondary">${window.i18n.t('search.ranges_note')}</p>
-                </div>
+    formatFileSize(bytes, options) {
+        return formatFileSize(bytes, options);
+    }
 
-                <div class="bg p-2 border-2 border-info">
-                    <h3 class="font-bold text-lg mb-2 text-info">${window.i18n.t('search.meta_qualifiers')}</h3>
-                    <ul class="list-disc pl-5 space-y-1 text-sm">
-                        <li><code class="surface">width</code>, <code class="surface">height</code>: ${window.i18n.t('search.meta_dimensions')}</li>
-                        <li><code class="surface">filesize</code>: ${window.i18n.t('search.meta_filesize')}</li>
-                        <li><code class="surface">date</code>, <code class="surface">age</code>: ${window.i18n.t('search.meta_date')}</li>
-                        <li><code class="surface">rating</code>: ${window.i18n.t('search.meta_rating')}</li>
-                        <li><code class="surface">source</code>: ${window.i18n.t('search.meta_source')}</li>
-                        <li><code class="surface">filetype</code>: ${window.i18n.t('search.meta_filetype')}</li>
-                        <li><code class="surface">tagcount</code>, <code class="surface">gentags</code>, <code class="surface">chartags</code>...: ${window.i18n.t('search.meta_tagcount')}</li>
-                    </ul>
-                </div>
-
-                <div class="bg p-2 border-2 border-info">
-                    <h3 class="font-bold text-lg mb-2 text-info">${window.i18n.t('search.sorting')}</h3>
-                    <p class="mb-2 text-sm">${window.i18n.t('search.sorting_desc').replace('order:value', '<code>order:value</code>')}</p>
-                    <ul class="list-disc pl-5 space-y-1 text-sm">
-                        <li><code class="surface">id</code> / <code class="surface">id_desc</code>: ${window.i18n.t('search.sorting_newest')}</li>
-                        <li><code class="surface">id_asc</code>: ${window.i18n.t('search.sorting_oldest')}</li>
-                        <li><code class="surface">date_desc</code> / <code class="surface">date_asc</code>: ${window.i18n.t('search.sorting_date')}</li>
-                        <li><code class="surface">filesize</code> / <code class="surface">filesize_asc</code>: ${window.i18n.t('search.sorting_filesize')}</li>
-                        <li><code class="surface">width_desc</code> / <code class="surface">height_desc</code> / <code class="surface">mpixels_desc</code>: ${window.i18n.t('search.sorting_dimensions')}</li>
-                        <li><code class="surface">tagcount_desc</code> / <code class="surface">tagcount_asc</code>: ${window.i18n.t('search.sorting_tagcount')}</li>
-                        <li><code class="surface">landscape</code> / <code class="surface">portrait</code>: ${window.i18n.t('search.sorting_aspect')}</li>
-                    </ul>
-                </div>
-
-                <div class="bg p-2 border-2 border-info">
-                    <h3 class="font-bold text-lg mb-2 text-info">${window.i18n.t('search.examples')}</h3>
-                    <ul class="list-disc pl-5 space-y-1 text-sm">
-                        <li><code class="surface">cat source:none rating:s</code>: ${window.i18n.t('search.example_cat')}</li>
-                        <li><code class="surface">landscape filetype:mp4 filesize:&gt;5mb</code>: ${window.i18n.t('search.example_landscape')}</li>
-                        <li><code class="surface">id:1..100 order:id_asc</code>: ${window.i18n.t('search.example_id')}</li>
-                        <li><code class="surface">?girl? *_eyes -dog</code>: ${window.i18n.t('search.example_fuzzy')}</li>
-                        <li><code class="surface">tagcount:&gt;20 arttags:0</code>: ${window.i18n.t('search.example_tagcount')}</li>
-                    </ul>
-                </div>
-            </div>
-        `;
+    formatBytes(bytes, options) {
+        return formatBytes(bytes, options);
     }
 }
 
+// Explicit Thumbnail Blur Helpers
+window.shouldBlurExplicit = function () {
+    return document.body.dataset.blurExplicit === 'true';
+};
+
+window.wrapBlurThumbnail = function (img, media, item) {
+    if (!media || media.rating !== 'explicit' || !window.shouldBlurExplicit()) {
+        return img;
+    }
+    const blurWrapper = document.createElement('div');
+    blurWrapper.classList.add('blur-wrapper');
+    if (media.width && media.height) {
+        blurWrapper.style.aspectRatio = `${media.width} / ${media.height}`;
+    } else {
+        img.addEventListener('load', () => {
+            if (img.naturalWidth && img.naturalHeight) {
+                blurWrapper.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
+            }
+        }, { once: true });
+    }
+    blurWrapper.appendChild(img);
+    if (item) {
+        item.classList.add('blur-content');
+    }
+    return blurWrapper;
+};
+
+// GIF Gallery Item Hover Preview Helpers
+const GIF_BLOB_CACHE_LIMIT = 6;
+const gifBlobCache = new Map();
+
+function getCachedGifBlob(mediaId) {
+    if (!gifBlobCache.has(mediaId)) return null;
+    const entry = gifBlobCache.get(mediaId);
+    gifBlobCache.delete(mediaId);
+    gifBlobCache.set(mediaId, entry);
+    return entry.blob;
+}
+
+function setCachedGifBlob(mediaId, blob) {
+    if (gifBlobCache.has(mediaId)) {
+        const entry = gifBlobCache.get(mediaId);
+        entry.blob = blob;
+        gifBlobCache.delete(mediaId);
+        gifBlobCache.set(mediaId, entry);
+        return entry;
+    }
+    while (gifBlobCache.size >= GIF_BLOB_CACHE_LIMIT) {
+        const oldestKey = gifBlobCache.keys().next().value;
+        const oldest = gifBlobCache.get(oldestKey);
+        if (oldest && oldest.urls) {
+            oldest.urls.forEach(url => URL.revokeObjectURL(url));
+        }
+        gifBlobCache.delete(oldestKey);
+    }
+    const entry = { blob, urls: new Set() };
+    gifBlobCache.set(mediaId, entry);
+    return entry;
+}
+
+function createGifObjectUrl(mediaId, blob) {
+    let entry = gifBlobCache.get(mediaId);
+    if (!entry) {
+        entry = setCachedGifBlob(mediaId, blob);
+    }
+    const url = URL.createObjectURL(blob);
+    entry.urls.add(url);
+    return url;
+}
+
+function revokeGifObjectUrl(mediaId, url) {
+    if (!url) return;
+    URL.revokeObjectURL(url);
+    const entry = gifBlobCache.get(mediaId);
+    if (entry && entry.urls) {
+        entry.urls.delete(url);
+    }
+}
+
+function clearAllGifBlobCache() {
+    gifBlobCache.forEach(entry => {
+        if (entry.urls) {
+            entry.urls.forEach(url => URL.revokeObjectURL(url));
+        }
+    });
+    gifBlobCache.clear();
+}
+
+window.setupGifPreview = function (item, media, targetContainer, thumbnailImg, trackerSet = null) {
+    if (!item || !media || media.file_type !== 'gif' || !item.classList.contains('gif')) {
+        return;
+    }
+    if (window.matchMedia && !window.matchMedia('(hover: hover)').matches) {
+        return;
+    }
+
+    const fileUrl = `/api/media/${media.id}/file${media.hash ? '?v=' + media.hash : ''}`;
+    const thumb = thumbnailImg || item.querySelector('a img:not(.gif-preview)');
+
+    let gifImg = null;
+    let hoverTimer = null;
+    let currentToken = 0;
+    let currentBlobUrl = null;
+    let abortController = null;
+
+    const stopPlay = () => {
+        clearTimeout(hoverTimer);
+        ++currentToken;
+
+        if (abortController) {
+            abortController.abort();
+            abortController = null;
+        }
+
+        if (thumb) {
+            thumb.style.display = '';
+        }
+
+        if (gifImg) {
+            gifImg.onload = null;
+            gifImg.onerror = null;
+            gifImg.style.display = 'none';
+            gifImg.removeAttribute('src');
+        }
+
+        if (currentBlobUrl) {
+            revokeGifObjectUrl(media.id, currentBlobUrl);
+            currentBlobUrl = null;
+        }
+    };
+
+    const activateGif = (token) => {
+        if (token !== currentToken || !item.isConnected || !gifImg) return;
+        gifImg.style.display = 'block';
+        if (thumb) {
+            thumb.style.display = 'none';
+        }
+    };
+
+    const loadAndActivate = (url, token) => {
+        if (!gifImg) return;
+        gifImg.src = url;
+        if (gifImg.decode) {
+            gifImg.decode().then(() => {
+                activateGif(token);
+            }).catch(() => {
+                if (token === currentToken) {
+                    if (gifImg) gifImg.style.display = 'none';
+                    if (thumb) thumb.style.display = '';
+                }
+            });
+        } else {
+            gifImg.onload = () => activateGif(token);
+            gifImg.onerror = () => {
+                if (token === currentToken && thumb) {
+                    thumb.style.display = '';
+                }
+            };
+        }
+    };
+
+    const executePlay = () => {
+        const token = ++currentToken;
+
+        if (!gifImg) {
+            gifImg = document.createElement('img');
+            gifImg.className = 'gif-preview loaded';
+            gifImg.alt = thumb?.alt || media.filename || '';
+            gifImg.draggable = false;
+            gifImg.style.display = 'none';
+            targetContainer.appendChild(gifImg);
+            item._gifImg = gifImg;
+
+            if (trackerSet && typeof trackerSet.add === 'function') {
+                trackerSet.add(item);
+            }
+        }
+
+        const cachedBlob = getCachedGifBlob(media.id);
+        if (cachedBlob) {
+            if (currentBlobUrl) {
+                revokeGifObjectUrl(media.id, currentBlobUrl);
+                currentBlobUrl = null;
+            }
+            currentBlobUrl = createGifObjectUrl(media.id, cachedBlob);
+            loadAndActivate(currentBlobUrl, token);
+            return;
+        }
+
+        abortController = new AbortController();
+
+        fetch(fileUrl, { signal: abortController.signal })
+            .then(res => {
+                if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+                return res.blob();
+            })
+            .then(blob => {
+                if (token !== currentToken) return;
+                setCachedGifBlob(media.id, blob);
+                if (currentBlobUrl) {
+                    revokeGifObjectUrl(media.id, currentBlobUrl);
+                    currentBlobUrl = null;
+                }
+                currentBlobUrl = createGifObjectUrl(media.id, blob);
+                loadAndActivate(currentBlobUrl, token);
+            })
+            .catch(err => {
+                if (err.name === 'AbortError') return;
+                if (token === currentToken && thumb) {
+                    thumb.style.display = '';
+                }
+            });
+    };
+
+    const startPlay = () => {
+        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        if (navigator.connection && navigator.connection.saveData) return;
+        if (document.body.classList.contains('reorder-active-mode') ||
+            document.body.classList.contains('is-dragging') ||
+            item.closest('.selection-mode')) {
+            return;
+        }
+
+        clearTimeout(hoverTimer);
+        hoverTimer = setTimeout(executePlay, 150);
+    };
+
+    item.addEventListener('mouseenter', startPlay);
+    item.addEventListener('mouseleave', stopPlay);
+    item.addEventListener('focusin', startPlay);
+    item.addEventListener('focusout', stopPlay);
+
+    item._unloadGif = () => {
+        clearTimeout(hoverTimer);
+        ++currentToken;
+
+        if (abortController) {
+            abortController.abort();
+            abortController = null;
+        }
+
+        if (currentBlobUrl) {
+            revokeGifObjectUrl(media.id, currentBlobUrl);
+            currentBlobUrl = null;
+        }
+
+        if (thumb) {
+            thumb.style.display = '';
+        }
+        if (gifImg) {
+            gifImg.onload = null;
+            gifImg.onerror = null;
+            gifImg.removeAttribute('src');
+            gifImg.remove();
+            gifImg = null;
+            delete item._gifImg;
+        }
+    };
+};
+
+window.unloadAllGifs = function (trackerSet = null, container = null) {
+    if (trackerSet && typeof trackerSet.forEach === 'function') {
+        trackerSet.forEach(item => {
+            if (item && typeof item._unloadGif === 'function') {
+                item._unloadGif();
+            }
+        });
+        trackerSet.clear();
+    }
+
+    clearAllGifBlobCache();
+
+    const root = container || document;
+    const orphanGifs = root.querySelectorAll('.gif-preview');
+    orphanGifs.forEach(gif => {
+        gif.onload = null;
+        gif.onerror = null;
+        gif.removeAttribute('src');
+        gif.remove();
+    });
+
+    root.querySelectorAll('.gallery-item img:not(.gif-preview)').forEach(img => {
+        if (img.style.display === 'none') {
+            img.style.display = '';
+        }
+    });
+};
+
 // Initialize app
 const app = new Blombooru();
+window.app = app;

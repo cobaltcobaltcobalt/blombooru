@@ -84,7 +84,11 @@ class SimilarityIndex:
     @property
     def rebuild_pending(self) -> bool:
         """True when a rebuild is queued (debounce sleep) or actively running."""
-        return self._rebuild_pending or self._is_building
+        global _pending_rebuild_task
+        task_pending = _pending_rebuild_task is not None and not _pending_rebuild_task.done()
+        if not task_pending and not self._is_building:
+            self._rebuild_pending = False
+        return (self._rebuild_pending and task_pending) or self._is_building
 
     async def wait_for_build(self, timeout: float = 10.0) -> bool:
         """
@@ -100,6 +104,7 @@ class SimilarityIndex:
         # Execute rebuild immediately since a request needs it now
         if _pending_rebuild_task is not None and not _pending_rebuild_task.done() and not self._is_building:
             _pending_rebuild_task.cancel()
+            _pending_rebuild_task = None
             self._rebuild_pending = True
             try:
                 from ..database import SessionLocal
@@ -108,6 +113,10 @@ class SimilarityIndex:
                 )
             finally:
                 self._rebuild_pending = False
+            return True
+
+        if not self._is_building:
+            self._rebuild_pending = False
             return True
 
         loop = asyncio.get_running_loop() if hasattr(asyncio, "get_running_loop") else asyncio.get_event_loop()
@@ -288,12 +297,14 @@ class SimilarityIndex:
         finally:
             with self._lock:
                 self._is_building = False
+                self._rebuild_pending = False
 
     def get_similar_media(
         self,
         media_id: int,
         limit: int = 12,
         album_media_ids: Optional[Set[int]] = None,
+        excluded_media_ids: Optional[Set[int]] = None,
     ) -> List[Tuple[int, float]]:
         """
         Find top similar media items using cosine similarity of category-weighted TF-IDF vectors.
@@ -302,6 +313,7 @@ class SimilarityIndex:
             media_id: ID of the query media.
             limit: Maximum number of results to return.
             album_media_ids: Optional set of media IDs to restrict results to (for album context).
+            excluded_media_ids: Optional set of media IDs to exclude from results.
 
         Returns:
             List of (media_id, similarity_score) sorted descending by score.
@@ -325,12 +337,18 @@ class SimilarityIndex:
         # Exclude self
         scores[row_idx] = -1.0
 
+        if excluded_media_ids:
+            for ex_id in excluded_media_ids:
+                ex_row = data.media_id_to_row.get(ex_id)
+                if ex_row is not None:
+                    scores[ex_row] = -1.0
+
         if album_media_ids is not None:
             # Mask out items not in the album
             album_row_indices = [
                 data.media_id_to_row[mid]
                 for mid in album_media_ids
-                if mid in data.media_id_to_row and mid != media_id
+                if mid in data.media_id_to_row and mid != media_id and (not excluded_media_ids or mid not in excluded_media_ids)
             ]
             if not album_row_indices:
                 return []

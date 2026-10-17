@@ -79,7 +79,15 @@
             "maintenance": {
                 "title": "Обслуживание альбомов",
                 "search_manage": "Поиск и управление альбомами",
-                "search_manage_description": "Используйте для быстрого поиска, переименования, удаления альбомов и изменения их родительских альбомов."
+                "search_manage_description": "Используйте для быстрого поиска, переименования, удаления альбомов и изменения их родительских альбомов.",
+                "recalculate_metrics": "",
+                "recalculate_metrics_description": "",
+                "recalculate_metrics_btn": "",
+                "metrics_recalculated": "",
+                "prune_albums": "",
+                "prune_albums_description": "",
+                "prune_albums_btn": "",
+                "albums_pruned": ""
             },
             "none_root": "Пусто (Корневой альбом)",
             "parent_album": "Родительский альбом (опционально)",
@@ -198,7 +206,6 @@
                 "error_duplicate": "Медиафайл с таким же хэшем уже существует (дубль {filename})",
                 "error_duplicate_session": "Дубль файла {filename} в текущей сессии загрузки",
                 "error_invalid_url": "Неверный URL",
-                "error_redirect_not_followed": "Редиректы запрещены",
                 "error_ssrf_blocked": "Доступ к внутренним сетям запрещен",
                 "error_not_an_image": "URL не вернул медиафайл",
                 "error_image_403": "Доступ запрещен сайтом Booru (403)",
@@ -209,7 +216,6 @@
                 "hint": "Или введите прямую ссылку на изображение или видео. Файл будет добавлен в очередь загрузки для проверки.",
                 "fetch": "Получить данные",
                 "fetching": "Получение данных...",
-                "add_to_queue": "Добавить в очередь загрузки",
                 "added_to_queue": "Добавлено в очередь загрузки",
                 "fetch_error": "Ошибка при получении данных",
                 "already_in_queue": "Файл уже находится в очереди загрузки",
@@ -226,15 +232,20 @@
                 "error_fetch_failed": "Не удалось получить файл: {error}",
                 "error_proxy_failed": "Не удалось получить изображение: {error}",
                 "error_empty_file": "Получен пустой файл",
-                "error_import_failed": "Ошибка импорта: {error}"
+                "error_import_failed": "Ошибка импорта: {error}",
+                "batch_failed": ""
             }
         },
         "messages": {
             "adding_tags": "Добавление тегов...",
             "already_latest": "Обновление не требуется",
             "import_completed": "Импорт завершен успешно!",
+            "scan_loaded": "",
             "scan_loading": "Загрузка {count} файл(-ов)...",
             "scan_progress": "Загрузка {current}/{total}...",
+            "scan_queued": "",
+            "scan_ready_hint": "",
+            "scan_skipped": "",
             "skipped_too_long": "Пропущено (слишком длинное):",
             "update_error": "Ошибка проверки обновлений: {error}",
             "update_output": "Вывод обновления",
@@ -266,6 +277,8 @@
             "popular_tags_limit": "Лимит тегов",
             "require_auth": "Требовать авторизации для просмотра медиафайлов",
             "require_auth_hint": "При включении, пользователю необходимо авторизоваться для просмотра медиафайлов. Публичные ссылки остаются публичными",
+            "blur_explicit_thumbnails": "",
+            "blur_explicit_thumbnails_hint": "",
             "save_settings": "Сохранить настройки",
             "security": "Безопасность",
             "settings_saved": "Настройки успешно сохранены",
@@ -286,6 +299,10 @@
             "media_type_tags_gifs": "Теги GIF",
             "media_type_tags_videos": "Теги видео",
             "save_media_type_tags": "Сохранить автоматические теги",
+            "auto_apply_ai_tags": "",
+            "auto_apply_ai_tags_enable": "",
+            "auto_apply_ai_tags_hint": "",
+            "save_auto_apply_ai_tags": "",
             "custom_background": {
                 "title": "Пользовательский фон",
                 "enable": "Включить пользовательский фон",
@@ -363,6 +380,12 @@
                 "save_success": "Настройки успешно сохранены",
                 "title": "Настройки внешних Booru",
                 "username": "Имя пользователя",
+                "proxy_title": "",
+                "proxy_hint": "",
+                "test_proxy": "",
+                "proxy_test_success": "",
+                "proxy_test_failed": "",
+                "error_proxy_empty": "",
                 "error_domain_required": "Проверьте домен",
                 "error_save_failed": "Не удалось сохранить настройки",
                 "error_not_found": "Настройки не найдены",
@@ -602,8 +625,11 @@
         "default": "По умолчанию",
         "delete": "Удалить",
         "description": "Описание",
+        "discard": "",
+        "discard_changes": "",
         "disconnected": "Отключено",
         "edit": "Редактировать",
+        "enlarge": "",
         "error": "Ошибка",
         "go": "Перейти",
         "help": "Помощь",
@@ -622,10 +648,12 @@
         "password": "Пароль",
         "password_placeholder": "Оставьте пустым, если не используется",
         "port": "Порт",
+        "preview": "",
         "previous": "Предыдущий",
         "remove": "Удалить",
         "save": "Сохранить",
         "search": "Поиск",
+        "shrink": "",
         "success": "Успешно",
         "url_placeholder": "Введите URL",
         "warning": "Предупреждение",
@@ -688,7 +716,7 @@
         "error_403": "Доступ запрещен (403). Возможно, вам нужен API ключ или логин для выполнения этого действия."
     },
     "footer": {
-        "back_to_top": "К началу страницы"
+        "acknowledgements": ""
     },
     "gallery": {
         "add_items_to_albums_title": "Добавить {count} элемент(а/ов) в альбомы",
@@ -708,14 +736,23 @@
         "quick_filter": "Быстрый фильтр",
         "rating_filter": "Фильтр рейтинга",
         "filtering": "Фильтрация",
-        "remove_from_album": "Удалить из альбома",
         "select_all": "Выбрать все",
         "selecting_all": "Выбираем все...",
         "sort_by": "Сортировать по",
         "sort_random": "В случайном порядке",
         "sort_regen_random": "Новый случайный порядок",
         "sort_tag_count": "Количество тегов",
-        "sort_toggle_order": "Переключить порядок"
+        "sort_toggle_order": "Переключить порядок",
+        "sort_manual": "",
+        "sort_edit_order": "",
+        "sort_clear_order": "",
+        "sort_clear_confirm": "",
+        "sort_cancel_confirm": "",
+        "sort_order_saved": "",
+        "sort_order_save_failed": "",
+        "sort_order_clear_failed": "",
+        "sort_order_cleared": "",
+        "sort_order_save_partial": ""
     },
     "login": {
         "enter_credentials": "Введите свои учетные данные для доступа к {app_name}",
@@ -1025,6 +1062,7 @@
             "backend_saved": "Настройки бэкенда успешно сохранены",
             "theming_saved": "Настройки темы успешно сохранены",
             "media_type_tags_saved": "Автоматические теги для типов медиафайлов успешно сохранены",
+            "auto_apply_ai_tags_saved": "",
             "settings_updated": "Настройки успешно обновлены",
             "tag_deleted": "Тег {tag_name} успешно удален",
             "tag_merged": "Тег {source_tag} успешно объединен с {target_tag}",
@@ -1115,47 +1153,10 @@
         "setup_intro": "Давайте настроим ваш Blombooru. Это займет всего минуту",
         "setup_title": "Первоначальная настройка",
         "skip": "Пропустить",
-        "welcome": "Добро пожаловать в Blombooru!"
+        "welcome": "Добро пожаловать в {app_name}!"
     },
     "search": {
-        "basic_desc_both": "Найти медиафайлы с обоими тегами",
-        "basic_desc_exclude": "Исключить медиафайлы с тегом",
-        "basic_desc_fuzzy": "Нечеткий поиск (один или ноль символов перед)",
-        "basic_desc_wildcard": "Wildcard-поиск",
-        "basic_tags": "Базовые теги",
-        "example_cat": "Изображения с котами, рейтинга Safe без источника",
-        "example_fuzzy": "Поиск 1+ девушек с любым цветом глаз, без собак",
-        "example_id": "Первые 100 загрузок, сначала более ранние",
-        "example_landscape": "Альбомные видео высокого качества",
-        "example_tagcount": "Посты с большим количеством тегов, но без информации об артисте",
-        "examples": "Примеры поиска",
-        "meta_date": "Дата загрузки или относительный возраст",
-        "meta_dimensions": "Размеры изображения (в пикселях)",
-        "meta_filesize": "Вес файла (kb, mb, gb)",
-        "meta_filetype": "Расширение (png, gif и т.д.)",
-        "meta_qualifiers": "Мета-качества (например, рейтинг или наличие ссылки на источник)",
-        "meta_rating": "safe, questionable, explicit",
-        "meta_source": "URL источника или оставьте пустым",
-        "meta_tagcount": "Количество тегов",
-        "ranges": "Диапазоны",
-        "ranges_between": "Между (включительно)",
-        "ranges_exact": "Точное совпадение",
-        "ranges_folding": "Автоматически комбинировать и упрощать диапазоны (например, 1-3,5,7-9)",
-        "ranges_gte": "Больше или равно",
-        "ranges_in_list": "В списке",
-        "ranges_multi_list": "Множественный список",
-        "ranges_note": "Примечание: Диапазоны также могут использоваться с большинством мета-качеств",
-        "ranges_operators": "Операторы",
-        "random": "Мне повезет!",
-        "sorting": "Сортировка",
-        "sorting_aspect": "Соотношение сторон",
-        "sorting_date": "Дате загрузки",
-        "sorting_desc": "Используйте порядок:значение",
-        "sorting_dimensions": "Размерам",
-        "sorting_filesize": "Весу файла",
-        "sorting_newest": "Сначала новые (по умолчанию)",
-        "sorting_oldest": "Сначала старые",
-        "sorting_tagcount": "Общее количество тегов"
+        "random": "Мне повезет!"
     },
     "shared": {
         "ai_generation_data": "Данные AI-генерации",
@@ -1170,13 +1171,31 @@
     },
     "tags_gallery": {
         "sort_created_at": "Дате создания",
-        "sort_tag_name": "Имени тега",
-        "sort_post_count": "Количеству постов",
-        "sort_category": "Категории",
         "failed_load_list": "Не удалось загрузить список тегов",
-        "no_visible_tags": "Нет видимых тегов"
+        "implied_by": "",
+        "add_implied_tag": "",
+        "add_alias": "",
+        "load_details_failed": "",
+        "toggle_details": "",
+        "shared_rule_hint": "",
+        "alias_added": "",
+        "alias_removed": "",
+        "implication_added": "",
+        "implication_removed": "",
+        "bulk_delete_title": "",
+        "bulk_delete_message": ""
     },
     "upload": {
+        "folder": {
+            "mapping_title": "",
+            "create_albums": "",
+            "create_albums_hint": "",
+            "root_mode_title": "",
+            "root_mode_root": "",
+            "root_mode_subfolders": "",
+            "album_path": "",
+            "remove_album_path": ""
+        },
         "base_settings": {
             "select_album": "Выберите альбом для добавления..."
         },
@@ -1187,6 +1206,11 @@
             "no_new_tags": "Нет новых тегов",
             "new_albums": "Ожидающие новые альбомы",
             "no_new_albums": "Нет новых альбомов",
+            "already_exists": "",
+            "new_album": "",
+            "rename_album": "",
+            "remove_tag_confirm": "",
+            "remove_album_confirm": "",
             "used_in_media": "Используется в {count} медиафайле(-ах). Кликните для их выбора.",
             "media_count": "{count} медиафайл(-а/ов)"
         },
@@ -1194,6 +1218,7 @@
             "select_hint": "Выберите медиафайл для его редактирования либо выберите несколько медиафайлов для массового редактирования",
             "additional_tags": "Дополнительные теги",
             "editing": "Редактирование:",
+            "folder_album": "",
             "final_tags": "Финальные теги",
             "title": "Загруженные медиафайлы",
             "remove_confirm": "Вы действительно хотите удалить этот элемент из очереди загрузки?",
@@ -1207,6 +1232,7 @@
             "source_applied": "URL источника добавлен ко всем выбранным элементам",
             "description_applied": "Описание добавлено ко всем выбранным элементам",
             "album_added": "Альбом добавлен ко всем выбранным элементам",
+            "common_folder_album": "",
             "common_tags": "Общие теги"
         },
         "progress": {
@@ -1215,6 +1241,7 @@
             "extracted_success": "Извлечено {count} файл(-ов) из {filename}",
             "extracting": "Извлечение {filename}...",
             "failed": "{count} не удалось",
+            "file_fetch_error": "",
             "upload_success": "Успешно загружен(-о) {count} файл(-ов)",
             "uploading": "Загрузка...",
             "uploading_progress": "Загрузка {current}/{total}..."
@@ -1234,5 +1261,12 @@
     "changelog": {
         "modal_title": "Что нового",
         "english_only_notice": "Примечания к выпуску доступны только на английском языке."
+    },
+    "acknowledgements": {
+        "modal_title": "",
+        "search_placeholder": "",
+        "english_only_notice": "",
+        "not_found": "",
+        "failed_to_load": ""
     }
 }

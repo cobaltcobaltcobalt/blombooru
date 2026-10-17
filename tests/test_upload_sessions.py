@@ -1,6 +1,7 @@
 import asyncio
 import io
 import json
+from pathlib import Path
 import time
 from fastapi import HTTPException
 from starlette.datastructures import UploadFile
@@ -11,11 +12,14 @@ from backend.app.models import Album, Media, Tag, TagAlias, User
 from backend.app.routes.media import preview_or_create_tags
 from backend.app.routes.uploads import (
     BulkUpdateRequest,
+    add_untracked_file_to_session,
     bulk_update_staged_items,
     cleanup_upload_sessions,
     commit_upload_session,
     create_upload_session,
     get_pending_entities,
+    get_staged_item_file,
+    get_staged_item_thumbnail,
     get_upload_session,
     update_pending_tag,
     update_staged_item,
@@ -23,32 +27,15 @@ from backend.app.routes.uploads import (
 )
 from backend.app.schemas import (
     PendingTagUpdate,
+    UploadSessionAddUntrackedRequest,
     UploadSessionItemUpdate,
 )
-from tests.backup_test_base import BackupTestBase, make_dummy_jpeg
+from tests.test_base import BackupTestBase, make_dummy_jpeg
 
 class TestUploadSessions(BackupTestBase):
     def setUp(self):
         super().setUp()
         self.admin_user = User(id=1, username="admin", password_hash="hash")
-        self.cache_dir = self.tmp_path / "media" / "cache"
-        self.upload_sessions_dir = self.cache_dir / "upload-sessions"
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
-        self.upload_sessions_dir.mkdir(parents=True, exist_ok=True)
-
-        self.old_cache = settings.CACHE_DIR
-        settings.CACHE_DIR = self.cache_dir
-
-        # Point UPLOAD_SESSIONS_DIR to the isolated test directory
-        import backend.app.routes.uploads as uploads_module
-        self.old_module_sessions_dir = uploads_module.UPLOAD_SESSIONS_DIR
-        uploads_module.UPLOAD_SESSIONS_DIR = self.upload_sessions_dir
-
-    def tearDown(self):
-        import backend.app.routes.uploads as uploads_module
-        uploads_module.UPLOAD_SESSIONS_DIR = self.old_module_sessions_dir
-        settings.CACHE_DIR = self.old_cache
-        super().tearDown()
 
     def test_preview_or_create_tags_dry_run(self):
         """Test preview_or_create_tags returns proposed tags without creating DB rows in dry_run mode."""
@@ -127,6 +114,71 @@ class TestUploadSessions(BackupTestBase):
             ))
         self.assertEqual(ctx.exception.status_code, 409)
         self.assertIn("error_duplicate", ctx.exception.detail)
+
+    def test_upload_session_duplicate_within_session_and_cleanup(self):
+        """Test that uploading a file identical to an already staged item in the same session is rejected with 409 error_duplicate_session and cleans up raw files."""
+        session_res = asyncio.run(create_upload_session(current_user=self.admin_user))
+        session_id = session_res["session_id"]
+        session_dir = self.upload_sessions_dir / session_id
+
+        # 1. Upload first unique file with sidecar
+        jpeg1 = make_dummy_jpeg()
+        sidecar1 = UploadFile(filename="pic1.json", file=io.BytesIO(b'{"tags": "one"}'))
+        f1 = UploadFile(filename="pic1.jpg", file=io.BytesIO(jpeg1))
+        item1 = asyncio.run(upload_files_to_session(
+            session_id=session_id,
+            file=f1,
+            sidecar=sidecar1,
+            base_tags="first_item",
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+        self.assertIsNotNone(item1)
+        item1_id = item1["item_id"]
+        self.assertTrue((session_dir / "raw" / f"{item1_id}_pic1.jpg").exists())
+        self.assertTrue((session_dir / "raw" / f"{item1_id}_pic1.json").exists())
+
+        # 2. Upload duplicate of first file with sidecar
+        sidecar2 = UploadFile(filename="pic1_dup.json", file=io.BytesIO(b'{"tags": "dup"}'))
+        f2 = UploadFile(filename="pic1_dup.jpg", file=io.BytesIO(jpeg1))
+        with self.assertRaises(HTTPException) as ctx:
+            asyncio.run(upload_files_to_session(
+                session_id=session_id,
+                file=f2,
+                sidecar=sidecar2,
+                base_tags="dup_item",
+                current_user=self.admin_user,
+                db=self.db,
+            ))
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn("error_duplicate_session", ctx.exception.detail)
+
+        # Verify no orphan files were left for the rejected duplicate
+        raw_files = list((session_dir / "raw").iterdir())
+        self.assertEqual(len(raw_files), 2)  # only item1's image and sidecar
+        self.assertTrue(all(p.name.startswith(f"{item1_id}_") for p in raw_files))
+
+        # 3. Upload a second unique file (different bytes)
+        jpeg2 = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00`\x00`\x00\x00\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t\x08\n\x0c\x14\r\x0c\x0b\x0b\x0c\x19\x12\x13\x0f\x14\x1d\x1a\x1f\x1e\x1d\x1a\x1c\x1c $.' \",#\x1c\x1c(7),01444\x1f'9=82<.342\xff\xc0\x00\x0b\x08\x00\x02\x00\x02\x01\x01\x11\x00\xff\xc4\x00\x1f\x00\x00\x01\x05\x01\x01\x01\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\xff\xda\x00\x08\x01\x01\x00\x00?\x00\xbf\x00\xff\xd9"
+        f3 = UploadFile(filename="pic3.jpg", file=io.BytesIO(jpeg2))
+        item3 = asyncio.run(upload_files_to_session(
+            session_id=session_id,
+            file=f3,
+            base_tags="third_item",
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+        self.assertIsNotNone(item3)
+
+        # 4. Commit session - both unique items are committed successfully
+        commit_res = asyncio.run(commit_upload_session(
+            session_id=session_id,
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+        self.assertEqual(commit_res.total_created, 2)
+        self.assertEqual(commit_res.total_duplicates, 0)
+        self.assertEqual(commit_res.total_failed, 0)
 
     def test_new_tag_conflicting_assigned_category_harmonization(self):
         """Test that uploading a new media with conflicting category hints re-assigns new tags to the category in the upload queue."""
@@ -387,3 +439,328 @@ class TestUploadSessions(BackupTestBase):
         unwanted_tag = self.db.query(Tag).filter(Tag.name == "unwanted_duplicate_tag").first()
         self.assertIsNotNone(fresh_tag)
         self.assertIsNone(unwanted_tag)
+
+    def test_add_untracked_file_to_session_and_commit(self):
+        """Test staging and committing an untracked file residing on server disk in ORIGINAL_DIR."""
+        # Create an untracked file in settings.ORIGINAL_DIR
+        untracked_file = settings.ORIGINAL_DIR / "untracked_sample.jpg"
+        jpeg_data = make_dummy_jpeg()
+        untracked_file.write_bytes(jpeg_data)
+
+        session_res = asyncio.run(create_upload_session(current_user=self.admin_user))
+        session_id = session_res["session_id"]
+
+        req = UploadSessionAddUntrackedRequest(
+            file_path=str(untracked_file),
+            base_tags="scanned_tag nature",
+            base_rating="safe",
+            base_source="camera_local",
+        )
+
+        item = asyncio.run(add_untracked_file_to_session(
+            session_id=session_id,
+            request=req,
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+
+        self.assertEqual(item["filename"], "untracked_sample.jpg")
+        self.assertTrue(item["is_untracked"])
+        self.assertEqual(item["source_path"], str(untracked_file))
+        self.assertIsNone(item["staged_filename"])
+        self.assertEqual(item["file_size"], len(jpeg_data))
+
+        # Check thumbnail and file endpoints serve correctly
+        thumb_res = asyncio.run(get_staged_item_thumbnail(session_id=session_id, item_id=item["item_id"]))
+        self.assertTrue(Path(thumb_res.path).exists())
+
+        file_res = asyncio.run(get_staged_item_file(session_id=session_id, item_id=item["item_id"]))
+        self.assertEqual(Path(file_res.path).resolve(), untracked_file.resolve())
+
+        # Commit session
+        commit_res = asyncio.run(commit_upload_session(
+            session_id=session_id,
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+
+        self.assertEqual(commit_res.total_created, 1)
+        self.assertEqual(commit_res.total_duplicates, 0)
+        self.assertEqual(commit_res.total_failed, 0)
+
+        media = self.db.query(Media).filter(Media.filename == "untracked_sample.jpg").first()
+        self.assertIsNotNone(media)
+        self.assertTrue(untracked_file.exists())  # File kept in place
+        self.assertEqual(media.source, "camera_local")
+        tag_names = {t.name for t in media.tags}
+        self.assertIn("scanned_tag", tag_names)
+        self.assertIn("nature", tag_names)
+
+    def test_untracked_file_security_and_missing_paths(self):
+        """Test access denied for paths outside ORIGINAL_DIR and 404 for nonexistent files."""
+        session_res = asyncio.run(create_upload_session(current_user=self.admin_user))
+        session_id = session_res["session_id"]
+
+        # Path outside ORIGINAL_DIR
+        outside_path = self.tmp_path / "outside.jpg"
+        outside_path.write_bytes(make_dummy_jpeg())
+
+        req_outside = UploadSessionAddUntrackedRequest(file_path=str(outside_path))
+        with self.assertRaises(HTTPException) as cm:
+            asyncio.run(add_untracked_file_to_session(
+                session_id=session_id,
+                request=req_outside,
+                current_user=self.admin_user,
+                db=self.db,
+            ))
+        self.assertEqual(cm.exception.status_code, 403)
+
+        # Nonexistent path inside ORIGINAL_DIR
+        nonexistent = settings.ORIGINAL_DIR / "does_not_exist.jpg"
+        req_nonexistent = UploadSessionAddUntrackedRequest(file_path=str(nonexistent))
+        with self.assertRaises(HTTPException) as cm:
+            asyncio.run(add_untracked_file_to_session(
+                session_id=session_id,
+                request=req_nonexistent,
+                current_user=self.admin_user,
+                db=self.db,
+            ))
+        self.assertEqual(cm.exception.status_code, 404)
+
+    def test_upload_session_auto_apply_ai_tags(self):
+        """Test that AI metadata prompt tags are automatically applied when auto_apply_ai_tags is enabled."""
+        from PIL import Image, PngImagePlugin
+        from backend.app.models import TagImplication
+
+        # Create tag implication: cat_ears -> animal_ears
+        cat_tag = Tag(name="cat_ears", category="general", post_count=0)
+        animal_tag = Tag(name="animal_ears", category="general", post_count=0)
+        self.db.add_all([cat_tag, animal_tag])
+        self.db.commit()
+
+        implication = TagImplication(
+            target_tags=[cat_tag],
+            target_tag_patterns=[],
+            implied_tags=[animal_tag],
+        )
+        self.db.add(implication)
+        self.db.commit()
+
+        # Create PNG with AI generation metadata
+        info = PngImagePlugin.PngInfo()
+        ai_parameters = "1girl, solo, cat_ears, blue_hair\nNegative prompt: worst quality, low quality\nSteps: 20, Sampler: Euler a, CFG scale: 7"
+        info.add_text("parameters", ai_parameters)
+
+        png_io = io.BytesIO()
+        img = Image.new("RGB", (64, 64), color="blue")
+        img.save(png_io, format="PNG", pnginfo=info)
+        png_bytes = png_io.getvalue()
+
+        # Case A: auto_apply_ai_tags = False (default)
+        settings.file_settings["auto_apply_ai_tags"] = False
+        session_res1 = asyncio.run(create_upload_session(current_user=self.admin_user))
+        s_id1 = session_res1["session_id"]
+
+        upload_file1 = UploadFile(
+            file=io.BytesIO(png_bytes),
+            filename="ai_sample_disabled.png",
+            headers={"content-type": "image/png"},
+        )
+        item1 = asyncio.run(upload_files_to_session(
+            session_id=s_id1,
+            file=upload_file1,
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+        item1_tag_names = {t["name"] for t in item1.get("tags", [])}
+        self.assertEqual(len(item1_tag_names), 0)
+
+        # Case B: auto_apply_ai_tags = True
+        settings.file_settings["auto_apply_ai_tags"] = True
+        session_res2 = asyncio.run(create_upload_session(current_user=self.admin_user))
+        s_id2 = session_res2["session_id"]
+
+        upload_file2 = UploadFile(
+            file=io.BytesIO(png_bytes),
+            filename="ai_sample_enabled.png",
+            headers={"content-type": "image/png"},
+        )
+        item2 = asyncio.run(upload_files_to_session(
+            session_id=s_id2,
+            file=upload_file2,
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+        item2_tag_names = {t["name"] for t in item2.get("tags", [])}
+        self.assertIn("1girl", item2_tag_names)
+        self.assertIn("solo", item2_tag_names)
+        self.assertIn("cat_ears", item2_tag_names)
+        self.assertIn("animal_ears", item2_tag_names)
+        self.assertIn("blue_hair", item2_tag_names)
+
+        # Commit and verify DB media tags
+        commit_res = asyncio.run(commit_upload_session(
+            session_id=s_id2,
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+        self.assertEqual(commit_res.total_created, 1)
+
+        media = self.db.query(Media).filter(Media.filename.like("%ai_sample_enabled%")).first()
+        self.assertIsNotNone(media)
+        db_tag_names = {t.name for t in media.tags}
+        self.assertIn("1girl", db_tag_names)
+        self.assertIn("solo", db_tag_names)
+        self.assertIn("cat_ears", db_tag_names)
+        self.assertIn("animal_ears", db_tag_names)
+        self.assertIn("blue_hair", db_tag_names)
+
+    def test_upload_session_media_type_tags(self):
+        """Test that media_type_tags are automatically applied during staging."""
+        settings.file_settings["media_type_tags"] = {
+            "image": ["photo", "still_image"],
+            "gif": ["animation"],
+            "video": ["movie_clip"],
+        }
+
+        session_res = asyncio.run(create_upload_session(current_user=self.admin_user))
+        s_id = session_res["session_id"]
+
+        upload_file = UploadFile(
+            file=io.BytesIO(make_dummy_jpeg()),
+            filename="test_type_tags.jpg",
+            headers={"content-type": "image/jpeg"},
+        )
+        item = asyncio.run(upload_files_to_session(
+            session_id=s_id,
+            file=upload_file,
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+        staged_tags = {t["name"] for t in item.get("tags", [])}
+        self.assertIn("photo", staged_tags)
+        self.assertIn("still_image", staged_tags)
+
+    def test_clear_suggested_album_path_single_and_bulk(self):
+        """Test that passing suggested_album_path=None explicitly clears folder album assignment in single and bulk update."""
+        session_res = asyncio.run(create_upload_session(current_user=self.admin_user))
+        s_id = session_res["session_id"]
+
+        f1 = UploadFile(filename="item1.jpg", file=io.BytesIO(make_dummy_jpeg()))
+        f2 = UploadFile(filename="item2.jpg", file=io.BytesIO(make_dummy_jpeg() + b"extra"))
+
+        item1 = asyncio.run(upload_files_to_session(
+            session_id=s_id,
+            file=f1,
+            relative_path="FolderA/Sub/item1.jpg",
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+        item2 = asyncio.run(upload_files_to_session(
+            session_id=s_id,
+            file=f2,
+            relative_path="FolderA/Sub/item2.jpg",
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+
+        self.assertEqual(item1.get("suggested_album_path"), "FolderA/Sub")
+        self.assertEqual(item2.get("suggested_album_path"), "FolderA/Sub")
+
+        # 1. Clear item1 suggested_album_path via update_staged_item
+        updated1 = asyncio.run(update_staged_item(
+            session_id=s_id,
+            item_id=item1["item_id"],
+            update=UploadSessionItemUpdate.model_validate({"suggested_album_path": None}),
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+        self.assertIsNone(updated1.get("suggested_album_path"))
+        self.assertIsNone(updated1.get("suggested_album_segments"))
+
+        # Verify persisted in session meta
+        sess = asyncio.run(get_upload_session(session_id=s_id, current_user=self.admin_user))
+        items_map = {it["item_id"]: it for it in sess["items"]}
+        self.assertIsNone(items_map[item1["item_id"]].get("suggested_album_path"))
+        self.assertEqual(items_map[item2["item_id"]].get("suggested_album_path"), "FolderA/Sub")
+
+        # 2. Re-assign suggested_album_path to item1, then clear both in bulk update
+        asyncio.run(update_staged_item(
+            session_id=s_id,
+            item_id=item1["item_id"],
+            update=UploadSessionItemUpdate.model_validate({"suggested_album_path": "FolderB"}),
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+
+        bulk_res = asyncio.run(bulk_update_staged_items(
+            session_id=s_id,
+            req=BulkUpdateRequest.model_validate({
+                "item_ids": [item1["item_id"], item2["item_id"]],
+                "suggested_album_path": None,
+            }),
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+        for it in bulk_res["items"]:
+            self.assertIsNone(it.get("suggested_album_path"))
+            self.assertIsNone(it.get("suggested_album_segments"))
+
+    def test_upload_session_commit_recalculates_album_metrics(self):
+        """Test that committing items linked to albums or suggested album paths properly recalculates metrics for albums and their ancestors."""
+        parent_album = Album(
+            name="Artworks",
+            cached_rating=RatingEnum.safe,
+            cached_media_count=0,
+            cached_direct_media_count=0,
+        )
+        self.db.add(parent_album)
+        self.db.commit()
+        self.db.refresh(parent_album)
+
+        session_res = asyncio.run(create_upload_session(current_user=self.admin_user))
+        s_id = session_res["session_id"]
+
+        f1 = UploadFile(filename="pic1.jpg", file=io.BytesIO(make_dummy_jpeg()))
+        f2 = UploadFile(filename="pic2.jpg", file=io.BytesIO(make_dummy_jpeg() + b"extra_unique_bytes"))
+
+        item1 = asyncio.run(upload_files_to_session(
+            session_id=s_id,
+            file=f1,
+            base_rating="explicit",
+            base_album_ids=str(parent_album.id),
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+
+        item2 = asyncio.run(upload_files_to_session(
+            session_id=s_id,
+            file=f2,
+            base_rating="questionable",
+            relative_path="Artworks/2026/pic2.jpg",
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+
+        commit_res = asyncio.run(commit_upload_session(
+            session_id=s_id,
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+        self.assertEqual(commit_res.total_created, 2)
+        self.assertEqual(commit_res.total_failed, 0)
+
+        # Query albums from DB
+        self.db.refresh(parent_album)
+        child_album = self.db.query(Album).filter(Album.name == "2026").first()
+        self.assertIsNotNone(child_album)
+
+        # Verify child album metrics
+        self.assertEqual(child_album.cached_direct_media_count, 1)
+        self.assertEqual(child_album.cached_media_count, 1)
+        self.assertEqual(child_album.cached_rating, RatingEnum.questionable)
+
+        # Verify parent album metrics
+        self.assertEqual(parent_album.cached_direct_media_count, 1)
+        self.assertEqual(parent_album.cached_media_count, 2)
+        self.assertEqual(parent_album.cached_rating, RatingEnum.explicit)

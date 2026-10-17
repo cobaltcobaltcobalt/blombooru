@@ -21,22 +21,7 @@
 
 Blombooru is a private, single-user alternative to boorus like Danbooru and Gelbooru. It is designed for individuals who want a powerful, easy-to-use, and modern solution for organizing and tagging their personal media collections. With a focus on a clean user experience, robust administration, and easy customization, Blombooru puts you in complete control of your library.
 
-<details>
-<summary>View Screenshots</summary>
-
-**Homepage**
-<img width="1920" alt="Homepage" src=".github/images/Gallery.png" />
-
-**Media Viewer Page**
-<img width="1920" alt="Media-viewer page" src=".github/images/Media.png" />
-
-**Shared Media Page**
-<img width="1920" alt="Shared media page" src=".github/images/Shared.png" />
-
-**Admin Panel**
-<img width="1920" alt="Admin panel" src=".github/images/Admin_Panel.png" />
-
-</details>
+**[View screenshots](docs/Gallery.md)**
 
 ## Table of Contents
 
@@ -69,11 +54,6 @@ Blombooru is a private, single-user alternative to boorus like Danbooru and Gelb
     - [3. Filesystem Scan](#3-filesystem-scan)
     - [4. External URL Import](#4-external-url-import)
   - [Tagging \& Searching](#tagging--searching)
-    - [Basic Tags](#basic-tags)
-    - [Ranges](#ranges)
-    - [Meta Qualifiers](#meta-qualifiers)
-    - [Tag Counts](#tag-counts)
-    - [Sorting](#sorting)
   - [Sharing Media](#sharing-media)
   - [System Updater](#system-updater)
     - [How to Update](#how-to-update)
@@ -82,8 +62,10 @@ Blombooru is a private, single-user alternative to boorus like Danbooru and Gelb
   - [API \& Third-Party Apps](#api--third-party-apps)
     - [Connection Details](#connection-details)
     - [Supported Features](#supported-features)
+    - [Internal API](#internal-api)
 - [Theming](#theming)
 - [Technical Details](#technical-details)
+- [Documentation \& Community](#documentation--community)
 - [Disclaimer](#disclaimer)
 - [License](#license)
 
@@ -93,21 +75,29 @@ Blombooru is a private, single-user alternative to boorus like Danbooru and Gelb
 
 - **Danbooru-Style Tagging:** A familiar and powerful tagging system with categories (artist, character, copyright, etc.), tag-based searching, and negative tag exclusion.
 
+- **Tag Gallery & Management:** Browse, search, and manage your tags in a dedicated tag gallery.
+
 - **Easy Tag Database Imports:** Import custom tag lists via a simple CSV upload in the admin panel to keep your system current.
 
-- **Albums:** Organize your media into albums, which can hold both media items and other sub-albums for limitless nesting and organization.
+- **Albums:** Organize your media into albums, with support for nested sub-albums, manual sorting, and automatic album hierarchy creation from folder uploads. *Albums are Blombooru's equivalent to "pools" on other boorus!*
 
-- **Media Relations:** Link related media using parent-child relationships. Group image variations, multi-page comics, and more—keeping related content easily accessible.
+- **Media Relations & Similarity:** Link related media using parent-child relationships, or discover similar posts powered by a configurable similarity (TF-IDF) algorithm. Group image variations, multi-page comics, and more (keeping related content easily accessible).
+
+- **Markdown Descriptions:** Add rich, formatted descriptions to posts with full Markdown support.
 
 - **External Booru Import:** Seamlessly import posts from Danbooru and other booru sites (like Danbooru, Gelbooru, etc.) by simply pasting the post URL. Tags, rating, source, and media are all automatically fetched and mapped.
 
 ### AI & Automation
 
-- **AI-Friendly:** Easily view accompanying AI metadata for almost any media generated with SwarmUI, ComfyUI, A1111, and more. You can even append tags to the tag editor directly from the AI prompt.
+- **AI-Friendly:** Easily view accompanying AI metadata for media generated with SwarmUI, ComfyUI, A1111, InvokeAI, NovelAI, Fooocus, and more. You can even append tags to the tag editor directly from the AI prompt or optionally directly to the media uploader during import.
 
-- **Automatic Tagging:** Fast-track tagging with the WDv3 Auto Tagger integration, which analyzes images and suggests accurate tags with a single click. Supports optional Nvidia GPU acceleration for lightning-fast batch processing.
+- **Automatic Tagging:** Fast-track tagging with the WDv3 or PixAI Auto Tagger integration, which analyzes images and suggests accurate tags with a single click. Supports optional Nvidia GPU acceleration for lightning-fast batch processing.
+
+- **Sidecar Metadata:** Automatically imports metadata from sidecar files, perfect for those who use external downloaders such as gallery-dl or imgbrd-grabber.
 
 - **Tag Implications:** Define relationships between tags. When a target tag (or set of tags) is applied to a media item, the implied tags are automatically added as well.
+
+- **Tag Aliases:** Define aliases for tags to keep your tag list clean and organized. Using an alias will automatically apply the target tag instead.
 
 - **Automatic Tags by Media Type:** Automatically add pre-configured tags to each upload queue item based on its media type (Image, GIF, or Video).
 
@@ -119,21 +109,35 @@ Blombooru is a private, single-user alternative to boorus like Danbooru and Gelb
 
 - **Secure Media Sharing:** Generate unique, persistent links to share specific media. Shared items are presented in a stripped-down, secure view with optional sharing of AI metadata.
 
+- **Thumbnail Blurring:** Optionally blur explicit thumbnails across gallery and media views for safe browsing.
+
+- **API Key Management:** Generate and manage scoped (read/write/admin-level) API keys for scripts and third-party tools.
+
 ### Customization & Theming
 
 - **Modern & Responsive UI:** Built with Tailwind CSS for a beautiful and consistent experience on both desktop and mobile devices.
 
-- **Highly Customizable Theming:** Tailor the look and feel using simple CSS variables. Drop new `.css` files into the `themes` folder, register them in `themes.py`, and restart.
+- **Highly Customizable Theming:** Tailor the look and feel using simple CSS variables. Create, edit, import, and export custom themes directly in the Admin Panel.
 
 - **Many Themes to Choose From:** Blombooru comes with the four Catppuccin color palettes, Gruvbox light & dark, Everforest light & dark, OLED, and more!
 
+- **Customizable Shortcuts:** Fully rebindable keyboard shortcuts with an in-app keybinding editor for quick navigation.
+
+- **Multi-Language Support:** Translated interface available in several languages.
+
 ### Flexibility & Integration
 
-- **Flexible Media Uploads:** Add media via drag-and-drop, by importing a compressed archive, or by placing files in the storage directory and pressing "Scan for Untracked Media."
+- **SOCKS5/HTTP Proxy Support:** Configure a SOCKS5 or HTTP proxy through the Admin Panel to download external media through it. Perfect for accessing region-restricted content or for privacy reasons.
+
+- **Flexible Media Uploads:** Add media via drag-and-drop, compressed archives, filesystem scans, external booru- or direct media URL imports, or batch lists of URLs.
+
+- **On-The-Fly Tag Creation:** If a tag you want to add doesn't exist yet, you can create it on-the-fly directly from any tag input without needing to touch the Admin Panel.
 
 - **Thumbnail Management:** Easily repair broken or missing thumbnails from the Admin Panel. You can generate missing thumbnails or completely re-generate all thumbnails for large libraries.
 
-- **User-Friendly Onboarding:** A simple first-time setup process to configure your admin account, database connection, and branding.
+- **Backup & Restore:** Create full or partial backups (database, media files, and tags) directly from the Admin Panel.
+
+- **User-Friendly Onboarding:** A simple first-time setup process to configure your admin account, database connection, and branding. You can also import a full backup during setup.
 
 - **High-Performance Caching:** Optional Redis integration provides lightning-fast response times for heavy queries, autocompletes, and Danbooru-compatible API requests.
 
@@ -373,12 +377,11 @@ If you need to run multiple independent Blombooru instances (for example, separa
     ```
 
 - **Update a specific instance:**  
-    Navigate to the instance directory and use the built-in updater via the Admin Panel, or manually:
+    Navigate to the instance directory and update via Docker Compose:
 
     ```bash
     cd ~/blombooru-instance1
-    git pull
-    docker compose down && docker compose up --build -d
+    docker compose up -d --pull always
     ```
 
 **Data Isolation:**
@@ -491,10 +494,11 @@ Navigate to the site and click the **Admin Panel** button in the navbar, then lo
 To make any changes, you must log in as the admin. This protects you from accidentally deleting or editing media. While logged in as the admin, you can:
 
 - Upload, edit, or delete media
-- Add or remove tags
+- Add, edit, or remove tags, aliases, and implications
+- Organize and manually reorder albums
 - Share media
-- Perform bulk operations like multi-deleting items from the gallery
-- Manage system settings, including branding, security, external booru credentials, and optional Redis caching
+- Perform bulk operations like multi-tagging, rating adjustments, and multi-deleting items from the gallery
+- Manage system settings, including branding, themes, security, backups, external booru credentials, and optional Redis caching
 
 ### Adding Tags
 
@@ -548,95 +552,7 @@ Paste a URL from a supported booru site (e.g., those using the Danbooru or Gelbo
 
 - **Tag Display:** On a media page, tags are automatically sorted by category (Artist, Character, Copyright, General, Meta) and then alphabetically within each category.
 
-- **Search Syntax:** Blombooru supports a powerful Danbooru-compatible search syntax.
-
-#### Basic Tags
-
-| Syntax | Description |
-|:-------|:------------|
-| `tag1 tag2` | Find media with both `tag1` AND `tag2` |
-| `-tag1` | Exclude media with `tag1` |
-| `tag*` | Wildcard search (finds `tag_name`, `tag_stuff`, etc.) |
-| `?tag` | Find media with one or zero characters before `tag` |
-
-#### Ranges
-
-Most numeric, size, date, and count qualifiers support range operators and comma-separated multi-value lists:
-
-| Syntax | Description |
-|:-------|:------------|
-| `id:100` | Exact match (`x == 100`) |
-| `id:100..200` | Between inclusive (`100 <= x <= 200`) |
-| `id:>=100` | Greater than or equal (`x >= 100`) |
-| `id:>100` | Greater than (`x > 100`) |
-| `id:<=100` | Less than or equal (`x <= 100`) |
-| `id:<100` | Less than (`x < 100`) |
-| `id:1,2,3` | In list (`x` is 1, 2, or 3) |
-| `gentags:13,16,<8,>91` | Multi-value list with mixed operators (matches 13 OR 16 OR <8 OR >91) |
-
-When multiple occurrences of the same qualifier appear in a query, they are automatically merged and simplified:
-- `rating:s human rating:q gentags:6,1 gentags:8,<4 hair` -> `rating:s,q human gentags:6,8,<4 hair`
-- `gentags:6,4 gentags:8,>4` -> `gentags:>=4` (folds `4` and `>4` into `>=4`, and removes `6` and `8` as they are covered by `>=4`)
-- `-rating:e cat -rating:q` -> `-rating:e,q cat`
-
-#### Meta Qualifiers
-
-| Qualifier | Description | Example(s) |
-|:----------|:------------|:-----------|
-| `id` | Search by internal ID | `id:100..200`, `id:>500`, `id:1,5,10` |
-| `width`, `height` | Search by image dimensions (pixels) | `width:>=1920`, `height:<720,>1080` |
-| `filesize` | Search by file size using `kb`, `mb`, `gb`, `b` units. Supports "fuzzy" matching: `filesize:52MB` finds `52.0MB` to `52.99MB`. | `filesize:1mb..5mb`, `filesize:<500kb,>10mb` |
-| `date` | Search by upload date (`YYYY-MM-DD`) | `date:2024-01-01`, `date:<2024-01-01,>2024-06-01` |
-| `age` | Search by age relative to now (`s`, `mi`, `h`, `d`, `w`, `mo`, `y`). Note: `<` means "newer than" (less age). | `age:<24h` (less than 1 day old), `age:1w..1mo`, `age:<24h,>1y` |
-| `rating` | Filter by rating: `s`/`safe`, `q`/`questionable`, `e`/`explicit`. Supports lists. | `rating:s,q`, `-rating:e` |
-| `source` | Search source. Use `none` for missing sources, `http` for web URLs. | `source:none`, `source:http,twitter` |
-| `filetype` | Search by file extension or media type | `filetype:png,jpg,gif`, `filetype:video` |
-| `md5` | Search by file hash (exact) | `md5:d34e4c...` |
-| `pool`, `album` | Search by album/pool ID or name. `any`/`none` supported. | `album:any`, `pool:favorites,5`, `pool:none` |
-| `parent` | Search by parent ID. `any`/`none` supported. | `parent:none`, `parent:123,456` |
-| `child` | Filter parent posts by children. `any`/`none` supported. | `child:any` (has children), `child:none` |
-| `duration` | Search video/gif duration in seconds | `duration:>60`, `duration:<10,>120` |
-
-> [!NOTE]
-> `duration` may not be set on all GIFs.
-
-#### Tag Counts
-
-Filter by the number of tags on a post:
-
-| Qualifier | Description |
-|:----------|:------------|
-| `tagcount` | Total tags |
-| `gentags` | General tags |
-| `arttags` | Artist tags |
-| `chartags` | Character tags |
-| `copytags` | Copyright tags |
-| `metatags` | Meta tags |
-
-**Example:** `tagcount:<10` (posts with few tags), `arttags:>=1` (posts with at least 1 artist tag)
-
-#### Sorting
-
-Order results with `order:{value}` or `sort:{value}`. Suffix with `_asc` or `_desc` for explicit ordering:
-
-| Value | Description |
-|:------|:------------|
-| `id` / `id_desc` / `id_asc` | Newest / oldest upload ID |
-| `date_desc` / `date_asc` | Upload date |
-| `filesize_desc` / `filesize_asc` | Largest / smallest file size |
-| `width_desc` / `width_asc` | Widest / narrowest pixel width |
-| `height_desc` / `height_asc` | Tallest / shortest pixel height |
-| `mpixels_desc` / `mpixels_asc` | Highest / lowest total resolution |
-| `duration_desc` / `duration_asc` | Longest / shortest duration |
-| `landscape` / `landscape_asc` | Widest / least landscape aspect ratio |
-| `portrait` / `portrait_asc` | Tallest / least portrait aspect ratio |
-| `tagcount_desc` / `tagcount_asc` | Most / fewest total tags |
-| `gentags_desc` / `arttags_desc`... | Category tag counts |
-| `rating_asc` / `rating_desc` | Rating order |
-| `filename_asc` / `filename_desc` | Alphabetical file name |
-| `md5_asc` / `md5_desc` | Hash order |
-| `random` / `random:<seed>` | Deterministic random order |
-| `custom` | Sort by the order given in `id:list`. Example: `id:3,1,2 order:custom` |
+- **Search Syntax:** Blombooru supports a powerful Danbooru-compatible search syntax. For a complete guide covering all operators and qualifiers, see the [Search Syntax Guide](docs/Search%20Syntax%20Guide/syntax_guide-en.md).
 
 ### Sharing Media
 
@@ -650,39 +566,34 @@ Order results with `order:{value}` or `sort:{value}`. Suffix with `_asc` or `_de
 Blombooru includes a built-in system updater in the Admin Panel that allows you to easily update your installation to the latest version.
 
 > [!WARNING]
-> Always back up your data before updating! While updates are designed to be safe, unexpected issues can occur, especially if you're updating to a new major version or the latest dev build.
+> Always back up your data before updating! While updates are designed to be safe, unexpected issues could occur, especially if you're updating to a pre-release or the dev version.
 
 #### How to Update
 
+> [!NOTE]
+> In-app updating is only supported for direct Python installations. For Docker deployments, update directly:
+> - **Pre-built image (GHCR):** `docker compose up -d --pull always`
+> - **Locally built image:** `docker compose down && git pull && docker compose -f docker-compose.dev.yml up -d --build`
+
 1. Log in as the admin and navigate to the **Admin Panel**.
-2. Select **System** tab
+2. Select the **System** tab.
 3. Scroll to the **System Update** section.
 4. Click **Check for Updates** to fetch the latest version information from GitHub.
 5. Review the changelog by clicking **View Changelog** to see what's new.
-6. If updates are available, click either:
-   - **Update to Latest Dev** - Updates to the latest commit on the `main` branch (bleeding edge)
-   - **Update to Latest Stable** - Updates to the latest tagged release (recommended)
+6. If an update is available, click **Update to Latest Stable** to begin the update.
 
-The updater will automatically run `git pull` (or `git checkout <tag>`) and display the output. After updating, **restart Blombooru** to apply the changes:
-
-- **Docker:** `docker compose down && docker compose up -d`
-
-> [!NOTE]
-> Docker updates are not supported at the moment. When running in Docker, Blombooru will show a warning, telling you to manually run `git pull` on host machine and rebuild the container.
-
-- **Python:** Stop the server (Ctrl+C) and run `python run.py` again
+The updater will automatically fetch the latest release tag and check it out. After updating, **restart Blombooru** to apply the changes.
 
 #### Dependency Changes
 
-If the update includes changes to `requirements.txt` or `docker-compose.yml`, the updater will display a notice. You will need to:
+For direct Python installations, the updater automatically installs updated dependencies if `requirements.txt` has changed. If the automatic installation fails, manually run `pip install -r requirements.txt` in your virtual environment.
 
-- **Docker:** Run `docker compose down && docker compose up --build -d` to rebuild the container
-- **Python:** Stop the server (Ctrl+C) and run `pip install -r requirements.txt` before running `python run.py` again.
+If configuration files (such as `docker-compose.yml` or `example.env`) have changed, the updater will display a notice with download links to updated release assets.
 
 ### Account Recovery
 
 > [!WARNING]
-> Resetting the password does not invalidate existing login sessions (tokens remain valid until they expire, up to 30 days). If you suspect the account was compromised, also consider rotating your `SECRET_KEY` (stored in `data/settings.json` or `.env`) and restarting your instance, which will immediately invalidate all active sessions.
+> Resetting the password does not invalidate existing login sessions (tokens remain valid until they expire, up to 30 days). If you suspect the account was compromised, also consider rotating your `SECRET_KEY` (stored in `data/settings.json` or configured via `BLOMBOORU_SECRET_KEY`) and restarting your instance, which will immediately invalidate all active sessions.
 
 If you've forgotten your admin password or need to change the admin username, you can use the `pass_reset.py` script.
 
@@ -753,15 +664,17 @@ Blombooru implements a **Danbooru v2 compatible API**, allowing you to use exist
 > [!NOTE]
 > Write operations (uploading, editing, etc.) via the API are read-only or stubbed to prevent errors in third-party apps. Social features such as voting, favoriting, comments, forums, DMs, and wiki pages return empty results.
 
+#### Internal API
+
+Blombooru also provides an internal REST API for administrative tasks, content management, and custom automations. For details on available endpoints and authentication, see the [Internal API Documentation](docs/Internal%20API/Introduction.md). Note that the internal API has no stability guarantees and may change between releases, and that the API docs are only available in English.
+
 ## Theming
 
 Blombooru is designed to be easily themeable.
 
-- **CSS Variables:** The core colors are controlled by CSS variables defined in the default theme(s).
+- **Theme Management:** Custom themes can be created, edited, exported, and imported directly in the Admin Panel without restarting the server.
 
-- **Custom Themes:** To create your own theme, simply create a new `.css` file in the `frontend/static/themes/` directory, copy the entire contents of the `default_dark.css` theme, and start customizing! Then register it in the `backend/app/themes.py` file to use it.
-
-Your new theme will automatically appear in the theme-picker dropdown in the Admin Panel.
+- **CSS Variables:** The core colors are controlled by CSS variables defined in each theme.
 
 ## Technical Details
 
@@ -773,7 +686,18 @@ Your new theme will automatically appear in the theme-picker dropdown in the Adm
 | **Caching** | Redis 7+ (Optional) |
 | **Shared Tags** | Optional external PostgreSQL instance for sharing tags between instances |
 | **Media Storage** | Local filesystem with paths referenced in the database. Original metadata is always preserved but can optionally be stripped on-the-fly in shared media. |
-| **Supported Formats** | JPG, PNG, WEBP, GIF, MP4, WEBM |
+| **Supported Image Formats** | JPG, PNG, WEBP, GIF, AVIF, JXL, BMP, TIFF, HEIC/HEIF |
+| **Supported Video Formats** | MP4, WEBM, MOV, M4V, MKV, AVI |
+
+## Documentation & Community
+
+- [Search Syntax Guide](docs/Search%20Syntax%20Guide/syntax_guide-en.md): Full syntax reference with query examples.
+- [Internal API Documentation](docs/Internal%20API/Introduction.md): Endpoints for developers and automation scripts.
+- [Screenshots Gallery](docs/Gallery.md): Visual overview of the user interface and features.
+- [Changelog](CHANGELOG.md): Summary of the release notes for each version.
+- [Contributing](CONTRIBUTING.md): Guidelines for code and translation contributions.
+- [Security Policy](SECURITY.md): Vulnerability reporting and security information.
+- [Acknowledgements](ACKNOWLEDGEMENTS.md): Credits for third-party libraries and assets.
 
 ## Disclaimer
 

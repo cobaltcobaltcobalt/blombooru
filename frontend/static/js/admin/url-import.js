@@ -2,6 +2,7 @@ class UrlImporter {
     constructor(uploader) {
         this.uploader = uploader;
         this.isFetching = false;
+        this.abortController = null;
 
         this.container = document.getElementById('url-import-section');
         if (this.container) {
@@ -32,6 +33,16 @@ class UrlImporter {
         }
     }
 
+    cancel() {
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = null;
+        }
+        this.isFetching = false;
+        if (this.fetchBtn) this.fetchBtn.disabled = false;
+        this.clearStatus();
+    }
+
     showStatus(message, type = 'info') {
         if (!this.statusArea) return;
         const colorClass = type === 'error' ? 'text-danger' : type === 'success' ? 'text-success' : 'text-secondary';
@@ -45,6 +56,28 @@ class UrlImporter {
         this.statusArea.innerHTML = '';
     }
 
+    async importSingleUrl(url, signal = null) {
+        const fetchSignal = signal || this.abortController?.signal || this.uploader?.uploadAbortController?.signal;
+
+        const response = await fetch('/api/media/url-import/fetch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url }),
+            signal: fetchSignal,
+        });
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            if (response.status === 403 || (error.detail && error.detail.includes('403'))) {
+                throw new Error('errors.error_403');
+            }
+            throw new Error(error.detail || 'admin.media_management.url_import.fetch_error');
+        }
+
+        const media = await response.json();
+        await this.addToQueue(media, fetchSignal);
+    }
+
     async fetchMedia() {
         const url = this.urlInput?.value?.trim();
         if (!url) return;
@@ -53,30 +86,26 @@ class UrlImporter {
         this.isFetching = true;
         this.clearStatus();
 
+        this.abortController = new AbortController();
+        const signal = this.abortController.signal;
+
         this.showStatus(window.i18n.t('admin.media_management.url_import.fetching'), 'info');
         this.fetchBtn.disabled = true;
 
         try {
-            const response = await fetch('/api/media/url-import/fetch', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url }),
-            });
-
-            if (!response.ok) {
-                const error = await response.json().catch(() => ({}));
-                if (response.status === 403 || (error.detail && error.detail.includes('403'))) {
-                    throw new Error('errors.error_403');
-                }
-                throw new Error(error.detail || 'admin.media_management.url_import.fetch_error');
+            await this.importSingleUrl(url, signal);
+            if (signal.aborted || this.uploader?.isAborted?.()) {
+                this.clearStatus();
+                return;
             }
-
-            const media = await response.json();
-            await this.addToQueue(media);
             this.showStatus(window.i18n.t('admin.media_management.url_import.added_to_queue'), 'success');
             if (this.urlInput) this.urlInput.value = '';
 
         } catch (e) {
+            if (e.name === 'AbortError' || signal.aborted || this.uploader?.isAborted?.()) {
+                this.clearStatus();
+                return;
+            }
             console.error('URL import fetch error:', e);
             // Some errors are just simple strings, others are translation keys
             let errorMsg = e.message;
@@ -89,15 +118,99 @@ class UrlImporter {
             this.showStatus(errorMsg, 'error');
         } finally {
             this.isFetching = false;
-            this.fetchBtn.disabled = false;
+            if (this.fetchBtn) this.fetchBtn.disabled = false;
+            this.abortController = null;
         }
     }
 
-    async addToQueue(media) {
+    async importFromTextFile(file, externalSignal = null) {
+        if (!file) return;
+        if (this.isFetching) return;
+        this.isFetching = true;
+        this.clearStatus();
+        if (this.fetchBtn) this.fetchBtn.disabled = true;
+
+        this.abortController = new AbortController();
+        const signal = externalSignal || this.abortController.signal;
+
+        try {
+            const content = await file.text();
+            if (signal.aborted || this.uploader?.isAborted?.()) return;
+
+            const lines = content.split(/\r?\n/)
+                .map(line => line.trim())
+                .filter(line => line && !line.startsWith('#'));
+
+            if (lines.length === 0) {
+                return;
+            }
+
+            let successCount = 0;
+            let failedCount = 0;
+            const total = lines.length;
+
+            for (let i = 0; i < total; i++) {
+                if (signal.aborted || this.uploader?.isAborted?.()) {
+                    break;
+                }
+                const url = lines[i];
+                this.showStatus(`${window.i18n.t('admin.media_management.url_import.fetching')} (${i + 1}/${total})`, 'info');
+                try {
+                    await this.importSingleUrl(url, signal);
+                    successCount++;
+                } catch (e) {
+                    if (e.name === 'AbortError' || signal.aborted || this.uploader?.isAborted?.()) {
+                        break;
+                    }
+                    console.error(`Failed to import URL from batch: ${url}`, e);
+                    failedCount++;
+                }
+            }
+
+            if (signal.aborted || this.uploader?.isAborted?.()) {
+                this.clearStatus();
+                return;
+            }
+
+            if (successCount > 0) {
+                this.showStatus(window.i18n.t('admin.media_management.url_import.added_to_queue'), 'success');
+            } else {
+                this.clearStatus();
+            }
+
+            if (failedCount > 0) {
+                if (window.app && window.app.showNotification) {
+                    window.app.showNotification(
+                        window.i18n.t('admin.media_management.url_import.batch_failed', { count: failedCount }),
+                        'error'
+                    );
+                }
+            }
+        } catch (e) {
+            if (e.name === 'AbortError' || signal.aborted || this.uploader?.isAborted?.()) {
+                this.clearStatus();
+                return;
+            }
+            console.error('Error processing batch URL file:', e);
+            if (window.app && window.app.showNotification) {
+                window.app.showNotification(
+                    window.i18n.t('admin.media_management.url_import.batch_failed', { count: 1 }),
+                    'error'
+                );
+            }
+        } finally {
+            this.isFetching = false;
+            if (this.fetchBtn) this.fetchBtn.disabled = false;
+            this.abortController = null;
+        }
+    }
+
+    async addToQueue(media, signal = null) {
         if (!media || !this.uploader) return;
+        const fetchSignal = signal || this.abortController?.signal || this.uploader?.uploadAbortController?.signal;
 
         const proxyUrl = `/api/media/url-import/proxy?url=${encodeURIComponent(media.file_url)}`;
-        const response = await fetch(proxyUrl);
+        const response = await fetch(proxyUrl, { signal: fetchSignal });
 
         if (!response.ok) {
             const error = await response.json().catch(() => ({}));
@@ -140,7 +253,7 @@ class UrlImporter {
             };
         }
 
-        await this.uploader.addBooruImport(file, importOptions);
+        await this.uploader.addBooruImport(file, importOptions, { signal: fetchSignal });
     }
 }
 

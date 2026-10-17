@@ -13,6 +13,9 @@ class UploadUploaderShell {
         this.queueGrid = null;
         this.pendingPanel = null;
         this.isProcessingFiles = false;
+        this.uploadAbortController = null;
+        this._currentArchiveUploadId = null;
+        this._originalUploadText = null;
 
         if (this.uploadArea) {
             this.init();
@@ -23,9 +26,65 @@ class UploadUploaderShell {
         this.setupComponents();
         this.setupDragAndDrop();
         this.setupFileInput();
+        this.setupFolderMappingControls();
         this.setupSubmitControls();
         this.loadAlbums();
         this.loadMediaTypeTags();
+    }
+
+    setupFolderMappingControls() {
+        this.folderMappingBar = document.getElementById('folder-mapping-bar');
+        this.folderMappingToggle = document.getElementById('folder-mapping-toggle');
+        this.folderRootOptions = document.getElementById('folder-mapping-root-options');
+        this.folderRootModeButtons = document.querySelectorAll('.folder-root-mode-btn');
+        this.folderRootModeLabelRoot = document.getElementById('folder-root-mode-label-root');
+        this.currentFolderRootMode = 'use_root';
+
+        if (this.folderMappingToggle) {
+            this.folderMappingToggle.addEventListener('change', async () => {
+                const enabled = this.folderMappingToggle.checked;
+                if (this.folderRootOptions) {
+                    this.folderRootOptions.style.display = enabled ? '' : 'none';
+                }
+                const rootMode = this.getFolderMappingMode();
+                await this.session.setFolderMapping(enabled, rootMode);
+            });
+        }
+
+        if (this.folderRootModeButtons) {
+            this.folderRootModeButtons.forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const mode = btn.dataset.mode;
+                    if (this.currentFolderRootMode === mode) return;
+                    this.setFolderRootModeButtonState(mode);
+                    const enabled = this.folderMappingToggle ? this.folderMappingToggle.checked : true;
+                    await this.session.setFolderMapping(enabled, mode);
+                });
+            });
+            this.setFolderRootModeButtonState(this.currentFolderRootMode);
+        }
+    }
+
+    setFolderRootModeButtonState(activeMode) {
+        this.currentFolderRootMode = activeMode;
+        if (!this.folderRootModeButtons) return;
+        this.folderRootModeButtons.forEach(btn => {
+            const isActive = btn.dataset.mode === activeMode;
+            if (isActive) {
+                btn.classList.remove('bg', 'hover:border-primary');
+                btn.classList.add('bg-primary', 'border-primary', 'primary-text', 'hover:bg-primary');
+            } else {
+                btn.classList.remove('bg-primary', 'border-primary', 'primary-text', 'hover:bg-primary');
+                btn.classList.add('bg', 'hover:border-primary');
+            }
+        });
+    }
+
+    getFolderMappingMode() {
+        if (this.folderMappingToggle && !this.folderMappingToggle.checked) {
+            return 'flatten';
+        }
+        return this.currentFolderRootMode || 'use_root';
     }
 
     async loadMediaTypeTags() {
@@ -48,7 +107,7 @@ class UploadUploaderShell {
 
     async loadAlbums() {
         try {
-            const response = await fetch('/api/albums?limit=1000&sort=name&order=asc');
+            const response = await fetch('/api/albums/tree');
             const data = await response.json();
             this.allAlbums = data.items || [];
             if (this.queueGrid) {
@@ -57,13 +116,6 @@ class UploadUploaderShell {
         } catch (error) {
             console.error('Error loading albums:', error);
         }
-    }
-
-    escapeHtml(text) {
-        if (!text) return '';
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
     }
 
     setupComponents() {
@@ -76,21 +128,20 @@ class UploadUploaderShell {
                 onTagsChange: () => {
                     if (this.pendingPanel) this.pendingPanel.refresh();
                 },
+                onSelectionChange: (selectedIds) => {
+                    if (this.pendingPanel) {
+                        this.pendingPanel.updateSelectionHighlight(selectedIds);
+                    }
+                },
             });
         }
 
         const pendingContainer = document.getElementById('upload-pending-container');
         if (pendingContainer) {
             this.pendingPanel = new PendingEntitiesPanel(pendingContainer, this.session, {
-                onHighlightItems: (itemIds) => {
+                onHighlightItems: (itemIds, event) => {
                     if (this.queueGrid) {
-                        this.queueGrid.selectedIds.clear();
-                        (itemIds || []).forEach(id => this.queueGrid.selectedIds.add(id));
-                        if (this.queueGrid.selectedIds.size > 0) {
-                            this.queueGrid.activeItemId = Array.from(this.queueGrid.selectedIds)[0];
-                        }
-                        this.queueGrid.updateSelectionVisuals();
-                        this.queueGrid.syncEditor();
+                        this.queueGrid.selectItems(itemIds, event);
                     }
                 }
             });
@@ -105,13 +156,31 @@ class UploadUploaderShell {
         const count = this.session.getItemCount();
         const queueSection = document.getElementById('upload-review-section');
         const submitControls = document.getElementById('submit-controls');
+        const submitBtn = document.getElementById('upload-submit-btn');
 
-        if (count > 0) {
+        if (count > 0 || this.isProcessingFiles) {
             if (queueSection) queueSection.style.display = 'block';
             if (submitControls) submitControls.style.display = 'flex';
+            if (submitBtn) {
+                submitBtn.disabled = this.session.isCommitting || count === 0;
+            }
+
+            // Check if folder mapping controls should be displayed
+            const items = this.session.getAllItems();
+            const hasFolders = items.some(it => it.relative_path && it.relative_path.includes('/'));
+            if (this.folderMappingBar) {
+                this.folderMappingBar.style.display = hasFolders ? 'block' : 'none';
+            }
+
+            if (hasFolders && this.folderRootModeLabelRoot) {
+                const sampleItem = items.find(it => it.relative_path && it.relative_path.includes('/'));
+                const rootName = sampleItem ? sampleItem.relative_path.split('/')[0] : 'root';
+                this.folderRootModeLabelRoot.textContent = window.i18n.t('upload.folder.root_mode_root', { root: rootName });
+            }
         } else {
             if (queueSection) queueSection.style.display = 'none';
             if (submitControls) submitControls.style.display = 'none';
+            if (this.folderMappingBar) this.folderMappingBar.style.display = 'none';
         }
     }
 
@@ -169,16 +238,30 @@ class UploadUploaderShell {
 
         const scanEntry = async (entry, path = '') => {
             if (entry.isFile) {
-                const file = await new Promise((resolve) => entry.file(resolve));
-                file._relativePath = path ? `${path}/${file.name}` : file.name;
-                fileEntries.push(file);
+                const file = await new Promise((resolve) => {
+                    entry.file(resolve, (err) => {
+                        console.warn('Error reading file entry:', err);
+                        resolve(null);
+                    });
+                });
+                if (file) {
+                    const fullPath = (path ? `${path}/${file.name}` : file.name).replace(/^\/+/, '');
+                    file._relativePath = fullPath;
+                    fileEntries.push(file);
+                }
             } else if (entry.isDirectory) {
                 const reader = entry.createReader();
                 const readEntries = async () => {
-                    const entries = await new Promise((resolve) => reader.readEntries(resolve));
-                    if (entries.length > 0) {
+                    const entries = await new Promise((resolve) => {
+                        reader.readEntries(resolve, (err) => {
+                            console.warn('Error reading directory entries:', err);
+                            resolve([]);
+                        });
+                    });
+                    if (entries && entries.length > 0) {
                         for (const child of entries) {
-                            await scanEntry(child, path ? `${path}/${entry.name}` : entry.name);
+                            const childPath = (path ? `${path}/${entry.name}` : entry.name).replace(/^\/+/, '');
+                            await scanEntry(child, childPath);
                         }
                         await readEntries();
                     }
@@ -187,15 +270,20 @@ class UploadUploaderShell {
             }
         };
 
+        const entries = [];
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
             const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
             if (entry) {
-                await scanEntry(entry);
+                entries.push(entry);
             } else if (item.kind === 'file') {
                 const f = item.getAsFile();
                 if (f) fileEntries.push(f);
             }
+        }
+
+        for (const entry of entries) {
+            await scanEntry(entry);
         }
 
         if (fileEntries.length > 0) {
@@ -203,30 +291,249 @@ class UploadUploaderShell {
         }
     }
 
+    isSidecarFile(file) {
+        if (!file || !file.name) return false;
+        const lower = file.name.toLowerCase();
+        return lower.endsWith('.json') || lower.endsWith('.xmp');
+    }
+
+    findMatchingSidecar(file, relPath, sidecarFiles) {
+        const lowerRel = relPath.toLowerCase();
+        const lowerName = file.name.toLowerCase();
+        const stemRel = lowerRel.includes('.') ? lowerRel.substring(0, lowerRel.lastIndexOf('.')) : lowerRel;
+        const stemName = lowerName.includes('.') ? lowerName.substring(0, lowerName.lastIndexOf('.')) : lowerName;
+
+        // Exact media filename with extension: file.png.json or file.png.xmp
+        if (sidecarFiles.has(`${lowerRel}.json`)) return sidecarFiles.get(`${lowerRel}.json`);
+        if (sidecarFiles.has(`${lowerName}.json`)) return sidecarFiles.get(`${lowerName}.json`);
+        if (sidecarFiles.has(`${lowerRel}.xmp`)) return sidecarFiles.get(`${lowerRel}.xmp`);
+        if (sidecarFiles.has(`${lowerName}.xmp`)) return sidecarFiles.get(`${lowerName}.xmp`);
+
+        // Media stem without extension: file.json or file.xmp
+        if (sidecarFiles.has(`${stemRel}.json`)) return sidecarFiles.get(`${stemRel}.json`);
+        if (sidecarFiles.has(`${stemName}.json`)) return sidecarFiles.get(`${stemName}.json`);
+        if (sidecarFiles.has(`${stemRel}.xmp`)) return sidecarFiles.get(`${stemRel}.xmp`);
+        if (sidecarFiles.has(`${stemName}.xmp`)) return sidecarFiles.get(`${stemName}.xmp`);
+
+        return null;
+    }
+
+    isAborted() {
+        return this.uploadAbortController ? this.uploadAbortController.signal.aborted : false;
+    }
+
+    abortAllUploads() {
+        if (this.uploadAbortController) {
+            this.uploadAbortController.abort();
+            this.uploadAbortController = null;
+        }
+        if (window.urlImporter && typeof window.urlImporter.cancel === 'function') {
+            window.urlImporter.cancel();
+        }
+        if (window.adminPanel?.content?.cancelScan) {
+            window.adminPanel.content.cancelScan();
+        }
+        if (this.session) {
+            this.session.abortPendingOperations();
+        }
+        if (this._currentArchiveUploadId) {
+            this.cleanupArchive(this._currentArchiveUploadId);
+            this._currentArchiveUploadId = null;
+        }
+        this.isProcessingFiles = false;
+        const uploadText = this.uploadArea?.querySelector('p');
+        this.uploadArea?.classList.remove('opacity-50', 'pointer-events-none');
+        if (uploadText && this._originalUploadText) {
+            uploadText.textContent = this._originalUploadText;
+        }
+        if (this.fileInput) this.fileInput.value = '';
+        this.updateUIState();
+    }
+
+    cleanupArchive(uploadId) {
+        if (!uploadId) return;
+        fetch(`/api/media/archive-cleanup/${uploadId}`, {
+            method: 'DELETE',
+            keepalive: true
+        }).catch(() => { });
+    }
+
+    isDuplicateError(err) {
+        return UploadSession.isDuplicateError(err);
+    }
+
+    isSystemicError(err) {
+        return UploadSession.isSystemicError(err);
+    }
+
     async handleFiles(files) {
         if (this.isProcessingFiles) return;
         this.isProcessingFiles = true;
 
+        if (this.uploadAbortController) {
+            this.uploadAbortController.abort();
+        }
+        this.uploadAbortController = new AbortController();
+        const signal = this.uploadAbortController.signal;
+
         const uploadText = this.uploadArea?.querySelector('p');
         const origText = uploadText?.textContent;
+        this._originalUploadText = origText;
         if (uploadText) uploadText.textContent = window.i18n.t('upload.progress.uploading');
         this.uploadArea?.classList.add('opacity-50', 'pointer-events-none');
+        this.updateUIState();
+
+        let totalStaged = 0;
+        let totalDuplicates = 0;
+        let totalFailed = 0;
+        let lastDuplicateMsg = null;
+        let lastFailedMsg = null;
 
         try {
-            for (const file of files) {
-                // Check if archive
-                if (window.FormatRegistry.isArchive(file.name)) {
-                    await this.handleArchive(file);
-                    continue;
-                }
+            const folderMappingMode = this.getFolderMappingMode();
+            const mediaFiles = [];
+            const sidecarFiles = new Map();
+            const archiveFiles = [];
+            const textFiles = [];
 
-                if (this.isValidFile(file)) {
-                    await this.session.uploadFile(file, {
-                        relativePath: file._relativePath || file.webkitRelativePath || file.name,
+            for (const file of files) {
+                if (window.FormatRegistry.isArchive(file.name)) {
+                    archiveFiles.push(file);
+                } else if (this.isTextUrlListFile(file)) {
+                    textFiles.push(file);
+                } else if (this.isValidFile(file)) {
+                    mediaFiles.push(file);
+                } else if (this.isSidecarFile(file)) {
+                    const relPath = (file._relativePath || file.webkitRelativePath || file.name).replace(/\\/g, '/');
+                    sidecarFiles.set(relPath.toLowerCase(), file);
+                    sidecarFiles.set(file.name.toLowerCase(), file);
+                }
+            }
+
+            for (const archiveFile of archiveFiles) {
+                if (signal.aborted) break;
+                try {
+                    const archiveStats = await this.handleArchive(archiveFile, signal, { folderMappingMode });
+                    if (archiveStats) {
+                        totalStaged += archiveStats.staged || 0;
+                        totalDuplicates += archiveStats.duplicates || 0;
+                        totalFailed += archiveStats.failed || 0;
+                        if (archiveStats.lastDuplicateMsg) {
+                            lastDuplicateMsg = archiveStats.lastDuplicateMsg;
+                        }
+                        if (archiveStats.lastFailedMsg) {
+                            lastFailedMsg = archiveStats.lastFailedMsg;
+                        }
+                    }
+                } catch (archiveErr) {
+                    if (archiveErr.archiveStats) {
+                        totalStaged += archiveErr.archiveStats.staged || 0;
+                        totalDuplicates += archiveErr.archiveStats.duplicates || 0;
+                        totalFailed += archiveErr.archiveStats.failed || 0;
+                        if (archiveErr.archiveStats.lastDuplicateMsg) {
+                            lastDuplicateMsg = archiveErr.archiveStats.lastDuplicateMsg;
+                        }
+                        if (archiveErr.archiveStats.lastFailedMsg) {
+                            lastFailedMsg = archiveErr.archiveStats.lastFailedMsg;
+                        }
+                    }
+                    if (archiveErr.name === 'AbortError' || signal.aborted) break;
+                    console.error(`Failed to process archive ${archiveFile.name}:`, archiveErr);
+                    if (window.app && window.app.showNotification) {
+                        window.app.showNotification(
+                            window.i18n.t('upload.progress.extracted_error', {
+                                filename: archiveFile.name,
+                                error: archiveErr.message || ''
+                            }),
+                            'error'
+                        );
+                    }
+                    if (this.isSystemicError(archiveErr)) {
+                        break;
+                    }
+                }
+            }
+
+            for (const textFile of textFiles) {
+                if (signal.aborted) break;
+                if (!window.urlImporter && typeof UrlImporter !== 'undefined') {
+                    window.urlImporter = new UrlImporter(this);
+                }
+                if (window.urlImporter && typeof window.urlImporter.importFromTextFile === 'function') {
+                    await window.urlImporter.importFromTextFile(textFile, signal);
+                }
+            }
+
+            const totalMedia = mediaFiles.length;
+            for (let i = 0; i < totalMedia; i++) {
+                if (signal.aborted) break;
+                const file = mediaFiles[i];
+                if (uploadText) {
+                    uploadText.textContent = window.i18n.t('upload.progress.uploading_progress', {
+                        current: i + 1,
+                        total: totalMedia,
                     });
+                }
+                const relPath = (file._relativePath || file.webkitRelativePath || file.name).replace(/\\/g, '/');
+                const matchedSidecar = this.findMatchingSidecar(file, relPath, sidecarFiles);
+
+                try {
+                    const stagedItem = await this.session.uploadFile(file, {
+                        relativePath: relPath,
+                        folderMappingMode: folderMappingMode,
+                        sidecar: matchedSidecar,
+                        signal: signal,
+                    });
+                    if (stagedItem) {
+                        totalStaged++;
+                    }
+                } catch (fileErr) {
+                    if (fileErr.name === 'AbortError' || signal.aborted) break;
+                    if (this.isDuplicateError(fileErr)) {
+                        totalDuplicates++;
+                        lastDuplicateMsg = fileErr.message || fileErr.detail;
+                        console.warn(`Skipping duplicate file ${file.name}:`, fileErr);
+                    } else {
+                        totalFailed++;
+                        lastFailedMsg = fileErr.message || fileErr.detail;
+                        console.error(`Error uploading file ${file.name}:`, fileErr);
+                        if (this.isSystemicError(fileErr)) {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!signal.aborted && window.app && window.app.showNotification) {
+                if (totalDuplicates > 0) {
+                    if (totalStaged === 0 && totalDuplicates === 1 && totalFailed === 0 && lastDuplicateMsg) {
+                        window.app.showNotification(window.i18n.t(lastDuplicateMsg), 'warning');
+                    } else {
+                        window.app.showNotification(
+                            window.i18n.t('upload.progress.duplicates_skipped', { count: totalDuplicates }),
+                            'warning'
+                        );
+                    }
+                }
+                if (totalFailed > 0) {
+                    if (totalFailed === 1 && lastFailedMsg) {
+                        window.app.showNotification(window.i18n.t(lastFailedMsg), 'error');
+                    } else if (lastFailedMsg) {
+                        const countMsg = window.i18n.t('upload.progress.failed', { count: totalFailed });
+                        const detailMsg = window.i18n.t(lastFailedMsg);
+                        window.app.showNotification(`${countMsg} (${detailMsg})`, 'error');
+                    } else {
+                        window.app.showNotification(
+                            window.i18n.t('upload.progress.failed', { count: totalFailed }),
+                            'error'
+                        );
+                    }
                 }
             }
         } catch (e) {
+            if (e.name === 'AbortError' || signal.aborted) {
+                return;
+            }
             console.error('Error staging files:', e);
             if (window.app && window.app.showNotification) {
                 window.app.showNotification(window.i18n.t(e.message), 'error');
@@ -236,72 +543,213 @@ class UploadUploaderShell {
             this.uploadArea?.classList.remove('opacity-50', 'pointer-events-none');
             if (uploadText && origText) uploadText.textContent = origText;
             if (this.fileInput) this.fileInput.value = '';
+            this.updateUIState();
             if (this.pendingPanel) this.pendingPanel.refresh();
         }
+    }
+
+    isTextUrlListFile(file) {
+        if (!file || !file.name) return false;
+        const lower = file.name.toLowerCase();
+        return lower.endsWith('.txt') || file.type === 'text/plain';
     }
 
     isValidFile(file) {
         return FormatRegistry.isValidFile(file);
     }
 
-    async handleArchive(archiveFile) {
+    async handleArchive(archiveFile, signal = null, options = {}) {
         const CHUNK_SIZE = 99 * 1024 * 1024;
         const totalChunks = Math.ceil(archiveFile.size / CHUNK_SIZE);
         let uploadId = null;
+        let stagedCount = 0;
+        let duplicateCount = 0;
+        let failedCount = 0;
+        let lastDuplicateMsg = null;
+        let lastFailedMsg = null;
 
-        for (let i = 0; i < totalChunks; i++) {
-            const start = i * CHUNK_SIZE;
-            const end = Math.min(start + CHUNK_SIZE, archiveFile.size);
-            const chunk = archiveFile.slice(start, end);
+        const uploadText = this.uploadArea?.querySelector('p');
 
-            const chunkForm = new FormData();
-            chunkForm.append('file', chunk, archiveFile.name);
-            if (uploadId) chunkForm.append('upload_id', uploadId);
-            chunkForm.append('chunk_index', i.toString());
-            chunkForm.append('total_chunks', totalChunks.toString());
-            chunkForm.append('filename', archiveFile.name);
+        try {
+            for (let i = 0; i < totalChunks; i++) {
+                if (signal?.aborted) {
+                    return { staged: stagedCount, duplicates: duplicateCount, failed: failedCount, lastDuplicateMsg, lastFailedMsg };
+                }
+                const start = i * CHUNK_SIZE;
+                const end = Math.min(start + CHUNK_SIZE, archiveFile.size);
+                const chunk = archiveFile.slice(start, end);
 
-            const chunkResponse = await fetch('/api/media/archive-chunk', {
+                const chunkForm = new FormData();
+                chunkForm.append('file', chunk, archiveFile.name);
+                if (uploadId) chunkForm.append('upload_id', uploadId);
+                chunkForm.append('chunk_index', i.toString());
+                chunkForm.append('total_chunks', totalChunks.toString());
+                chunkForm.append('filename', archiveFile.name);
+
+                const chunkResponse = await fetch('/api/media/archive-chunk', {
+                    method: 'POST',
+                    body: chunkForm,
+                    signal: signal,
+                });
+
+                if (!chunkResponse.ok) {
+                    throw new Error(`Failed to upload archive chunk ${i + 1}/${totalChunks}`);
+                }
+
+                const chunkData = await chunkResponse.json();
+                if (i === 0) {
+                    uploadId = chunkData.upload_id;
+                    this._currentArchiveUploadId = uploadId;
+                }
+            }
+
+            if (signal?.aborted) {
+                return { staged: stagedCount, duplicates: duplicateCount, failed: failedCount, lastDuplicateMsg, lastFailedMsg };
+            }
+
+            if (uploadText) {
+                uploadText.textContent = window.i18n.t('upload.progress.extracting', { filename: archiveFile.name });
+            }
+
+            const extractForm = new FormData();
+            extractForm.append('upload_id', uploadId);
+
+            const response = await fetch('/api/media/extract-archive', {
                 method: 'POST',
-                body: chunkForm,
+                body: extractForm,
+                signal: signal,
             });
 
-            if (!chunkResponse.ok) {
-                throw new Error(`Failed to upload archive chunk ${i + 1}/${totalChunks}`);
+            if (!response.ok) {
+                throw new Error('Failed to extract archive');
             }
 
-            const chunkData = await chunkResponse.json();
-            if (i === 0) uploadId = chunkData.upload_id;
-        }
+            const result = await response.json();
+            const extractedFiles = result.files || [];
+            const totalExtracted = extractedFiles.length;
 
-        const extractForm = new FormData();
-        extractForm.append('upload_id', uploadId);
+            for (let i = 0; i < totalExtracted; i++) {
+                if (signal?.aborted) {
+                    break;
+                }
+                const fData = extractedFiles[i];
 
-        const response = await fetch('/api/media/extract-archive', {
-            method: 'POST',
-            body: extractForm,
-        });
+                if (uploadText) {
+                    uploadText.textContent = window.i18n.t('upload.progress.uploading_progress', {
+                        current: i + 1,
+                        total: totalExtracted,
+                    });
+                }
 
-        if (!response.ok) {
-            throw new Error('Failed to extract archive');
-        }
+                const fileUrl = fData.url || `/api/media/archive-file/${uploadId}/${fData.file_id}`;
+                let fileResp;
+                try {
+                    fileResp = await fetch(fileUrl, { signal: signal });
+                } catch (fetchErr) {
+                    if (fetchErr.name === 'AbortError' || signal?.aborted) break;
+                    console.warn(`Failed to fetch extracted archive file ${fData.filename}:`, fetchErr);
+                    failedCount++;
+                    lastFailedMsg = {
+                        key: 'upload.progress.file_fetch_error',
+                        params: { filename: fData.filename, error: fetchErr.message || '' }
+                    };
+                    continue;
+                }
 
-        const result = await response.json();
+                if (!fileResp.ok) {
+                    console.warn(`Failed to fetch extracted archive file ${fData.filename}: HTTP ${fileResp.status}`);
+                    failedCount++;
+                    lastFailedMsg = {
+                        key: 'upload.progress.file_fetch_error',
+                        params: { filename: fData.filename, error: `HTTP ${fileResp.status}` }
+                    };
+                    if (fileResp.status === 401 || fileResp.status === 403) {
+                        break;
+                    }
+                    continue;
+                }
+                let blob;
+                try {
+                    blob = await fileResp.blob();
+                } catch (blobErr) {
+                    if (blobErr.name === 'AbortError' || signal?.aborted) break;
+                    console.warn(`Failed to read blob for ${fData.filename}:`, blobErr);
+                    failedCount++;
+                    lastFailedMsg = {
+                        key: 'upload.progress.file_fetch_error',
+                        params: { filename: fData.filename, error: blobErr.message || '' }
+                    };
+                    continue;
+                }
+                const file = new File([blob], fData.filename, { type: fData.mime_type || blob.type });
+                file._relativePath = fData.path || fData.filename;
 
-        for (const fData of (result.files || [])) {
-            const fileUrl = fData.url || `/api/media/archive-file/${uploadId}/${fData.file_id}`;
-            const fileResp = await fetch(fileUrl);
-            if (!fileResp.ok) {
-                console.warn(`Failed to fetch extracted archive file ${fData.filename}`);
-                continue;
+                let sidecarFile = null;
+                if (fData.sidecar_url) {
+                    try {
+                        const sidecarResp = await fetch(fData.sidecar_url, { signal: signal });
+                        if (sidecarResp.ok) {
+                            const sidecarBlob = await sidecarResp.blob();
+                            sidecarFile = new File([sidecarBlob], fData.sidecar_filename || `${fData.filename}.json`, {
+                                type: 'application/octet-stream'
+                            });
+                        }
+                    } catch (e) {
+                        if (e.name === 'AbortError' || signal?.aborted) throw e;
+                        console.warn(`Failed to fetch archive sidecar for ${fData.filename}:`, e);
+                    }
+                }
+
+                if (signal?.aborted) {
+                    break;
+                }
+
+                try {
+                    const stagedItem = await this.session.uploadFile(file, {
+                        relativePath: file._relativePath,
+                        folderMappingMode: options.folderMappingMode || this.getFolderMappingMode(),
+                        sidecar: sidecarFile,
+                        signal: signal,
+                    });
+                    if (stagedItem) {
+                        stagedCount++;
+                    }
+                } catch (stageErr) {
+                    if (stageErr.name === 'AbortError' || signal?.aborted) {
+                        break;
+                    }
+                    if (this.isDuplicateError(stageErr)) {
+                        duplicateCount++;
+                        lastDuplicateMsg = stageErr.message || stageErr.detail;
+                        console.warn(`Skipping duplicate file in archive ${archiveFile.name}: ${fData.filename}`, stageErr);
+                    } else {
+                        failedCount++;
+                        lastFailedMsg = stageErr.message || stageErr.detail;
+                        console.error(`Error uploading file in archive ${archiveFile.name}: ${fData.filename}`, stageErr);
+                        if (this.isSystemicError(stageErr)) {
+                            break;
+                        }
+                    }
+                }
             }
-            const blob = await fileResp.blob();
-            const file = new File([blob], fData.filename, { type: fData.mime_type || blob.type });
-            file._relativePath = fData.path || fData.filename;
 
-            await this.session.uploadFile(file, {
-                relativePath: file._relativePath,
-            });
+            return { staged: stagedCount, duplicates: duplicateCount, failed: failedCount, lastDuplicateMsg, lastFailedMsg };
+        } catch (err) {
+            err.archiveStats = {
+                staged: stagedCount,
+                duplicates: duplicateCount,
+                failed: failedCount,
+                lastDuplicateMsg,
+                lastFailedMsg,
+            };
+            throw err;
+        } finally {
+            if (uploadId) {
+                this.cleanupArchive(uploadId);
+                if (this._currentArchiveUploadId === uploadId) {
+                    this._currentArchiveUploadId = null;
+                }
+            }
         }
     }
 
@@ -335,6 +783,12 @@ class UploadUploaderShell {
 
             if (window.app && window.app.showNotification) {
                 window.app.showNotification(window.i18n.t('upload.progress.upload_success', { count: result.total_created }), 'success');
+                if (result.total_duplicates > 0) {
+                    window.app.showNotification(
+                        window.i18n.t('upload.progress.duplicates_skipped', { count: result.total_duplicates }),
+                        'warning'
+                    );
+                }
             }
 
             // Refresh media statistics if available
@@ -356,33 +810,54 @@ class UploadUploaderShell {
     }
 
     async cancelAll() {
+        const cancelBtn = document.getElementById('upload-cancel-btn');
+        const doCancel = async () => {
+            if (cancelBtn) cancelBtn.disabled = true;
+            try {
+                this.abortAllUploads();
+                await this.session.cancelSession();
+            } finally {
+                if (cancelBtn) cancelBtn.disabled = false;
+            }
+        };
         if (typeof ModalHelper !== 'undefined') {
             new ModalHelper({
                 type: 'danger',
                 title: window.i18n.t('upload.submit.cancel_title'),
                 message: window.i18n.t('upload.submit.cancel_confirm'),
                 confirmText: window.i18n.t('common.yes'),
-                onConfirm: async () => {
-                    await this.session.cancelSession();
-                }
+                cancelText: window.i18n.t('common.cancel'),
+                onConfirm: doCancel
             }).show();
         } else {
-            if (confirm(window.i18n.t('upload.submit.cancel_confirm'))) {
-                await this.session.cancelSession();
-            }
+            await doCancel();
         }
     }
 
     // Compatibility methods for untracked scanner and booru import
-    async addScannedFile(file, originalPath) {
-        if (this.isValidFile(file)) {
-            await this.session.uploadFile(file, {
-                relativePath: originalPath || file.name,
+    async addScannedFile(fileOrPath, originalPath, options = {}) {
+        if (this.isAborted()) {
+            return null;
+        }
+        const signal = options.signal || this.uploadAbortController?.signal;
+        if (typeof fileOrPath === 'string') {
+            await this.session.addUntrackedFile(fileOrPath, { ...options, signal });
+        } else if (originalPath && typeof originalPath === 'string') {
+            await this.session.addUntrackedFile(originalPath, { ...options, signal });
+        } else if (fileOrPath && typeof fileOrPath.name === 'string' && this.isValidFile(fileOrPath)) {
+            await this.session.uploadFile(fileOrPath, {
+                relativePath: originalPath || fileOrPath.name,
+                ...options,
+                signal,
             });
         }
     }
 
-    async addBooruImport(file, metadata) {
+    async addBooruImport(file, metadata, options = {}) {
+        if (this.isAborted()) {
+            return null;
+        }
+        const signal = options.signal || this.uploadAbortController?.signal;
         await this.session.uploadFile(file, {
             relativePath: file.name,
             baseRating: metadata.rating || 'safe',
@@ -392,12 +867,18 @@ class UploadUploaderShell {
             baseDescription: metadata.description || '',
             categoryHints: metadata.categoryHints || null,
             userAssignedTags: metadata.userAssignedTags || null,
+            ...options,
+            signal,
         });
     }
 
     isFileQueued(filePath) {
         const filename = filePath.split('/').pop().split('\\').pop();
-        return this.session.getAllItems().some(it => it.filename === filename || it.relative_path === filePath);
+        return this.session.getAllItems().some(it =>
+            it.filename === filename ||
+            it.relative_path === filePath ||
+            it.source_path === filePath
+        );
     }
 }
 

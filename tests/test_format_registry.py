@@ -75,9 +75,19 @@ class TestFormatRegistry(unittest.TestCase):
         self.assertTrue(mkv.requires_transcode)
         self.assertEqual(mkv.transcode_target, ".mp4")
 
+        mov = format_registry.get_format(".mov")
+        self.assertIsNotNone(mov)
+        self.assertTrue(mov.requires_transcode)
+        self.assertEqual(mov.transcode_target, ".mp4")
+
         jpg = format_registry.get_format(".jpg")
         self.assertIsNotNone(jpg)
         self.assertFalse(jpg.requires_transcode)
+
+        jxl = format_registry.get_format(".jxl")
+        self.assertIsNotNone(jxl)
+        self.assertFalse(jxl.requires_transcode)
+        self.assertIsNone(jxl.transcode_target)
 
     def test_to_json_dict_serialization(self):
         data = format_registry.to_json_dict()
@@ -86,6 +96,7 @@ class TestFormatRegistry(unittest.TestCase):
         self.assertIn(".png", data)
         self.assertIn(".mp4", data)
         self.assertIn(".heic", data)
+        self.assertIn(".jxl", data)
         self.assertIn(".tar.gz", data)
 
         # Aliases should NOT be top-level keys
@@ -102,6 +113,7 @@ class TestFormatRegistry(unittest.TestCase):
         self.assertEqual(format_registry.get_mime_type("test.avif"), "image/avif")
         self.assertEqual(format_registry.get_mime_type("test.mov"), "video/quicktime")
         self.assertEqual(format_registry.get_mime_type("test.heic"), "image/heic")
+        self.assertEqual(format_registry.get_mime_type("test.jxl"), "image/jxl")
         self.assertEqual(format_registry.get_mime_type("test.unknown", default="application/octet-stream"), "application/octet-stream")
 
         # Reverse lookup by MIME

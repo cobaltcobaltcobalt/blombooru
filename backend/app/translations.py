@@ -113,6 +113,14 @@ class TranslationHelper:
         """Get the current language"""
         return self._current_lang
 
+    def get_supported_languages(self) -> List[str]:
+        """Get list of supported language codes from loaded locale files"""
+        return list(self._translations.keys())
+
+    def is_language_supported(self, lang_id: str) -> bool:
+        """Check if a language ID is supported"""
+        return (lang_id or "").strip().lower().replace("_", "-") in self._translations
+
     def get_translations(self, lang: str = None) -> Dict:
         """Get all translations for a language, merging with fallback language for missing or empty keys"""
         target_lang = lang or self._current_lang

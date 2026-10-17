@@ -13,7 +13,7 @@ Requires a valid session.
 GET /api/admin/tag-stats
 ```
 
-**Response:** `{ "total_tags": 5000, "total_aliases": 200 }`
+**Response:** `{ "total_tags": 5000, "total_aliases": 200, "total_implications": 50 }`
 
 ### Search tags (admin)
 

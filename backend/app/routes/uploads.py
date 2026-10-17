@@ -10,27 +10,33 @@ from typing import Dict, List, Optional, Union
 from fastapi import (APIRouter, Depends, File, Form, HTTPException, UploadFile)
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..auth import require_admin_mode
 from ..config import settings
 from ..database import get_db
 from ..enums import FileTypeEnum, RatingEnum, TagCategoryEnum
-from ..models import (Album, Media, Tag, User)
-from ..schemas import (PendingAlbumEntity, PendingEntitiesResponse,
-                       PendingTagEntity, PendingTagUpdate, ProposedTag,
-                       UploadSessionCommitItemResult,
-                       UploadSessionCommitResponse,
+from ..models import Album, Media, Tag, User, blombooru_album_hierarchy
+from ..schemas import (FolderMappingRequest, PendingAlbumEntity, PendingAlbumUpdate,
+                       PendingEntitiesResponse, PendingTagEntity, PendingTagUpdate,
+                       ProposedTag, UploadSessionAddUntrackedRequest,
+                       UploadSessionCommitItemResult, UploadSessionCommitResponse,
                        UploadSessionItemUpdate)
-from ..utils.album_utils import update_album_last_modified
+from ..utils.album_path_resolver import (build_pending_album_tree,
+                                         derive_item_suggested_album_path,
+                                         resolve_album_path)
+from ..utils.album_utils import (recalculate_album_metrics,
+                                 update_album_last_modified)
 from ..utils.cache import (invalidate_album_cache, invalidate_media_cache,
                            invalidate_tag_cache)
 from ..utils.logger import logger
-from ..utils.media_helpers import get_unique_filename
+from ..utils.media_helpers import extract_media_metadata, get_unique_filename
 from ..utils.media_processor import calculate_file_hash, process_media_file
 from ..utils.request_helpers import safe_error_detail
-from ..utils.thumbnail_generator import generate_thumbnail
+from ..utils.thumbnail_generator import generate_thumbnail, THUMBNAIL_EXT, thumbnail_mime_type
 from ..utils.transcoder import transcode_media_if_needed
+from ..services.metadata_parsers import get_parser_for_file
 from .media import preview_or_create_tags, update_tag_counts
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
@@ -169,46 +175,37 @@ async def cancel_upload_session(
         _session_locks.pop(Path(session_id).name, None)
         return {"status": "deleted", "session_id": session_id}
 
-@router.post("/sessions/{session_id}/files")
-async def upload_files_to_session(
-    session_id: str,
-    file: UploadFile = File(...),
-    relative_path: Optional[str] = Form(None),
-    base_rating: Optional[str] = Form(None),
-    base_source: Optional[str] = Form(None),
-    base_tags: Optional[str] = Form(None),
-    base_album_ids: Optional[str] = Form(None),
-    category_hints: Optional[str] = Form(None),
-    user_assigned_tags: Optional[str] = Form(None),
-    base_description: Optional[str] = Form(None),
-    current_user: User = Depends(require_admin_mode),
-    db: Session = Depends(get_db),
-):
-    """Upload and stage a single file in the session, hash it, and perform initial analysis."""
-    async with _get_session_lock(session_id):
-        session_dir = _get_session_dir(session_id)
-        raw_dir = session_dir / "raw"
-        thumbs_dir = session_dir / "thumbs"
-        meta = _load_session_meta(session_dir)
+def _process_and_stage_item(
+    session_dir: Path,
+    meta: dict,
+    item_id: str,
+    file_path: Path,
+    clean_filename: str,
+    staged_filename: Optional[str],
+    is_untracked: bool,
+    relative_path: Optional[str],
+    base_rating: Optional[str],
+    base_source: Optional[str],
+    base_tags: Optional[str],
+    base_album_ids: Optional[str],
+    category_hints: Optional[str],
+    user_assigned_tags: Optional[str],
+    base_description: Optional[str],
+    db: Session,
+    folder_mapping_mode: Optional[str] = "use_root",
+) -> dict:
+    thumbs_dir = session_dir / "thumbs"
+    thumbs_dir.mkdir(parents=True, exist_ok=True)
 
-        item_id = str(uuid.uuid4())[:12]
-        clean_filename = Path(file.filename).name
-        staged_filename = f"{item_id}_{clean_filename}"
-        staged_path = raw_dir / staged_filename
-
-    # Save uploaded bytes to staging
-    await file.seek(0)
-    with open(staged_path, "wb") as f:
-        while chunk := await file.read(1024 * 1024):
-            f.write(chunk)
-
-    file_size = staged_path.stat().st_size
-    file_hash = calculate_file_hash(staged_path)
+    file_size = file_path.stat().st_size
+    file_hash = calculate_file_hash(file_path)
 
     # Check for exact duplicate in DB
     existing = db.query(Media).filter(Media.hash == file_hash).first()
     if existing:
-        staged_path.unlink(missing_ok=True)
+        if not is_untracked and staged_filename:
+            for staged_item_file in (session_dir / "raw").glob(f"{item_id}_*"):
+                staged_item_file.unlink(missing_ok=True)
         raise HTTPException(
             status_code=409,
             detail=f"admin.media_management.booru_import.error_duplicate:::{existing.filename}"
@@ -217,7 +214,9 @@ async def upload_files_to_session(
     # Check if duplicate within this session
     for it in meta.get("items", {}).values():
         if it.get("hash") == file_hash and it.get("item_id") != item_id:
-            staged_path.unlink(missing_ok=True)
+            if not is_untracked and staged_filename:
+                for staged_item_file in (session_dir / "raw").glob(f"{item_id}_*"):
+                    staged_item_file.unlink(missing_ok=True)
             raise HTTPException(
                 status_code=409,
                 detail=f"admin.media_management.booru_import.error_duplicate_session:::{it.get('filename')}"
@@ -225,7 +224,7 @@ async def upload_files_to_session(
 
     # Analyze media dimensions and type
     try:
-        media_info = process_media_file(staged_path, precalculated_hash=file_hash, transcode=False)
+        media_info = process_media_file(file_path, precalculated_hash=file_hash, transcode=False)
         width = media_info.get("width")
         height = media_info.get("height")
         file_type = media_info.get("file_type")
@@ -240,13 +239,13 @@ async def upload_files_to_session(
         duration = None
 
     # Generate preview thumbnail in session thumbs dir
-    thumb_path = thumbs_dir / f"{item_id}.jpg"
+    thumb_path = thumbs_dir / f"{item_id}{THUMBNAIL_EXT}"
     try:
-        generate_thumbnail(staged_path, thumb_path, file_type)
+        generate_thumbnail(file_path, thumb_path, file_type)
     except Exception as e:
         logger.warning(f"Failed to generate preview thumbnail for {clean_filename}: {e}")
 
-    # Sanitize Form parameter defaults if invoked directly in tests
+    # Sanitize parameter defaults if invoked directly in tests
     relative_path_str = relative_path if isinstance(relative_path, str) else None
     base_rating_str = base_rating if isinstance(base_rating, str) else None
     base_source_str = base_source if isinstance(base_source, str) else None
@@ -254,11 +253,56 @@ async def upload_files_to_session(
     base_album_ids_str = base_album_ids if isinstance(base_album_ids, str) else None
     category_hints_str = category_hints if isinstance(category_hints, str) else None
     base_description_str = base_description if isinstance(base_description, str) else None
+    folder_mapping_mode_str = folder_mapping_mode if isinstance(folder_mapping_mode, str) else "use_root"
+
+    # Detect sibling files for metadata parsing
+    sibling_files: List[Path] = []
+    if is_untracked:
+        if file_path.parent.exists():
+            sibling_files = [p for p in file_path.parent.iterdir() if p != file_path and p.is_file()]
+    else:
+        raw_dir = session_dir / "raw"
+        if raw_dir.exists():
+            prefix = f"{item_id}_"
+            sibling_files = [p for p in raw_dir.iterdir() if p != file_path and p.is_file() and p.name.startswith(prefix)]
+
+    parser = get_parser_for_file(file_path, sibling_files)
+    parsed = parser.parse(file_path, sibling_files) if parser else None
+    metadata_source = parser.name if parser else None
 
     # Parse initial candidate tags
     candidate_tag_names: List[str] = []
     if base_tags_str:
         candidate_tag_names.extend([t.strip() for t in base_tags_str.split() if t.strip()])
+
+    if parsed and parsed.tags:
+        for pt in parsed.tags:
+            if pt.name and pt.name.strip():
+                candidate_tag_names.append(pt.name.strip())
+
+    # Apply automatic tags based on media type if configured
+    media_type_tags = settings.MEDIA_TYPE_TAGS
+    if isinstance(media_type_tags, dict):
+        ft_key = file_type.value if hasattr(file_type, "value") else str(file_type)
+        type_tags = media_type_tags.get(ft_key, [])
+        if isinstance(type_tags, list):
+            for tag in type_tags:
+                if tag and isinstance(tag, str) and tag.strip():
+                    candidate_tag_names.append(tag.strip())
+
+    # Apply automatic tags from AI metadata if configured
+    if settings.AUTO_APPLY_AI_TAGS:
+        try:
+            extracted_meta = extract_media_metadata(file_path)
+            ai_meta = extracted_meta.get("ai") if isinstance(extracted_meta, dict) else None
+            if isinstance(ai_meta, dict):
+                prompt_tags = ai_meta.get("prompt_tags")
+                if isinstance(prompt_tags, list):
+                    for tag in prompt_tags:
+                        if tag and isinstance(tag, str) and tag.strip():
+                            candidate_tag_names.append(tag.strip())
+        except Exception as e:
+            logger.warning(f"Failed to extract AI metadata tags for {clean_filename}: {e}")
 
     parsed_hints: Optional[dict] = None
     if category_hints_str:
@@ -266,6 +310,15 @@ async def upload_files_to_session(
             parsed_hints = json.loads(category_hints_str)
         except Exception:
             pass
+
+    if parsed and parsed.tags:
+        if parsed_hints is None:
+            parsed_hints = {}
+        for pt in parsed.tags:
+            if pt.name and pt.category and pt.category != "general":
+                pt_lower = pt.name.strip().lower()
+                if pt_lower not in parsed_hints:
+                    parsed_hints[pt_lower] = pt.category
             
     user_assigned_tags_str = user_assigned_tags if isinstance(user_assigned_tags, str) else None
     user_assigned_list = []
@@ -286,9 +339,22 @@ async def upload_files_to_session(
     )
 
     # Resolve initial rating
+    if not base_rating_str and parsed and parsed.rating:
+        parsed_rating = RatingEnum.normalize(parsed.rating)
+        if parsed_rating:
+            base_rating_str = parsed_rating.value
+
     rating = RatingEnum.safe
-    if base_rating_str and base_rating_str in RatingEnum._value2member_map_:
-        rating = RatingEnum(base_rating_str)
+    if base_rating_str:
+        norm_rating = RatingEnum.normalize(base_rating_str)
+        if norm_rating:
+            rating = norm_rating
+
+    if not base_source_str and parsed and parsed.source:
+        base_source_str = parsed.source
+
+    if not base_description_str and parsed and parsed.description:
+        base_description_str = parsed.description
 
     # Resolve initial albums
     album_ids: List[int] = []
@@ -318,9 +384,38 @@ async def upload_files_to_session(
 
         tags_list.append(td)
 
+    # Compute default relative path for untracked files
+    if is_untracked and not relative_path_str:
+        try:
+            relative_path_str = str(file_path.resolve().relative_to(settings.ORIGINAL_DIR.resolve()))
+        except Exception:
+            relative_path_str = clean_filename
+
+    # Compute suggested album path from folder mapping or parser pool names
+    suggested_album_path = None
+    suggested_album_segments = None
+    if relative_path_str:
+        fm_enabled = meta.get("folder_mapping_enabled", True)
+        fm_root_mode = meta.get("folder_mapping_root_mode", folder_mapping_mode_str or "use_root")
+        dummy_item = {"relative_path": relative_path_str}
+        suggested_album_path = derive_item_suggested_album_path(
+            dummy_item,
+            meta=meta,
+            enabled=fm_enabled,
+            root_mode=fm_root_mode,
+        )
+
+    if not suggested_album_path and parsed and parsed.pool_names:
+        suggested_album_path = parsed.pool_names[0]
+
+    if suggested_album_path:
+        suggested_album_segments = resolve_album_path(db, suggested_album_path)
+
     item_data = {
         "item_id": item_id,
         "filename": clean_filename,
+        "source_path": str(file_path) if is_untracked else None,
+        "is_untracked": is_untracked,
         "staged_filename": staged_filename,
         "relative_path": relative_path_str or clean_filename,
         "file_size": file_size,
@@ -335,13 +430,127 @@ async def upload_files_to_session(
         "description": base_description_str or "",
         "tags": tags_list,
         "album_ids": album_ids,
-        "suggested_album_path": None,
+        "suggested_album_path": suggested_album_path,
+        "suggested_album_segments": suggested_album_segments,
+        "folder_album_removed": False,
+        "folder_album_custom_path": None,
+        "metadata_source": metadata_source,
     }
 
     meta.setdefault("items", {})[item_id] = item_data
     _save_session_meta(session_dir, meta)
 
     return item_data
+
+@router.post("/sessions/{session_id}/files")
+async def upload_files_to_session(
+    session_id: str,
+    file: UploadFile = File(...),
+    sidecar: Optional[UploadFile] = File(None),
+    relative_path: Optional[str] = Form(None),
+    folder_mapping_mode: Optional[str] = Form(None),
+    base_rating: Optional[str] = Form(None),
+    base_source: Optional[str] = Form(None),
+    base_tags: Optional[str] = Form(None),
+    base_album_ids: Optional[str] = Form(None),
+    category_hints: Optional[str] = Form(None),
+    user_assigned_tags: Optional[str] = Form(None),
+    base_description: Optional[str] = Form(None),
+    current_user: User = Depends(require_admin_mode),
+    db: Session = Depends(get_db),
+):
+    """Upload and stage a single file in the session, hash it, and perform initial analysis."""
+    async with _get_session_lock(session_id):
+        session_dir = _get_session_dir(session_id)
+        raw_dir = session_dir / "raw"
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        meta = _load_session_meta(session_dir)
+
+        item_id = str(uuid.uuid4())[:12]
+        clean_filename = Path(file.filename).name
+        staged_filename = f"{item_id}_{clean_filename}"
+        staged_path = raw_dir / staged_filename
+
+        await file.seek(0)
+        with open(staged_path, "wb") as f:
+            while chunk := await file.read(1024 * 1024):
+                f.write(chunk)
+
+        if hasattr(sidecar, "filename") and bool(sidecar.filename) and hasattr(sidecar, "read"):
+            clean_sidecar_name = Path(sidecar.filename).name
+            staged_sidecar_name = f"{item_id}_{clean_sidecar_name}"
+            staged_sidecar_path = raw_dir / staged_sidecar_name
+            await sidecar.seek(0)
+            with open(staged_sidecar_path, "wb") as f:
+                while chunk := await sidecar.read(1024 * 1024):
+                    f.write(chunk)
+
+        return _process_and_stage_item(
+            session_dir=session_dir,
+            meta=meta,
+            item_id=item_id,
+            file_path=staged_path,
+            clean_filename=clean_filename,
+            staged_filename=staged_filename,
+            is_untracked=False,
+            relative_path=relative_path,
+            folder_mapping_mode=folder_mapping_mode,
+            base_rating=base_rating,
+            base_source=base_source,
+            base_tags=base_tags,
+            base_album_ids=base_album_ids,
+            category_hints=category_hints,
+            user_assigned_tags=user_assigned_tags,
+            base_description=base_description,
+            db=db,
+        )
+
+@router.post("/sessions/{session_id}/untracked-files")
+async def add_untracked_file_to_session(
+    session_id: str,
+    request: UploadSessionAddUntrackedRequest,
+    current_user: User = Depends(require_admin_mode),
+    db: Session = Depends(get_db),
+):
+    """Stage an existing untracked file from disk into the upload session without re-uploading bytes."""
+    file_path = Path(request.file_path)
+    if not file_path.is_absolute():
+        raise HTTPException(status_code=400, detail="Invalid file path")
+
+    try:
+        resolved_path = file_path.resolve()
+        if not resolved_path.is_relative_to(settings.ORIGINAL_DIR.resolve()):
+            raise ValueError()
+    except (ValueError, FileNotFoundError):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if not resolved_path.exists() or not resolved_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    async with _get_session_lock(session_id):
+        session_dir = _get_session_dir(session_id)
+        meta = _load_session_meta(session_dir)
+        item_id = str(uuid.uuid4())[:12]
+
+        return _process_and_stage_item(
+            session_dir=session_dir,
+            meta=meta,
+            item_id=item_id,
+            file_path=resolved_path,
+            clean_filename=resolved_path.name,
+            staged_filename=None,
+            is_untracked=True,
+            relative_path=request.relative_path,
+            folder_mapping_mode="use_root",
+            base_rating=request.base_rating,
+            base_source=request.base_source,
+            base_tags=request.base_tags,
+            base_album_ids=request.base_album_ids,
+            category_hints=request.category_hints,
+            user_assigned_tags=request.user_assigned_tags,
+            base_description=request.base_description,
+            db=db,
+        )
 
 @router.get("/sessions/{session_id}/items/{item_id}/thumbnail")
 async def get_staged_item_thumbnail(
@@ -350,14 +559,18 @@ async def get_staged_item_thumbnail(
 ):
     """Serve the temporary preview thumbnail of a staged item."""
     session_dir = _get_session_dir(session_id)
-    thumb_path = session_dir / "thumbs" / f"{item_id}.jpg"
+    thumb_path = session_dir / "thumbs" / f"{item_id}{THUMBNAIL_EXT}"
     if thumb_path.exists():
-        return FileResponse(str(thumb_path), media_type="image/jpeg")
+        return FileResponse(str(thumb_path), media_type=thumbnail_mime_type(thumb_path))
 
-    # Fallback to raw file if thumbnail wasn't generated
+    # Fallback to source or raw file if thumbnail wasn't generated
     meta = _load_session_meta(session_dir)
     item = meta.get("items", {}).get(item_id)
     if item:
+        if item.get("source_path"):
+            src_path = Path(item["source_path"])
+            if src_path.exists():
+                return FileResponse(str(src_path))
         staged_path = session_dir / "raw" / item.get("staged_filename", "")
         if staged_path.exists():
             return FileResponse(str(staged_path))
@@ -375,6 +588,11 @@ async def get_staged_item_file(
     item = meta.get("items", {}).get(item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
+
+    if item.get("source_path"):
+        src_path = Path(item["source_path"])
+        if src_path.exists():
+            return FileResponse(str(src_path), media_type=item.get("mime_type") or "application/octet-stream")
 
     staged_path = session_dir / "raw" / item.get("staged_filename", "")
     if not staged_path.exists():
@@ -398,20 +616,23 @@ async def analyze_staged_item(
         if not item:
             raise HTTPException(status_code=404, detail="Item not found")
 
-        staged_path = session_dir / "raw" / item.get("staged_filename", "")
-        if not staged_path.exists():
-            raise HTTPException(status_code=404, detail="Staged file not found")
+        if item.get("source_path"):
+            media_path = Path(item["source_path"])
+        else:
+            media_path = session_dir / "raw" / item.get("staged_filename", "")
+        if not media_path.exists():
+            raise HTTPException(status_code=404, detail="Media file not found")
 
-        file_hash = item.get("hash") or calculate_file_hash(staged_path)
-        media_info = process_media_file(staged_path, precalculated_hash=file_hash)
+        file_hash = item.get("hash") or calculate_file_hash(media_path)
+        media_info = process_media_file(media_path, precalculated_hash=file_hash)
         item["width"] = media_info.get("width")
         item["height"] = media_info.get("height")
         item["file_type"] = media_info.get("file_type")
         item["mime_type"] = media_info.get("mime_type")
         item["duration"] = media_info.get("duration")
 
-        thumb_path = session_dir / "thumbs" / f"{item_id}.jpg"
-        generate_thumbnail(staged_path, thumb_path, item["file_type"])
+        thumb_path = session_dir / "thumbs" / f"{item_id}{THUMBNAIL_EXT}"
+        generate_thumbnail(media_path, thumb_path, item["file_type"])
 
         # Re-evaluate current tags with DB
         current_tag_names = [t["name"] for t in item.get("tags", []) if t.get("name")]
@@ -452,6 +673,7 @@ async def update_staged_item(
         if not item:
             raise HTTPException(status_code=404, detail="Item not found")
 
+        fields_set = update.model_fields_set if hasattr(update, "model_fields_set") else getattr(update, "__fields_set__", set())
         if update.rating is not None:
             item["rating"] = update.rating.value
         if update.source is not None:
@@ -460,8 +682,17 @@ async def update_staged_item(
             item["description"] = update.description
         if update.album_ids is not None:
             item["album_ids"] = update.album_ids
-        if update.suggested_album_path is not None:
-            item["suggested_album_path"] = update.suggested_album_path
+        if "suggested_album_path" in fields_set:
+            if update.suggested_album_path is None or update.suggested_album_path == "":
+                item["folder_album_removed"] = True
+                item["folder_album_custom_path"] = None
+                item["suggested_album_path"] = None
+                item["suggested_album_segments"] = None
+            else:
+                item["folder_album_removed"] = False
+                item["folder_album_custom_path"] = update.suggested_album_path
+                item["suggested_album_path"] = update.suggested_album_path
+                item["suggested_album_segments"] = resolve_album_path(db, update.suggested_album_path)
 
     if update.tags is not None:
         other_items = {k: v for k, v in meta.get("items", {}).items() if k != item_id}
@@ -514,6 +745,7 @@ async def bulk_update_staged_items(
 
         updated_items = []
         target_ids = set(req.item_ids)
+        bulk_fields_set = req.model_fields_set if hasattr(req, "model_fields_set") else getattr(req, "__fields_set__", set())
 
         for item_id, item in items.items():
             if item_id not in target_ids:
@@ -535,8 +767,17 @@ async def bulk_update_staged_items(
                 cur_aids = set(item.get("album_ids", []))
                 cur_aids.difference_update(req.remove_album_ids)
                 item["album_ids"] = list(cur_aids)
-            if req.suggested_album_path is not None:
-                item["suggested_album_path"] = req.suggested_album_path
+            if "suggested_album_path" in bulk_fields_set:
+                if req.suggested_album_path is None or req.suggested_album_path == "":
+                    item["folder_album_removed"] = True
+                    item["folder_album_custom_path"] = None
+                    item["suggested_album_path"] = None
+                    item["suggested_album_segments"] = None
+                else:
+                    item["folder_album_removed"] = False
+                    item["folder_album_custom_path"] = req.suggested_album_path
+                    item["suggested_album_path"] = req.suggested_album_path
+                    item["suggested_album_segments"] = resolve_album_path(db, req.suggested_album_path)
 
             # Tags update
             current_tags_dict = {t["name"].lower(): t for t in item.get("tags", []) if t.get("name")}
@@ -620,7 +861,7 @@ async def delete_staged_item(
         staged_filename = items[item_id].get("staged_filename")
         if staged_filename:
             (session_dir / "raw" / staged_filename).unlink(missing_ok=True)
-        (session_dir / "thumbs" / f"{item_id}.jpg").unlink(missing_ok=True)
+        (session_dir / "thumbs" / f"{item_id}{THUMBNAIL_EXT}").unlink(missing_ok=True)
 
         del items[item_id]
         if len(items) == 0:
@@ -635,6 +876,7 @@ async def delete_staged_item(
 async def get_pending_entities(
     session_id: str,
     current_user: User = Depends(require_admin_mode),
+    db: Session = Depends(get_db),
 ):
     """Aggregate and deduplicate all pending new tags and albums across the session."""
     session_dir = _get_session_dir(session_id)
@@ -642,7 +884,6 @@ async def get_pending_entities(
     items = meta.get("items", {})
 
     pending_tags_map: Dict[str, dict] = {}
-    pending_albums_map: Dict[str, List[str]] = {}
 
     for item_id, item in items.items():
         if item.get("is_duplicate", False):
@@ -668,17 +909,9 @@ async def get_pending_entities(
                 if item_id not in pending_tags_map[name]["used_by"]:
                     pending_tags_map[name]["used_by"].append(item_id)
 
-        suggested_path = item.get("suggested_album_path")
-        if suggested_path:
-            norm_path = suggested_path.strip().strip("/")
-            if norm_path:
-                if norm_path not in pending_albums_map:
-                    pending_albums_map[norm_path] = []
-                if item_id not in pending_albums_map[norm_path]:
-                    pending_albums_map[norm_path].append(item_id)
-
     pending_tags = [PendingTagEntity(**v) for v in pending_tags_map.values()]
-    pending_albums = [PendingAlbumEntity(path=k, used_by=v) for k, v in pending_albums_map.items()]
+    pending_albums_list = build_pending_album_tree(items, db)
+    pending_albums = [PendingAlbumEntity(**v) for v in pending_albums_list]
 
     return PendingEntitiesResponse(
         pending_tags=pending_tags,
@@ -749,6 +982,127 @@ async def update_pending_tag(
         _save_session_meta(session_dir, meta)
         return {"status": "updated", "affected_items": affected_count}
 
+@router.patch("/sessions/{session_id}/pending/albums")
+async def update_pending_album(
+    session_id: str,
+    update: PendingAlbumUpdate,
+    current_user: User = Depends(require_admin_mode),
+    db: Session = Depends(get_db),
+):
+    """Globally update a pending album path across all referencing items in the session."""
+    async with _get_session_lock(session_id):
+        session_dir = _get_session_dir(session_id)
+        meta = _load_session_meta(session_dir)
+        items = meta.get("items", {})
+
+        target_path = update.path.replace("\\", "/").strip().strip("/")
+        if not target_path:
+            raise HTTPException(status_code=400, detail="Invalid album path")
+
+        target_segments = [s.strip() for s in target_path.split("/") if s.strip()]
+        affected_count = 0
+
+        if update.remove:
+            removed_paths = meta.setdefault("removed_album_paths", [])
+            if target_path.lower() not in removed_paths:
+                removed_paths.append(target_path.lower())
+
+        elif update.new_name or update.merge_into_id is not None:
+            new_name = None
+            if update.new_name:
+                new_name = update.new_name.strip()
+            elif update.merge_into_id is not None:
+                existing_alb = db.query(Album).filter(Album.id == update.merge_into_id).first()
+                if existing_alb:
+                    new_name = existing_alb.name
+
+            if new_name:
+                old_seg = target_segments[-1]
+                meta.setdefault("album_renames", {})[old_seg.lower()] = new_name
+                for k, v in list(meta.get("album_renames", {}).items()):
+                    if v.lower() == old_seg.lower():
+                        meta["album_renames"][k] = new_name
+                meta.setdefault("album_path_renames", {})[target_path.lower()] = new_name
+
+        for item_id, item in items.items():
+            suggested_path = item.get("suggested_album_path")
+            if not suggested_path:
+                continue
+
+            item_path = suggested_path.replace("\\", "/").strip().strip("/")
+            item_segments = [s.strip() for s in item_path.split("/") if s.strip()]
+
+            if len(item_segments) >= len(target_segments):
+                matches = all(item_segments[i].lower() == target_segments[i].lower() for i in range(len(target_segments)))
+                if matches:
+                    if update.remove:
+                        item["folder_album_removed"] = True
+                        item["folder_album_custom_path"] = None
+                        item["suggested_album_path"] = None
+                        item["suggested_album_segments"] = None
+                        affected_count += 1
+                    elif update.promote_to_parent:
+                        new_segs = item_segments[: len(target_segments) - 1] + item_segments[len(target_segments) :]
+                        new_path = "/".join(new_segs) if new_segs else None
+                        item["suggested_album_path"] = new_path
+                        item["folder_album_custom_path"] = new_path
+                        item["suggested_album_segments"] = resolve_album_path(db, new_path) if new_path else None
+                        affected_count += 1
+                    elif update.new_name:
+                        new_name = update.new_name.strip()
+                        if new_name:
+                            item_segments[len(target_segments) - 1] = new_name
+                            new_path = "/".join(item_segments)
+                            item["suggested_album_path"] = new_path
+                            if item.get("folder_album_custom_path"):
+                                item["folder_album_custom_path"] = new_path
+                            item["suggested_album_segments"] = resolve_album_path(db, new_path)
+                            affected_count += 1
+                    elif update.merge_into_id is not None:
+                        existing_alb = db.query(Album).filter(Album.id == update.merge_into_id).first()
+                        if existing_alb:
+                            item_segments[len(target_segments) - 1] = existing_alb.name
+                            new_path = "/".join(item_segments)
+                            item["suggested_album_path"] = new_path
+                            if item.get("folder_album_custom_path"):
+                                item["folder_album_custom_path"] = new_path
+                            item["suggested_album_segments"] = resolve_album_path(db, new_path)
+                            affected_count += 1
+
+        _save_session_meta(session_dir, meta)
+        return {"status": "updated", "affected_items": affected_count}
+
+@router.post("/sessions/{session_id}/folder-mapping")
+async def update_folder_mapping(
+    session_id: str,
+    req: FolderMappingRequest,
+    current_user: User = Depends(require_admin_mode),
+    db: Session = Depends(get_db),
+):
+    """Recompute folder to album mappings for all staged items based on their stored relative_path while preserving user customizations."""
+    async with _get_session_lock(session_id):
+        session_dir = _get_session_dir(session_id)
+        meta = _load_session_meta(session_dir)
+        items = meta.get("items", {})
+
+        meta["folder_mapping_enabled"] = req.enabled
+        meta["folder_mapping_root_mode"] = req.root_mode
+
+        affected_count = 0
+        for item_id, item in items.items():
+            new_path = derive_item_suggested_album_path(
+                item=item,
+                meta=meta,
+                enabled=req.enabled,
+                root_mode=req.root_mode,
+            )
+            item["suggested_album_path"] = new_path
+            item["suggested_album_segments"] = resolve_album_path(db, new_path) if new_path else None
+            affected_count += 1
+
+        _save_session_meta(session_dir, meta)
+        return {"status": "success", "affected_items": affected_count}
+
 @router.post("/sessions/{session_id}/commit", response_model=UploadSessionCommitResponse)
 async def commit_upload_session(
     session_id: str,
@@ -779,8 +1133,11 @@ async def commit_upload_session(
                 if item.get("is_duplicate"):
                     duplicate_item_ids.add(i_id)
                     continue
-                staged_path = session_dir / "raw" / item.get("staged_filename", "")
-                f_hash = item.get("hash") or (calculate_file_hash(staged_path) if staged_path.exists() else None)
+                if item.get("source_path"):
+                    file_to_check = Path(item["source_path"])
+                else:
+                    file_to_check = session_dir / "raw" / item.get("staged_filename", "")
+                f_hash = item.get("hash") or (calculate_file_hash(file_to_check) if file_to_check.exists() else None)
                 if f_hash and db.query(Media.id).filter(Media.hash == f_hash).first():
                     duplicate_item_ids.add(i_id)
 
@@ -814,16 +1171,38 @@ async def commit_upload_session(
                     continue
                 suggested_path = item.get("suggested_album_path")
                 if suggested_path:
-                    segments = [s.strip() for s in suggested_path.strip("/").split("/") if s.strip()]
+                    segments = [s.strip() for s in suggested_path.replace("\\", "/").strip("/").split("/") if s.strip()]
                     if segments:
                         current_parent_album = None
                         path_key = ""
-                        for seg in segments:
+                        for depth, seg in enumerate(segments):
                             path_key = f"{path_key}/{seg}" if path_key else seg
                             if path_key in album_path_cache:
-                                current_parent_album = album_path_cache[path_key]
+                                alb = album_path_cache[path_key]
                             else:
-                                alb = db.query(Album).filter(Album.name == seg).first()
+                                if depth == 0:
+                                    alb = (
+                                        db.query(Album)
+                                        .filter(
+                                            func.lower(Album.name) == seg.lower(),
+                                            ~Album.id.in_(db.query(blombooru_album_hierarchy.c.child_album_id)),
+                                        )
+                                        .first()
+                                    )
+                                else:
+                                    alb = (
+                                        db.query(Album)
+                                        .join(
+                                            blombooru_album_hierarchy,
+                                            Album.id == blombooru_album_hierarchy.c.child_album_id,
+                                        )
+                                        .filter(
+                                            blombooru_album_hierarchy.c.parent_album_id == current_parent_album.id,
+                                            func.lower(Album.name) == seg.lower(),
+                                        )
+                                        .first()
+                                    ) if current_parent_album else None
+
                                 if not alb:
                                     alb = Album(name=seg)
                                     db.add(alb)
@@ -832,7 +1211,8 @@ async def commit_upload_session(
                                     current_parent_album.children.append(alb)
                                     db.flush()
                                 album_path_cache[path_key] = alb
-                                current_parent_album = alb
+                            all_affected_album_ids.add(alb.id)
+                            current_parent_album = alb
 
                         # Assign leaf album to item's album_ids
                         leaf_album = album_path_cache[path_key]
@@ -843,18 +1223,35 @@ async def commit_upload_session(
             # Step 3: Commit each media item
             for item_id, item in items.items():
                 clean_filename = item.get("filename", "media")
-                staged_path = session_dir / "raw" / item.get("staged_filename", "")
-                if not staged_path.exists():
-                    total_failed += 1
-                    results.append(UploadSessionCommitItemResult(
-                        item_id=item_id,
-                        filename=clean_filename,
-                        status="failed",
-                        error="Staged file not found",
-                    ))
-                    continue
+                is_untracked = bool(item.get("is_untracked") or item.get("source_path"))
 
-                file_hash = item.get("hash") or calculate_file_hash(staged_path)
+                if is_untracked:
+                    source_path_str = item.get("source_path")
+                    source_path = Path(source_path_str) if source_path_str else None
+                    if not source_path or not source_path.exists():
+                        total_failed += 1
+                        results.append(UploadSessionCommitItemResult(
+                            item_id=item_id,
+                            filename=clean_filename,
+                            status="failed",
+                            error="Source file not found",
+                        ))
+                        continue
+                    file_to_process = source_path
+                else:
+                    staged_path = session_dir / "raw" / item.get("staged_filename", "")
+                    if not staged_path.exists():
+                        total_failed += 1
+                        results.append(UploadSessionCommitItemResult(
+                            item_id=item_id,
+                            filename=clean_filename,
+                            status="failed",
+                            error="Staged file not found",
+                        ))
+                        continue
+                    file_to_process = staged_path
+
+                file_hash = item.get("hash") or calculate_file_hash(file_to_process)
 
                 # Check duplicate in DB or marked duplicate
                 if item_id in duplicate_item_ids:
@@ -870,17 +1267,21 @@ async def commit_upload_session(
                     ))
                     continue
 
-                # Move staged file to original destination
-                unique_filename = get_unique_filename(settings.ORIGINAL_DIR, clean_filename)
-                dest_path = settings.ORIGINAL_DIR / unique_filename
-                shutil.move(str(staged_path), str(dest_path))
+                if is_untracked:
+                    dest_path = file_to_process
+                    unique_filename = dest_path.name
+                else:
+                    # Move staged file to original destination
+                    unique_filename = get_unique_filename(settings.ORIGINAL_DIR, clean_filename)
+                    dest_path = settings.ORIGINAL_DIR / unique_filename
+                    shutil.move(str(staged_path), str(dest_path))
 
                 # Transcode if container/codec requires it
                 transcoded_file_path = transcode_media_if_needed(dest_path)
                 rel_transcoded = str(transcoded_file_path.relative_to(settings.BASE_DIR)) if transcoded_file_path else None
 
                 # Generate final thumbnail
-                thumb_filename = Path(unique_filename).stem + ".jpg"
+                thumb_filename = Path(unique_filename).stem + THUMBNAIL_EXT
                 thumb_dest_path = settings.THUMBNAIL_DIR / thumb_filename
                 file_type_str = item.get("file_type", "image")
                 thumb_source = transcoded_file_path if transcoded_file_path else dest_path
@@ -902,7 +1303,7 @@ async def commit_upload_session(
                     width=item.get("width"),
                     height=item.get("height"),
                     duration=item.get("duration"),
-                    rating=RatingEnum(item.get("rating", "safe")),
+                    rating=RatingEnum.normalize(item.get("rating")) or RatingEnum.safe,
                     source=item.get("source") or None,
                     description=item.get("description") or None,
                 )
@@ -942,8 +1343,9 @@ async def commit_upload_session(
                 db.commit()
 
             if all_affected_album_ids:
-                for aid in all_affected_album_ids:
-                    update_album_last_modified(aid, db)
+                affected_album_ids_list = list(all_affected_album_ids)
+                update_album_last_modified(affected_album_ids_list, db)
+                recalculate_album_metrics(db, affected_album_ids_list)
                 db.commit()
                 invalidate_album_cache()
 

@@ -1,7 +1,7 @@
 ## Admin: Settings
 
 > [!NOTE]
-> Last updated: `August 16, 2026`
+> Last updated: `September 27, 2026`
 
 **Base path:** `/api/admin`
 
@@ -32,8 +32,10 @@ Content-Type: application/json
   "language": "en",
   "external_share_url": null,
   "require_auth": false,
+  "blur_explicit_thumbnails": false,
   "sidebar_filter_mode": "rating",
   "sidebar_custom_buttons": [],
+  "stripped_cache_max_mb": 0,
   "redis": { "enabled": true, "host": "redis", "port": 6379, "db": 0, "password": null },
   "shared_tags": { "enabled": false, "host": "shared-tag-db", "port": 5432, "name": "shared_tags", "user": "postgres", "password": null }
 }
@@ -43,6 +45,43 @@ All fields are optional; only supplied fields are updated.
 
 > [!NOTE]
 > Password fields (`redis.password`, `shared_tags.password`) are returned as `"***"` by `GET /api/admin/settings`. Sending `"***"` back in a PATCH leaves the stored password unchanged. Send `null` to clear a password, or send the new plaintext value to change it.
+
+### Get cache statistics
+
+Requires `require_admin_mode`.
+
+```
+GET /api/admin/cache-stats
+```
+
+Returns file count and total size in bytes of the metadata-stripped media cache (`media/cache/stripped/`).
+
+**Response:**
+
+```json
+{
+  "count": 42,
+  "size_bytes": 104857600
+}
+```
+
+### Clear cache
+
+Requires `require_admin_mode`.
+
+```
+POST /api/admin/clear-cache
+```
+
+Manually cleans up dead stripped-media cache files (files that no longer correspond to any active, metadata-stripped shared media in the database) and migrates any remaining legacy cache files.
+
+**Response:**
+
+```json
+{
+  "deleted": 5
+}
+```
 
 ### Test Redis connection
 
