@@ -6,6 +6,15 @@ from .types import BooruPost
 class BooruClient(ABC):
     """Abstract base for booru API clients."""
 
+    @property
+    def api_base_url(self) -> str:
+        """Base URL for API calls; defaults to base_url unless a domain override sets it."""
+        return getattr(self, "_api_base_url", None) or self.base_url
+
+    @api_base_url.setter
+    def api_base_url(self, value: str) -> None:
+        self._api_base_url = value.rstrip("/") if value else None
+
     @abstractmethod
     def fetch_post(self, post_id: int) -> BooruPost:
         """Fetch a single post by ID."""

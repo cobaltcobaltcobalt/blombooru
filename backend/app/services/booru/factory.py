@@ -10,6 +10,7 @@ from ...models import BooruConfig
 from ...utils.logger import logger
 from .base import BooruClient
 from .danbooru import DanbooruClient
+from .domain_overrides import get_api_base_url, get_domain_candidates
 from .gelbooru import GelbooruClient
 
 _CLIENT_CLASSES = [
@@ -107,7 +108,7 @@ def get_booru_config_for_url(db: Optional[Session], url: str) -> Optional[BooruC
         if not hostname:
             return None
 
-        candidates = [hostname]
+        candidates = get_domain_candidates(hostname)
         if parsed.port:
             candidates.append(f"{hostname}:{parsed.port}")
             if ":" in hostname:
@@ -155,6 +156,7 @@ def _get_cached_client(
                     client = client_cls(base_url)
             else:
                 client = client_cls(base_url)
+            client.api_base_url = get_api_base_url(base_url)
             _client_cache[cache_key] = client
         return client
 

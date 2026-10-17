@@ -104,7 +104,7 @@ class DanbooruClient(BooruClient):
             self._last_profile_attempt = now
 
             try:
-                url = f"{self.base_url}/profile.json"
+                url = f"{self.api_base_url}/profile.json"
                 resp = self.session.get(url, timeout=(3, 5))
                 if resp.status_code == 200:
                     data = resp.json()
@@ -238,7 +238,7 @@ class DanbooruClient(BooruClient):
         from DText) into a single string.  Returns None if there is no
         commentary or if the request fails.
         """
-        url = f"{self.base_url}/posts/{post_id}/artist_commentary.json"
+        url = f"{self.api_base_url}/posts/{post_id}/artist_commentary.json"
         try:
             response = self.session.get(url, timeout=10)
             if response.status_code == 404:
@@ -270,7 +270,7 @@ class DanbooruClient(BooruClient):
 
     def fetch_post(self, post_id: int) -> BooruPost:
         self.ensure_user_id()
-        url = f"{self.base_url}/posts/{post_id}.json"
+        url = f"{self.api_base_url}/posts/{post_id}.json"
         data = self._request_with_retry(url)
 
         tags = self._parse_tags_from_post(data)
@@ -301,7 +301,7 @@ class DanbooruClient(BooruClient):
     def search_posts(self, tags: str = "", page: int = 1, limit: int = 20) -> List[BooruPost]:
         """Search posts by tags. ready for future viewer feature."""
         self.ensure_user_id()
-        url = f"{self.base_url}/posts.json"
+        url = f"{self.api_base_url}/posts.json"
         params = {"tags": tags, "page": page, "limit": min(limit, 200)}
 
         response = self.session.get(url, params=params, timeout=15)

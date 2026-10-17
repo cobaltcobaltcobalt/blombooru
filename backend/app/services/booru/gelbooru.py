@@ -152,7 +152,7 @@ class GelbooruClient(BooruClient):
         return f"gelbooru_{data.get('id', 'unknown')}"
 
     def fetch_post(self, post_id: int) -> BooruPost:
-        url = f"{self.base_url}/index.php"
+        url = f"{self.api_base_url}/index.php"
         params = {
             "page": "dapi",
             "s": "post",
@@ -207,7 +207,7 @@ class GelbooruClient(BooruClient):
 
     def search_posts(self, tags: str = "", page: int = 1, limit: int = 20) -> List[BooruPost]:
         """Search posts by tags."""
-        url = f"{self.base_url}/index.php"
+        url = f"{self.api_base_url}/index.php"
         params = {
             "page": "dapi", 
             "s": "post", 
