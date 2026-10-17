@@ -14,6 +14,7 @@ from backend.app.routes.albums import (autocomplete_albums, clear_album_media_or
                                        get_albums, get_albums_tree,
                                        reorder_album_media, reorder_root_albums,
                                        reorder_sub_albums)
+from backend.app.routes.media import get_adjacent_media
 from backend.app.schemas import AlbumReorderRequest, MediaReorderRequest
 from backend.app.utils.album_utils import (add_media_to_album, delete_album_cascade,
                                           get_bulk_album_thumbnails,
@@ -650,6 +651,19 @@ class TestAlbumArchitecture(BackupTestBase):
         ))
         self.assertEqual([m.id for m in fb_media_desc["media"]], [m3.id, m2.id, m1.id])
 
+        # Test adjacent media prior to manual reorder with fallback sort
+        adj_m2_pre = asyncio.run(get_adjacent_media(
+            media_id=m2.id,
+            mode="album",
+            album_id=alb.id,
+            sort="manual",
+            fallback_sort="filename",
+            fallback_order="asc",
+            db=self.db
+        ))
+        self.assertEqual(adj_m2_pre["prev_id"], m1.id)
+        self.assertEqual(adj_m2_pre["next_id"], m3.id)
+
         # Reorder media: m3, m1, m2
         res = asyncio.run(reorder_album_media(
             album_id=alb.id,
@@ -682,6 +696,59 @@ class TestAlbumArchitecture(BackupTestBase):
         # Manual sorting should strictly preserve the manual order regardless of order parameter
         self.assertEqual(media_ids_desc, [m3.id, m1.id, m2.id])
 
+        # Test adjacent media with manual sort: [m3, m1, m2]
+        adj_m3 = asyncio.run(get_adjacent_media(
+            media_id=m3.id,
+            mode="album",
+            album_id=alb.id,
+            sort="manual",
+            db=self.db
+        ))
+        self.assertIsNone(adj_m3["prev_id"])
+        self.assertEqual(adj_m3["next_id"], m1.id)
+
+        adj_m1 = asyncio.run(get_adjacent_media(
+            media_id=m1.id,
+            mode="album",
+            album_id=alb.id,
+            sort="manual",
+            db=self.db
+        ))
+        self.assertEqual(adj_m1["prev_id"], m3.id)
+        self.assertEqual(adj_m1["next_id"], m2.id)
+
+        adj_m2 = asyncio.run(get_adjacent_media(
+            media_id=m2.id,
+            mode="album",
+            album_id=alb.id,
+            sort="manual",
+            db=self.db
+        ))
+        self.assertEqual(adj_m2["prev_id"], m1.id)
+        self.assertIsNone(adj_m2["next_id"])
+
+        # Test adjacent media when sort is omitted (should detect manual order in album)
+        adj_m1_default = asyncio.run(get_adjacent_media(
+            media_id=m1.id,
+            mode="album",
+            album_id=alb.id,
+            db=self.db
+        ))
+        self.assertEqual(adj_m1_default["prev_id"], m3.id)
+        self.assertEqual(adj_m1_default["next_id"], m2.id)
+
+        # Test adjacent media with order="desc" (manual order is strictly preserved)
+        adj_m1_desc = asyncio.run(get_adjacent_media(
+            media_id=m1.id,
+            mode="album",
+            album_id=alb.id,
+            sort="manual",
+            order="desc",
+            db=self.db
+        ))
+        self.assertEqual(adj_m1_desc["prev_id"], m3.id)
+        self.assertEqual(adj_m1_desc["next_id"], m2.id)
+
         # Clear media order
         clear_res = asyncio.run(clear_album_media_order(
             album_id=alb.id,
@@ -708,6 +775,19 @@ class TestAlbumArchitecture(BackupTestBase):
             db=self.db
         ))
         self.assertEqual([m.id for m in fb_media_cleared["media"]], [m1.id, m2.id, m3.id])
+
+        # Test adjacent media reverts to fallback sort after clearing
+        adj_m2_cleared = asyncio.run(get_adjacent_media(
+            media_id=m2.id,
+            mode="album",
+            album_id=alb.id,
+            sort="manual",
+            fallback_sort="filename",
+            fallback_order="asc",
+            db=self.db
+        ))
+        self.assertEqual(adj_m2_cleared["prev_id"], m1.id)
+        self.assertEqual(adj_m2_cleared["next_id"], m3.id)
 
     def test_reparent_album_resets_sort_position(self):
         root1 = self._create_album("Parent1")

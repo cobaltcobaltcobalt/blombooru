@@ -50,7 +50,7 @@ def get_media_sort_clauses(
     if sort_by in overrides:
         sort_column = overrides[sort_by]
     elif sort_by == "manual":
-        # Manual ordering is album-media specific and handled inline in get_album_contents
+        # Manual ordering is album-media specific and handled inline in get_album_contents and get_adjacent_media
         sort_column = Media.uploaded_at
     elif sort_by == "filename":
         sort_column = Media.filename

@@ -1094,6 +1094,12 @@ class MediaViewer extends MediaViewerBase {
         const seed = urlParams.get('seed');
         if (seed) queryParams.set('seed', seed);
 
+        const fallbackSort = urlParams.get('fallback_sort');
+        if (fallbackSort) queryParams.set('fallback_sort', fallbackSort);
+
+        const fallbackOrder = urlParams.get('fallback_order');
+        if (fallbackOrder) queryParams.set('fallback_order', fallbackOrder);
+
         try {
             const res = await fetch(`/api/media/${this.mediaId}/adjacent?${queryParams.toString()}`);
             if (!res.ok) return;

@@ -150,9 +150,11 @@ Returns the previous and next media IDs, hashes, and ratings relative to `media_
 | `q` | string | | Search query string |
 | `rating` | string | | Rating filter: `safe`, `questionable`, `explicit`, or shorthands `s`, `q`, `e` (comma-separated). Applied as an additional filter. A `rating:` term inside `q` takes precedence over this parameter. |
 | `custom_filter` | string[] | | Custom filter tag expressions |
-| `sort` | string | null | Sort field (falls back to settings default when omitted and not specified in `q`) |
+| `sort` | string | null | Sort field (falls back to settings default when omitted and not specified in `q`; in `album` mode, supports `manual` and defaults to album manual order if present) |
 | `order` | string | null | Sort direction (`asc` or `desc`, falls back to settings default when omitted and not specified in `q`) |
 | `seed` | string | | Seed string for randomized sorting |
+| `fallback_sort` | string | `uploaded_at` | Fallback sort field when `sort=manual` in `album` mode |
+| `fallback_order` | string | `desc` | Fallback sort order (`asc` or `desc`) when `sort=manual` in `album` mode |
 
 **Response:**
 

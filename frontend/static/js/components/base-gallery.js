@@ -1830,6 +1830,9 @@ class BaseGallery {
         const basePath = linkUrl || `/media/${media.id}`;
         if (preserveQueryParams) {
             const params = new URLSearchParams(window.location.search);
+            if (this.currentSort === 'manual' && !params.has('fallback_sort')) {
+                this.appendSortParams(params);
+            }
             const queryString = params.toString();
             link.href = `${basePath}${queryString ? '?' + queryString : ''}`;
         } else {

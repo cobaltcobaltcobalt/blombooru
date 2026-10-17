@@ -37,7 +37,7 @@ from ..utils.media_helpers import (create_stripped_media_cache,
                                    sanitize_filename,
                                    serve_media_file)
 from ..utils.media_processor import calculate_file_hash, process_media_file
-from ..utils.media_sort import apply_media_sort
+from ..utils.media_sort import apply_media_sort, get_media_sort_clauses
 from ..utils.search_parser import (apply_custom_filters_or,
                                    apply_search_criteria, parse_search_query)
 from ..utils.thumbnail_generator import generate_thumbnail, THUMBNAIL_EXT, thumbnail_mime_type
@@ -1120,6 +1120,8 @@ async def get_adjacent_media(
     sort: Optional[str] = None,
     order: Optional[str] = None,
     seed: Optional[str] = None,
+    fallback_sort: Optional[str] = None,
+    fallback_order: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     """Get previous and next media IDs relative to media_id within the given context."""
@@ -1147,21 +1149,47 @@ async def get_adjacent_media(
                 media_query = apply_custom_filters_or(media_query, custom_filter, db)
 
             if not q or ('order' not in parsed['meta'] and 'sort' not in parsed['meta']):
-                sort_by = sort if sort else settings.get_default_sort()
-                sort_order = order if order else settings.get_default_order()
+                sort_by = sort
+                if not sort_by:
+                    has_manual_media = db.query(blombooru_album_media.c.media_id).filter(
+                        blombooru_album_media.c.album_id == album_id,
+                        blombooru_album_media.c.sort_position.isnot(None)
+                    ).limit(1).scalar() is not None
+                    sort_by = "manual" if has_manual_media else settings.get_default_sort()
+
+                sort_order = order if order else ("asc" if sort_by == "manual" else settings.get_default_order())
                 media_query = media_query.order_by(None)
-                media_query = apply_media_sort(
-                    media_query,
-                    sort_by,
-                    sort_order,
-                    db,
-                    seed,
-                    column_overrides={
-                        'uploaded_at': Media.id,
-                        'last_modified': Media.id,
-                        'name': Media.filename,
-                    },
-                )
+                if sort_by == "manual":
+                    fb_sort = fallback_sort if isinstance(fallback_sort, str) and fallback_sort.strip() else "uploaded_at"
+                    fb_order = fallback_order.lower() if isinstance(fallback_order, str) and fallback_order.lower() in ("asc", "desc") else "desc"
+                    fb_media_clauses = get_media_sort_clauses(
+                        fb_sort,
+                        fb_order,
+                        db,
+                        seed,
+                        column_overrides={
+                            'uploaded_at': Media.id,
+                            'last_modified': Media.id,
+                            'name': Media.filename,
+                        },
+                    )
+                    media_query = media_query.order_by(
+                        blombooru_album_media.c.sort_position.asc().nulls_last(),
+                        *fb_media_clauses
+                    )
+                else:
+                    media_query = apply_media_sort(
+                        media_query,
+                        sort_by,
+                        sort_order,
+                        db,
+                        seed,
+                        column_overrides={
+                            'uploaded_at': Media.id,
+                            'last_modified': Media.id,
+                            'name': Media.filename,
+                        },
+                    )
         else:
             media_query = db.query(Media.id)
 
