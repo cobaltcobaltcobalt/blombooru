@@ -6,7 +6,7 @@ import html
 
 import requests
 
-from .base import BooruClient
+from .base import BooruAuthenticationError, BooruClient, BooruNotFoundError
 from .types import BooruPost, BooruTag
 from ...utils.logger import logger
 
@@ -88,14 +88,32 @@ class GelbooruClient(BooruClient):
                     raise Exception("Rate limited by booru API")
 
                 if response.status_code == 404:
-                    raise Exception("Post not found")
+                    raise BooruNotFoundError("Post not found")
+
+                if response.status_code in (401, 403):
+                    logger.warning(
+                        f"Booru request rejected with HTTP {response.status_code} by {self.api_base_url} "
+                        f"(credentials sent: {bool(self._auth_params)})"
+                    )
+                    raise BooruAuthenticationError("admin.media_management.booru_import.error_access_denied_403")
 
                 response.raise_for_status()
 
-                if not response.text.strip():
+                text = response.text.strip()
+                if not text:
                     raise Exception("Empty response from API")
 
-                data = response.json()
+                try:
+                    data = response.json()
+                except ValueError:
+                    lowered = text[:300].lower()
+                    if "authentication" in lowered or "api key" in lowered or "login" in lowered:
+                        logger.warning(
+                            f"Booru request rejected as unauthenticated by {self.api_base_url}: "
+                            f"{text[:200]} (credentials sent: {bool(self._auth_params)})"
+                        )
+                        raise BooruAuthenticationError("admin.media_management.booru_import.error_access_denied_403")
+                    raise Exception(f"Unexpected non-JSON response from booru: {text[:200]}")
                 if isinstance(data, list):
                     if not data:
                         return [] 
@@ -163,7 +181,7 @@ class GelbooruClient(BooruClient):
 
         data_list = self._request_with_retry(url, params=params)
         if not data_list:
-            raise Exception("Post not found")
+            raise BooruNotFoundError("Post not found")
         
         if isinstance(data_list, list):
             data = data_list[0]

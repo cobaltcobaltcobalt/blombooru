@@ -1,4 +1,5 @@
-from .base import BooruClient
+from .base import (BooruAuthenticationError, BooruClient, BooruError,
+                   BooruNotFoundError)
 from .danbooru import DanbooruClient
 from .factory import (clear_client_cache, get_booru_config_for_url,
                       get_client_for_url, get_user_agent_for_url,
@@ -7,6 +8,9 @@ from .gelbooru import GelbooruClient
 from .types import BooruPost, BooruTag
 
 __all__ = [
+    "BooruError",
+    "BooruAuthenticationError",
+    "BooruNotFoundError",
     "BooruPost",
     "BooruTag",
     "BooruClient",

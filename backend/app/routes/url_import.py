@@ -17,7 +17,8 @@ from ..utils.logger import logger
 from ..utils.media_helpers import get_unique_filename
 from ..utils.request_helpers import safe_error_detail
 from ..utils.url_fetch import UrlFetchError, download_media_to_temp, fetch_media_stream, probe_media_url
-from ..services.booru import get_client_for_url
+from ..services.booru import (BooruAuthenticationError, BooruNotFoundError,
+                              get_client_for_url)
 
 router = APIRouter(prefix="/api/media/url-import", tags=["url-import"])
 
@@ -78,11 +79,10 @@ def _do_fetch_media_url(url: str) -> dict:
                 except Exception:
                     pass
                 import requests
-                if isinstance(e, requests.HTTPError):
-                    if e.response.status_code == 403:
-                        raise HTTPException(status_code=403, detail="admin.media_management.booru_import.error_access_denied_403")
-                    if e.response.status_code == 404:
-                        raise HTTPException(status_code=404, detail="admin.media_management.booru_import.error_post_not_found")
+                if isinstance(e, BooruAuthenticationError) or (isinstance(e, requests.HTTPError) and e.response.status_code in (401, 403)):
+                    raise HTTPException(status_code=403, detail="admin.media_management.booru_import.error_access_denied_403")
+                if isinstance(e, BooruNotFoundError) or (isinstance(e, requests.HTTPError) and e.response.status_code == 404):
+                    raise HTTPException(status_code=404, detail="admin.media_management.booru_import.error_post_not_found")
                 raise HTTPException(
                     status_code=500,
                     detail=f"admin.media_management.booru_import.error_fetch_failed:::{safe_error_detail('Fetch failed', e)}",

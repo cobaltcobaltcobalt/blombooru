@@ -7,7 +7,7 @@ import html
 
 import requests
 
-from .base import BooruClient
+from .base import BooruAuthenticationError, BooruClient, BooruNotFoundError
 from .types import BooruPost, BooruTag
 from ...utils.logger import logger
 from ...utils.tag_utils import dtext_to_plain
@@ -158,7 +158,14 @@ class DanbooruClient(BooruClient):
                     raise Exception("Rate limited by booru API")
 
                 if response.status_code == 404:
-                    raise Exception("Post not found")
+                    raise BooruNotFoundError("Post not found")
+
+                if response.status_code in (401, 403):
+                    logger.warning(
+                        f"Danbooru request rejected with HTTP {response.status_code} by {self.api_base_url} "
+                        f"(user: {self.username})"
+                    )
+                    raise BooruAuthenticationError("admin.media_management.booru_import.error_access_denied_403")
 
                 response.raise_for_status()
                 return response.json()

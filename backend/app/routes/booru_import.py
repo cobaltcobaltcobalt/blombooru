@@ -14,8 +14,9 @@ from ..utils.request_helpers import safe_error_detail
 from ..database import get_db
 from ..enums import RatingEnum
 from ..models import Media, User
-from ..services.booru import (BooruPost, get_client_for_url,
-                             get_user_agent_for_url)
+from ..services.booru import (BooruAuthenticationError, BooruNotFoundError,
+                              BooruPost, get_client_for_url,
+                              get_user_agent_for_url)
 from ..utils.album_utils import set_media_albums
 from ..utils.cache import (invalidate_media_cache, invalidate_tag_cache)
 from ..utils.logger import logger
@@ -76,8 +77,12 @@ async def fetch_booru_post(
         _enrich_post_tags_with_db_categories(post, db)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=safe_error_detail("Invalid request", e))
+    except BooruAuthenticationError:
+        raise HTTPException(status_code=403, detail="admin.media_management.booru_import.error_access_denied_403")
+    except BooruNotFoundError:
+        raise HTTPException(status_code=404, detail="admin.media_management.booru_import.error_post_not_found")
     except requests.HTTPError as e:
-        if e.response.status_code == 403:
+        if e.response.status_code in (401, 403):
             raise HTTPException(status_code=403, detail="admin.media_management.booru_import.error_access_denied_403")
         if e.response.status_code == 404:
             raise HTTPException(status_code=404, detail="admin.media_management.booru_import.error_post_not_found")
@@ -126,8 +131,12 @@ async def download_and_import(
         _enrich_post_tags_with_db_categories(post, db)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=safe_error_detail("Invalid request", e))
+    except BooruAuthenticationError:
+        raise HTTPException(status_code=403, detail="admin.media_management.booru_import.error_access_denied_403")
+    except BooruNotFoundError:
+        raise HTTPException(status_code=404, detail="admin.media_management.booru_import.error_post_not_found")
     except requests.HTTPError as e:
-        if e.response.status_code == 403:
+        if e.response.status_code in (401, 403):
             raise HTTPException(status_code=403, detail="admin.media_management.booru_import.error_access_denied_403")
         if e.response.status_code == 404:
             raise HTTPException(status_code=404, detail="admin.media_management.booru_import.error_post_not_found")

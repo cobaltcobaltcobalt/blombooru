@@ -3,6 +3,18 @@ from typing import List
 
 from .types import BooruPost
 
+class BooruError(Exception):
+    """Base exception for booru client errors."""
+    pass
+
+class BooruAuthenticationError(BooruError):
+    """Raised when booru API rejects request due to missing/invalid credentials."""
+    pass
+
+class BooruNotFoundError(BooruError):
+    """Raised when post is not found on booru."""
+    pass
+
 class BooruClient(ABC):
     """Abstract base for booru API clients."""
 
