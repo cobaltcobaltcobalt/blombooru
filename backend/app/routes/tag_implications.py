@@ -3,15 +3,17 @@ import fnmatch
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from pydantic import BaseModel, model_validator
-from pydantic.types import conset, StringConstraints
+from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic.types import StringConstraints
 from sqlalchemy import cast, func, or_, select, String
 from sqlalchemy.orm import selectinload, Session
 from typing import Annotated, Self
 
 from ..auth import require_admin_mode
 from ..database import get_db
+from ..enums import RatingEnum, TagCategoryEnum
 from ..models import blombooru_implication_implied, blombooru_implication_targets, Tag, TagImplication, User 
+from ..schemas import TagRatingValue
 from ..utils.cache import invalidate_tag_cache
 from ..utils.tag_utils import resolve_implications
 
@@ -20,6 +22,17 @@ router = APIRouter(prefix="/api/tag-implications", tags=["tag-implications"])
 class TagRef(BaseModel):
     id: int
     name: str
+    category: TagCategoryEnum = TagCategoryEnum.general
+    rating: TagRatingValue = "none"
+
+    @field_validator("rating", mode="before")
+    @classmethod
+    def normalize_rating(cls, v):
+        if v is None:
+            return "none"
+        if isinstance(v, RatingEnum):
+            return v.value
+        return str(v).lower()
 
     class Config:
         from_attributes = True
@@ -39,7 +52,7 @@ Tag_Or_Pattern = Annotated[str, StringConstraints(strip_whitespace=True, to_lowe
 class TagImplicationCreate(BaseModel):
     target_tags: set[Tag_Or_Pattern] = set()
     target_tag_patterns: set[Tag_Or_Pattern] = set()
-    implied_tags: conset(Tag_Or_Pattern, min_length=1)
+    implied_tags: set[Tag_Or_Pattern] = Field(..., min_length=1)
 
     @model_validator(mode="after")
     def validate_target_presence(self) -> Self:

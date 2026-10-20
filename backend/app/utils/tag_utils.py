@@ -274,25 +274,145 @@ def enrich_and_resolve_tags(
 
         existing_match = next((t_obj for t_obj in tag_set.values() if t_obj.name.lower() == c_lower), None)
         if existing_match:
+            match_rating = existing_match.rating.value if existing_match.rating else "none"
             enriched.append(BooruTag(
                 name=existing_match.name,
                 category=existing_match.category,
-                is_new=False
+                is_new=False,
+                rating=match_rating
             ))
         else:
             enriched.append(BooruTag(
                 name=canonical_name,
                 category=category,
-                is_new=True
+                is_new=True,
+                rating="none"
             ))
 
     for implied in tag_set.values():
         if implied.name.lower() not in seen_canonical:
             seen_canonical.add(implied.name.lower())
+            implied_rating = implied.rating.value if implied.rating else "none"
             enriched.append(BooruTag(
                 name=implied.name,
                 category=implied.category,
-                is_new=False
+                is_new=False,
+                rating=implied_rating
             ))
 
     return enriched
+
+def normalize_tag_rating(val):
+    """Normalize tag rating to RatingEnum, or None if 'none' or null. Raises HTTPException on invalid input."""
+    from fastapi import HTTPException
+    from ..enums import RatingEnum
+
+    if val is None:
+        return None
+    if isinstance(val, RatingEnum):
+        return val
+    cleaned = str(val).strip().lower()
+    if cleaned in ("none", ""):
+        return None
+    if cleaned in RatingEnum.__members__:
+        return RatingEnum[cleaned]
+    raise HTTPException(status_code=400, detail=f"Invalid Tag Rating: '{val}'. Accepted values: 'none', 'safe', 'questionable', 'explicit'.")
+
+def apply_tag_rating_filter(query, rating):
+    """Apply tag rating filter to a Tag query."""
+    from collections.abc import Iterable
+    from sqlalchemy import or_
+    from ..enums import parse_rating_filter, is_rating_filter_active
+    from ..models import Tag
+
+    if not rating:
+        return query
+
+    # Guard against non-string, non-iterable objects (e.g. FastAPI Query default param in direct calls)
+    if not isinstance(rating, (str, Iterable)):
+        return query
+
+    if isinstance(rating, str):
+        raw_list = [r.strip().lower() for r in rating.split(",") if r.strip()]
+    else:
+        raw_list = [str(r).strip().lower() for r in rating if str(r).strip()]
+
+    if not raw_list:
+        return query
+
+    has_none = "none" in raw_list
+    valid_ratings = parse_rating_filter(rating)
+
+    # If only 'none' was requested (no valid enum ratings)
+    if has_none and not valid_ratings:
+        return query.filter(Tag.rating.is_(None))
+
+    # If valid ratings are present
+    if valid_ratings:
+        if not is_rating_filter_active(valid_ratings):
+            return query
+        return query.filter(or_(Tag.rating.is_(None), Tag.rating.in_(valid_ratings)))
+
+    return query
+
+RATING_HIERARCHY = {
+    None: 0,
+    "safe": 1,
+    "questionable": 2,
+    "explicit": 3,
+}
+
+HIERARCHY_TO_RATING = {
+    1: "safe",
+    2: "questionable",
+    3: "explicit",
+}
+
+def get_escalated_rating(current_rating, tags):
+    """Given a media's current rating and a collection of tags, return the escalated RatingEnum if escalated."""
+    from ..enums import RatingEnum
+
+    norm_current = RatingEnum.normalize(current_rating) if current_rating is not None else None
+    current_key = norm_current.value if norm_current else None
+    current_rank = RATING_HIERARCHY.get(current_key, 0)
+    max_rank = current_rank
+
+    for tag in tags:
+        r = None
+        if hasattr(tag, "rating"):
+            r = getattr(tag, "rating")
+        elif isinstance(tag, dict) and "rating" in tag:
+            r = tag["rating"]
+        elif isinstance(tag, (RatingEnum, str)):
+            r = tag
+
+        norm_tag = RatingEnum.normalize(r) if r is not None else None
+        tag_key = norm_tag.value if norm_tag else None
+        tag_rank = RATING_HIERARCHY.get(tag_key, 0)
+        if tag_rank > max_rank:
+            max_rank = tag_rank
+
+    if max_rank > current_rank and max_rank in HIERARCHY_TO_RATING:
+        return RatingEnum(HIERARCHY_TO_RATING[max_rank])
+
+    return norm_current
+
+def _tag_name_key(tag):
+    """Lowercased name for a Tag model, ProposedTag/BooruTag object, dict or plain string."""
+    if isinstance(tag, str):
+        name = tag
+    elif isinstance(tag, dict):
+        name = tag.get("name")
+    else:
+        name = getattr(tag, "name", None)
+    return str(name).strip().lower() if name else None
+
+def get_newly_added_tags(previous_tags, current_tags):
+    """Return the entries of current_tags whose name is not present in previous_tags."""
+    previous = {k for k in (_tag_name_key(t) for t in (previous_tags or [])) if k}
+    newly_added = []
+    for tag in current_tags or []:
+        key = _tag_name_key(tag)
+        if key and key not in previous:
+            newly_added.append(tag)
+    return newly_added
