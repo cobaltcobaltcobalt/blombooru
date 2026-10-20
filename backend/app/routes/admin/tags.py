@@ -2,7 +2,6 @@ import asyncio
 import csv
 import io
 
-from typing import List
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import case, desc, func
@@ -14,10 +13,12 @@ from ...config import settings
 from ...utils.request_helpers import safe_error_detail
 from ...database import get_db
 from ...enums import TagCategoryEnum
-from ...models import Media, Tag, TagAlias, TagImplication, TagRating, User
-from ...schemas import TagResponse
+from ...models import Media, Tag, TagAlias, TagImplication, User
+from ...schemas import BulkRatingUpdateRequest, TagResponse
 from ...utils.cache import invalidate_tag_cache
 from ...utils.logger import logger
+from ...utils.album_utils import handle_media_rating_changed
+from ...utils.tag_utils import get_escalated_rating, normalize_tag_rating
 
 router = APIRouter()
 
@@ -299,21 +300,7 @@ async def search_tags(
         Tag.name
     ).limit(50).all()
 
-    return_items = []
-    for tag in tags:
-        if tag.rating_entry:
-            returned_rating = tag.rating_entry.rating
-        else:
-            returned_rating = "none"
-        return_items.append(TagResponse(
-            name=tag.name,
-            category=tag.category,
-            id=tag.id,
-            rating=returned_rating,
-            post_count=tag.post_count,
-            created_at=tag.created_at
-        ))
-    return {"tags": return_items}
+    return {"tags": [TagResponse.model_validate(tag) for tag in tags]}
 
 @router.delete("/clear-tags")
 async def clear_all_tags(
@@ -389,15 +376,11 @@ async def get_tag(
     
     aliases = [a.alias_name for a in tag.aliases]
 
-    if tag.rating_entry:
-        tag_rating = tag.rating_entry.rating
-    else:
-        tag_rating = 'none'
     return {
         "id": tag.id,
         "name": tag.name,
         "category": tag.category,
-        "rating": tag_rating,
+        "rating": tag.rating.value if tag.rating else "none",
         "post_count": tag.post_count,
         "aliases": aliases
     }
@@ -410,20 +393,19 @@ async def update_tag(
     db: Session = Depends(get_db)
 ):
     """Rename a tag, change its category, update its aliases, change its rating"""
-    from ...models import TagAlias
-    from ...enums import RatingEnum
-
     try:
         tag = db.query(Tag).filter(Tag.id == tag_id).first()
         if not tag:
             raise HTTPException(status_code=404, detail="error_tag_not_found")
 
-        new_name = (data.get("name") or "").strip().lower()
-        new_category = data.get("category", tag.category)
-        new_rating = data.get("rating").strip().lower()
+        if "name" in data:
+            new_name = (data.get("name") or "").strip().lower()
+            if not new_name:
+                raise HTTPException(status_code=400, detail="error_tag_name_empty")
+        else:
+            new_name = tag.name
 
-        if not new_name:
-            raise HTTPException(status_code=400, detail="error_tag_name_empty")
+        new_category = data.get("category", tag.category)
 
         old_name = tag.name
 
@@ -480,29 +462,15 @@ async def update_tag(
                 if alias not in existing_alias_names:
                     db.add(TagAlias(alias_name=alias, target_tag_id=tag.id))
 
-        if new_rating == "none":
-            if tag.rating_entry:
-                db.delete(tag.rating_entry)
-        elif new_rating in RatingEnum:
-            if tag.rating_entry is None:
-                db.add(TagRating(
-                    tag_id=tag_id,
-                    rating=new_rating
-                ))
-            elif tag.rating_entry.rating is not new_rating:
-                tag.rating_entry.rating = new_rating
-        else:
-            raise HTTPException(status_code=400, detail=f"Invalid Tag Rating: '{new_rating}'. Accepted values: 'none', 'safe', 'questionable', 'explicit'.")
+        if "rating" in data:
+            tag.rating = normalize_tag_rating(data.get("rating"))
 
         db.commit()
         invalidate_tag_cache()
 
         updated_aliases = [a.alias_name for a in db.query(TagAlias).filter(TagAlias.target_tag_id == tag.id).all()]
-        if tag.rating_entry:
-            tag_rating = tag.rating_entry.rating
-        else:
-            tag_rating = "none"
-        return {"old_name": old_name, "tag_name": tag.name, "category": tag.category, "Rating": tag_rating, "aliases": updated_aliases}
+        tag_rating = tag.rating.value if tag.rating else "none"
+        return {"old_name": old_name, "tag_name": tag.name, "category": tag.category, "rating": tag_rating, "aliases": updated_aliases}
 
     except HTTPException:
         raise
@@ -589,6 +557,26 @@ async def bulk_update_tag_category(
 
     updated = db.query(Tag).filter(Tag.id.in_(data.tag_ids)).update(
         {Tag.category: data.category},
+        synchronize_session=False
+    )
+    db.commit()
+    invalidate_tag_cache()
+    return {"updated": updated}
+
+@router.post("/tags/bulk-rating")
+async def bulk_update_tag_rating(
+    data: BulkRatingUpdateRequest,
+    current_user: User = Depends(require_admin_mode),
+    db: Session = Depends(get_db)
+):
+    """Bulk update tag rating for selected tags."""
+    if not data.tag_ids:
+        return {"updated": 0}
+
+    rating_enum = normalize_tag_rating(data.rating)
+
+    updated = db.query(Tag).filter(Tag.id.in_(data.tag_ids)).update(
+        {Tag.rating: rating_enum},
         synchronize_session=False
     )
     db.commit()
@@ -711,6 +699,9 @@ async def merge_tag(
         target_tag = Tag(name=target_name, category=source_tag.category)
         db.add(target_tag)
         db.flush()
+
+    if target_tag.rating is None and source_tag.rating is not None:
+        target_tag.rating = source_tag.rating
         
     # 1. Remove any alias that has target_name as its alias_name (e.g. if target_name was an alias of source_tag or another tag)
     db.query(TagAlias).filter(TagAlias.alias_name == target_name).delete(synchronize_session='fetch')
@@ -732,9 +723,15 @@ async def merge_tag(
     
     # 5. Update media items
     media_with_source = db.query(Media).filter(Media.tags.any(id=source_tag.id)).all()
+    rating_changed_media = []
     for media in media_with_source:
         if target_tag not in media.tags:
             media.tags.append(target_tag)
+            # The target tag is newly added to this media, so it may escalate its rating.
+            escalated = get_escalated_rating(media.rating, [target_tag])
+            if escalated and escalated != media.rating:
+                media.rating = escalated
+                rating_changed_media.append((media.id, escalated.value))
             
     # 6. Delete source tag
     source_name = source_tag.name
@@ -750,7 +747,10 @@ async def merge_tag(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=safe_error_detail("Failed to merge tag", e))
-        
+
+    for m_id, new_rating in rating_changed_media:
+        handle_media_rating_changed(db, m_id, new_rating)
+
     invalidate_tag_cache()
 
     return {
