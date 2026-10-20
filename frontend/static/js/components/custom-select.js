@@ -51,7 +51,7 @@ class CustomSelect {
                 newOption.classList.add('selected');
                 this.selectedValue = newOption.dataset.value;
                 this.element.dataset.value = newOption.dataset.value;
-                this.valueDisplay.textContent = newOption.textContent;
+                this.valueDisplay.textContent = newOption.dataset.display || newOption.textContent;
             }
         });
     }
@@ -123,13 +123,14 @@ class CustomSelect {
         option.classList.add('selected');
         this.selectedValue = option.dataset.value;
         this.element.dataset.value = this.selectedValue;
-        this.valueDisplay.textContent = option.textContent;
+        this.valueDisplay.textContent = option.dataset.display || option.textContent;
 
         if (triggerEvent) {
             this.element.dispatchEvent(new CustomEvent('change', {
                 detail: {
                     value: this.selectedValue,
-                    text: option.textContent
+                    text: option.textContent,
+                    display: option.dataset.display || option.textContent
                 }
             }));
         }

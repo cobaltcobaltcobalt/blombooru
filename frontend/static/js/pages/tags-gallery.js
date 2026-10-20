@@ -5,7 +5,7 @@ class TagsGallery extends BaseGallery {
             itemSelector: '.tag-card',
             defaultSort: 'post_count',
             defaultOrder: 'desc',
-            enableRatingFilter: false,
+            enableRatingFilter: true,
             enableTooltips: false,
             enableSorting: true,
             enablePagination: true
@@ -79,8 +79,10 @@ class TagsGallery extends BaseGallery {
         const leftWidth = 24 + tagWidth + desktopCountWidth + 16;
 
         const catWidth = catEl ? (catEl.offsetWidth || catEl.scrollWidth) : 60;
+        const ratingEl = card.querySelector('.tag-rating-element');
+        const ratingWidth = ratingEl ? (ratingEl.offsetWidth || ratingEl.scrollWidth) : 32;
         const metaRightWidth = metaRight ? (metaRight.offsetWidth || metaRight.scrollWidth) : 0;
-        const rightWidth = catWidth + metaRightWidth + 16;
+        const rightWidth = catWidth + ratingWidth + metaRightWidth + 16;
 
         const availableWidth = header.clientWidth;
         const requiredWidth = leftWidth + rightWidth + 24;
@@ -118,6 +120,22 @@ class TagsGallery extends BaseGallery {
 
     setupSearchInput() {
         if (!this.searchInput) return;
+
+        if (typeof TagAutocomplete !== 'undefined') {
+            this.autocomplete = new TagAutocomplete(this.searchInput, {
+                multipleValues: false,
+                appendSpace: false,
+                enableRatingFilter: true,
+                ratingFilter: () => this.currentRating,
+                onSelect: (tag) => {
+                    this.searchInput.value = tag.name;
+                    clearTimeout(this.searchDebounceTimer);
+                    this.currentPage = 1;
+                    this.updateUrlParams({ q: tag.name, page: null });
+                    this.loadContent();
+                }
+            });
+        }
 
         this.searchInput.addEventListener('input', (e) => {
             const start = e.target.selectionStart;
@@ -268,6 +286,10 @@ class TagsGallery extends BaseGallery {
                 params.set('categories', Array.from(this.selectedCategories).join(','));
             }
 
+            if (this.currentRating) {
+                params.set('rating', this.currentRating);
+            }
+
             this._abortController = new AbortController();
             const response = await fetch(`/api/tags/list?${params.toString()}`, {
                 signal: this._abortController.signal
@@ -329,6 +351,7 @@ class TagsGallery extends BaseGallery {
         card.className = 'surface border tag-card relative transition-colors';
         card.dataset.id = tagId;
         card.dataset.tagName = tag.name;
+        card.dataset.tagRating = tag.rating || 'none';
 
         const isSelected = app.isAdminMode && this.selectedItems.has(tagId);
         if (isSelected) card.classList.add('selected');
@@ -353,6 +376,7 @@ class TagsGallery extends BaseGallery {
         const tagLink = document.createElement('a');
         tagLink.href = `/?q=${encodeURIComponent(tag.name)}`;
         tagLink.className = `tag ${safeCat} tag-text text-xs px-2.5 py-0.5 font-medium hover:opacity-80 transition-opacity truncate tag-name-link`;
+        tagLink.dataset.tagRating = tag.rating || 'none';
         tagLink.textContent = tag.name;
 
         // Desktop usage count: visible in 1-row mode directly next to tag name, hidden in 2-row mode
@@ -455,7 +479,102 @@ class TagsGallery extends BaseGallery {
             catElement = catBadge;
         }
 
+        let ratingElement;
+        let ratingSelectInst = null;
+        const cleanRating = (typeof TagRating !== 'undefined') ? TagRating.normalize(tag.rating) : (tag.rating || 'none');
+        const ratings = [
+            { value: 'none', label: window.i18n.t('common.none', { defaultValue: 'None' }), abbr: 'N' },
+            { value: 'safe', label: window.i18n.t('common.safe', { defaultValue: 'Safe' }), abbr: 'S' },
+            { value: 'questionable', label: window.i18n.t('common.questionable', { defaultValue: 'Questionable' }), abbr: 'Q' },
+            { value: 'explicit', label: window.i18n.t('common.explicit', { defaultValue: 'Explicit' }), abbr: 'E' },
+        ];
+        const currentRatingObj = ratings.find(r => r.value === cleanRating) || ratings[0];
+
+        if (app.isAdminMode) {
+            const ratingSelectDiv = document.createElement('div');
+            ratingSelectDiv.className = 'custom-select tag-rating-element';
+            ratingSelectDiv.dataset.value = cleanRating;
+
+            ratingSelectDiv.innerHTML = `
+                <button type="button" class="custom-select-trigger tag rating-${cleanRating} tag-text flex items-center justify-between gap-1 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border border-transparent hover:border-primary/50 transition-colors focus:outline-none cursor-pointer select-none" title="${currentRatingObj.label}">
+                    <span class="custom-select-value">${currentRatingObj.abbr}</span>
+                    <span class="custom-select-arrow transition-transform duration-200">
+                        ${window.Icons.chevronDown({ size: 10 })}
+                    </span>
+                </button>
+                <div class="custom-select-dropdown bg border border-primary max-h-40 overflow-y-auto shadow-lg z-50 min-w-36 whitespace-nowrap">
+                    ${ratings.map(r => `
+                        <div class="custom-select-option px-3 py-1.5 cursor-pointer hover:surface text-xs ${r.value === cleanRating ? 'selected' : ''}" data-value="${r.value}" data-display="${r.abbr}">
+                            ${r.label}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+
+            ratingSelectDiv.addEventListener('mousedown', (e) => e.stopPropagation());
+            ratingSelectDiv.addEventListener('click', (e) => e.stopPropagation());
+
+            ratingSelectInst = new CustomSelect(ratingSelectDiv);
+            this.activeSelects.push(ratingSelectInst);
+
+            ratingSelectDiv.addEventListener('change', async (e) => {
+                const newRating = e.detail ? e.detail.value : ratingSelectDiv.dataset.value;
+                const oldRating = tag.rating || 'none';
+                if (newRating === oldRating) return;
+
+                const trigger = ratingSelectDiv.querySelector('.custom-select-trigger');
+                const oldClean = (typeof TagRating !== 'undefined') ? TagRating.normalize(oldRating) : oldRating;
+                const newClean = (typeof TagRating !== 'undefined') ? TagRating.normalize(newRating) : newRating;
+                const newObj = ratings.find(r => r.value === newClean) || ratings[0];
+                const oldObj = ratings.find(r => r.value === oldClean) || ratings[0];
+
+                try {
+                    await app.apiCall(`/api/admin/tags/${tag.id}`, {
+                        method: 'PUT',
+                        body: JSON.stringify({
+                            name: tag.name,
+                            category: tag.category,
+                            rating: newClean
+                        })
+                    });
+                    tag.rating = newClean;
+                    this.tagCache.set(tagId, tag);
+                    card.dataset.tagRating = newClean;
+                    tagLink.dataset.tagRating = newClean;
+
+                    if (trigger) {
+                        ['none', 'safe', 'questionable', 'explicit'].forEach(r => trigger.classList.remove(`rating-${r}`));
+                        trigger.classList.add(`rating-${newClean}`);
+                        trigger.title = newObj.label;
+                    }
+                    if (panel && panel.loaded) {
+                        panel.render();
+                    }
+                    app.showNotification(window.i18n.t('notifications.admin.tag_updated', { old_name: tag.name }), 'success');
+                } catch (err) {
+                    ratingSelectInst.setValue(oldClean, false);
+                    if (trigger) {
+                        ['none', 'safe', 'questionable', 'explicit'].forEach(r => trigger.classList.remove(`rating-${r}`));
+                        trigger.classList.add(`rating-${oldClean}`);
+                        trigger.title = oldObj.label;
+                    }
+                    app.showNotification(err.message, 'error', window.i18n.t('notifications.admin.error_updating_tag'));
+                }
+            });
+
+            ratingElement = ratingSelectDiv;
+        } else {
+            const ratingBadge = document.createElement('span');
+            const abbr = (typeof TagRating !== 'undefined') ? TagRating.abbr(cleanRating) : (cleanRating.charAt(0).toUpperCase() || 'N');
+            ratingBadge.className = `tag rating-${cleanRating} tag-text uppercase text-[10px] font-bold tracking-wider px-2 py-0.5 select-none tag-rating-element`;
+            ratingBadge.textContent = abbr;
+            ratingBadge.title = currentRatingObj.label;
+            ratingBadge.setAttribute('aria-label', currentRatingObj.label);
+            ratingElement = ratingBadge;
+        }
+
         metaLeft.appendChild(catElement);
+        metaLeft.appendChild(ratingElement);
         metaLeft.appendChild(postCountMobile);
         rightCol.appendChild(metaLeft);
 
@@ -477,12 +596,16 @@ class TagsGallery extends BaseGallery {
                     tagId: tag.id,
                     tagName: tag.name,
                     tagCategory: tag.category,
+                    tagRating: tag.rating,
                     onSaved: (result) => {
                         tag.name = result.tag_name || tag.name;
                         tag.category = result.category || tag.category;
+                        tag.rating = result.rating || tag.rating;
                         tag.aliases = result.aliases || tag.aliases;
                         this.tagCache.set(tagId, tag);
 
+                        card.dataset.tagRating = tag.rating;
+                        tagLink.dataset.tagRating = tag.rating;
                         tagLink.textContent = tag.name;
                         tagLink.href = `/?q=${encodeURIComponent(tag.name)}`;
                         const newSafeCat = TagInfoPanel.safeCategory(tag.category);
@@ -498,7 +621,24 @@ class TagsGallery extends BaseGallery {
                             catElement.className = `tag ${newSafeCat} tag-text uppercase text-[10px] font-bold tracking-wider px-2 py-0.5 select-none tag-cat-element`;
                             catElement.textContent = window.i18n.t('common.tag_category_' + newSafeCat);
                         }
-                        if (panel.loaded) {
+                        if (ratingSelectInst) {
+                            ratingSelectInst.setValue(tag.rating, false);
+                            const trigger = ratingElement.querySelector('.custom-select-trigger');
+                            if (trigger) {
+                                ['none', 'safe', 'questionable', 'explicit'].forEach(r => trigger.classList.remove(`rating-${r}`));
+                                trigger.classList.add(`rating-${tag.rating}`);
+                                const rObj = ratings.find(r => r.value === tag.rating) || ratings[0];
+                                trigger.title = rObj.label;
+                            }
+                        } else if (ratingElement) {
+                            const rObj = ratings.find(r => r.value === tag.rating) || ratings[0];
+                            const abbr = (typeof TagRating !== 'undefined') ? TagRating.abbr(tag.rating) : (tag.rating.charAt(0).toUpperCase() || 'N');
+                            ratingElement.className = `tag rating-${tag.rating} tag-text uppercase text-[10px] font-bold tracking-wider px-2 py-0.5 select-none tag-rating-element`;
+                            ratingElement.textContent = abbr;
+                            ratingElement.title = rObj.label;
+                            ratingElement.setAttribute('aria-label', rObj.label);
+                        }
+                        if (panel && panel.loaded) {
                             panel.render();
                         }
                     }
@@ -632,6 +772,7 @@ class TagsGallery extends BaseGallery {
         };
 
         bind('bulk-tag-category-btn', 'category');
+        bind('bulk-tag-rating-btn', 'rating');
         bind('bulk-tag-implies-btn', 'implies');
         bind('bulk-tag-merge-btn', 'merge');
         bind('bulk-tag-remove-btn', 'remove');
@@ -641,7 +782,7 @@ class TagsGallery extends BaseGallery {
         return Array.from(this.selectedItems)
             .map(id => this.tagCache.get(Number(id)))
             .filter(Boolean)
-            .map(({ id, name, category }) => ({ id, name, category }));
+            .map(({ id, name, category, rating }) => ({ id, name, category, rating: rating || 'none' }));
     }
 
     openBulkTagModal(action) {
@@ -699,6 +840,10 @@ class TagsGallery extends BaseGallery {
 
             if (this.selectedCategories.size > 0 && this.selectedCategories.size < this.allCategories.length) {
                 params.set('categories', Array.from(this.selectedCategories).join(','));
+            }
+
+            if (this.currentRating) {
+                params.set('rating', this.currentRating);
             }
 
             const res = await fetch(`/api/tags/list?${params.toString()}`);
