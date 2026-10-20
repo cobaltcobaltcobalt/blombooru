@@ -1,28 +1,44 @@
 from datetime import datetime
-from typing import Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 from .enums import (ApiKeyPermissionEnum, FileTypeEnum, RatingEnum,
                     TagCategoryEnum)
 
+TagRatingValue = Literal["none", "safe", "questionable", "explicit"]
+
 class TagBase(BaseModel):
     name: str
     category: TagCategoryEnum = TagCategoryEnum.general
-    rating: str = None
 
 class TagCreate(TagBase):
-    pass
+    rating: Optional[TagRatingValue] = None
 
 class TagResponse(TagBase):
     id: int
+    rating: TagRatingValue = "none"
     post_count: int
     created_at: datetime
     
     model_config = ConfigDict(from_attributes=True)
 
+    @field_validator("rating", mode="before")
+    @classmethod
+    def normalize_rating(cls, v: Any) -> str:
+        if v is None:
+            return "none"
+        if hasattr(v, "value"):
+            return v.value
+        s = str(v).strip().lower()
+        return s if s in ("safe", "questionable", "explicit", "none") else "none"
+
 class TagListItem(TagResponse):
     aliases: List[str] = []
+
+class BulkRatingUpdateRequest(BaseModel):
+    tag_ids: List[int]
+    rating: TagRatingValue
 
 class MediaBase(BaseModel):
     rating: RatingEnum = RatingEnum.safe
@@ -344,9 +360,20 @@ class BulkTagUpdateResponse(BaseModel):
 class ProposedTag(BaseModel):
     name: str
     category: TagCategoryEnum = TagCategoryEnum.general
+    rating: TagRatingValue = "none"
     is_new: bool = False
     source: Optional[str] = "user"
     user_assigned: Optional[bool] = False
+
+    @field_validator("rating", mode="before")
+    @classmethod
+    def normalize_rating(cls, v: Any) -> str:
+        if v is None:
+            return "none"
+        if hasattr(v, "value"):
+            return v.value
+        s = str(v).strip().lower()
+        return s if s in ("safe", "questionable", "explicit", "none") else "none"
 
 class UploadSessionItemUpdate(BaseModel):
     rating: Optional[RatingEnum] = None
@@ -400,6 +427,7 @@ class UploadSessionItem(BaseModel):
 class PendingTagEntity(BaseModel):
     name: str
     category: TagCategoryEnum = TagCategoryEnum.general
+    rating: TagRatingValue = "none"
     used_by: List[str] = []
     merge_into: Optional[str] = None
     user_assigned: bool = False
@@ -421,6 +449,7 @@ class PendingEntitiesResponse(BaseModel):
 class PendingTagUpdate(BaseModel):
     new_name: Optional[str] = None
     category: Optional[TagCategoryEnum] = None
+    rating: Optional[TagRatingValue] = None
     merge_into: Optional[str] = None
     remove: Optional[bool] = False
 

@@ -2,7 +2,7 @@ import enum
 from datetime import datetime, timezone
 
 from sqlalchemy import (BigInteger, Boolean, Column, DateTime, Enum, Float,
-                        ForeignKey, Index, Integer, JSON, String, Table, Text, UniqueConstraint)
+                        ForeignKey, Integer, JSON, String, Table, Text)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -64,23 +64,12 @@ class Tag(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), unique=True, nullable=False, index=True)
     category = Column(Enum(TagCategoryEnum), default=TagCategoryEnum.general, index=True)
+    rating = Column(Enum(RatingEnum), nullable=True, index=True)
     post_count = Column(Integer, default=0, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     media = relationship('Media', secondary=blombooru_media_tags, back_populates='tags')
     aliases = relationship('TagAlias', foreign_keys='TagAlias.target_tag_id', back_populates='target_tag', cascade="all, delete-orphan")
-    rating_entry= relationship('TagRating', uselist=False, back_populates="target_tag", cascade="all, delete-orphan")
-
-# Tag Ratings Table
-class TagRating(Base):
-    __tablename__ = 'blombooru_tags_ratings'
-    id = Column(Integer, primary_key=True)
-    tag_id = Column(Integer, ForeignKey(Tag.id))
-    rating = Column(Enum(RatingEnum), nullable=False, default=RatingEnum.safe)
-
-    target_tag = relationship('Tag', back_populates="rating_entry")
-
-    __table_args__ = (UniqueConstraint("tag_id"),)
 
 class BooruConfig(Base):
     __tablename__ = "blombooru_booru_config"

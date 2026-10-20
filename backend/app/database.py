@@ -193,6 +193,7 @@ def check_and_migrate_schema(engine):
         migrate_add_album_indexes,
         migrate_add_album_cached_columns,
         migrate_add_manual_sort_positions,
+        migrate_add_tag_rating,
     ]
     
     for migration in migrations:
@@ -509,5 +510,41 @@ def migrate_add_manual_sort_positions(engine, inspector):
                 logger.info("Adding sort_position column to blombooru_album_hierarchy...")
                 conn.execute(text("ALTER TABLE blombooru_album_hierarchy ADD COLUMN sort_position INTEGER"))
                 conn.execute(text("CREATE INDEX IF NOT EXISTS ix_blombooru_album_hierarchy_sort_position ON blombooru_album_hierarchy(sort_position)"))
+
+        conn.commit()
+
+def migrate_add_tag_rating(engine, inspector):
+    """Add rating column to blombooru_tags, migrate data from blombooru_tags_ratings if present, and drop blombooru_tags_ratings."""
+    from sqlalchemy import text
+
+    tables = inspector.get_table_names()
+    if 'blombooru_tags' not in tables:
+        return
+
+    tag_cols = [c['name'] for c in inspector.get_columns('blombooru_tags')]
+    with engine.connect() as conn:
+        if 'rating' not in tag_cols:
+            logger.info("Adding rating column to blombooru_tags...")
+            if engine.dialect.name == 'postgresql':
+                conn.execute(text("ALTER TABLE blombooru_tags ADD COLUMN rating ratingenum"))
+            else:
+                conn.execute(text("ALTER TABLE blombooru_tags ADD COLUMN rating VARCHAR(20)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_blombooru_tags_rating ON blombooru_tags(rating)"))
+
+        if 'blombooru_tags_ratings' in tables:
+            logger.info("Migrating data from blombooru_tags_ratings into blombooru_tags.rating...")
+            conn.execute(text("""
+                UPDATE blombooru_tags
+                SET rating = (
+                    SELECT rating FROM blombooru_tags_ratings
+                    WHERE blombooru_tags_ratings.tag_id = blombooru_tags.id
+                )
+                WHERE EXISTS (
+                    SELECT 1 FROM blombooru_tags_ratings
+                    WHERE blombooru_tags_ratings.tag_id = blombooru_tags.id
+                )
+            """))
+            logger.info("Dropping table blombooru_tags_ratings...")
+            conn.execute(text("DROP TABLE blombooru_tags_ratings"))
 
         conn.commit()
