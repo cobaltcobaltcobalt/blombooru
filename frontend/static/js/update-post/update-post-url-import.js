@@ -140,9 +140,10 @@ class UpdatePostUrlImport extends UpdatePostModalBase {
     }
 
     _renderDropdownTag(tag, colorClass) {
+        const tagRating = tag.rating || 'none';
         return `
-            <div class="custom-select booru-tag-select inline-block align-middle" data-value="${tag.category}" data-tag="${escapeHtml(tag.name)}">
-                <div class="custom-select-trigger tag-text tag ${colorClass} cursor-pointer select-none" style="display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
+            <div class="custom-select booru-tag-select inline-block align-middle" data-value="${tag.category}" data-tag="${escapeHtml(tag.name)}" data-tag-rating="${tagRating}">
+                <div class="custom-select-trigger tag-text tag ${colorClass} cursor-pointer select-none" data-tag-rating="${tagRating}" style="display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
                     <span class="text-xs">${escapeHtml(tag.name)}</span>
                     <span class="custom-select-value" style="display: none;"></span>
                     ${window.Icons.chevronDown({ size: 10, class: 'custom-select-arrow flex-shrink-0 transition-transform duration-200', style: 'display: block;' })}

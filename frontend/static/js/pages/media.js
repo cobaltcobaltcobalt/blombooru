@@ -573,6 +573,7 @@ class MediaViewer extends MediaViewerBase {
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = `popular-tag-name tag ${tag.category} tag-text w-full text-xs px-2 py-1 cursor-pointer hover:opacity-75 transition-opacity`;
+            btn.dataset.tagRating = tag.rating || 'none';
 
             const nameSpan = document.createElement('span');
             nameSpan.className = 'truncate';

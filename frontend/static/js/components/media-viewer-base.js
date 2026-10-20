@@ -95,8 +95,8 @@ class MediaViewerBase {
                     <div class="tag-list">
                         ${tags.map(tag =>
                 clickable
-                    ? `<a href="/?q=${encodeURIComponent(tag.name)}" class="tag ${category} tag-text">${tag.name}</a>`
-                    : `<span class="tag ${category} tag-text">${tag.name}</span>`
+                    ? `<a href="/?q=${encodeURIComponent(tag.name)}" class="tag ${category} tag-text" data-tag-rating="${tag.rating || 'none'}">${tag.name}</a>`
+                    : `<span class="tag ${category} tag-text" data-tag-rating="${tag.rating || 'none'}">${tag.name}</span>`
             ).join('')}
                     </div>
                 </div>

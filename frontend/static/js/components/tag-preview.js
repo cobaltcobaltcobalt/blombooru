@@ -133,7 +133,7 @@ class TagPreview {
                     <div class="flex flex-wrap items-center gap-1 w-full mb-1 max-w-full min-w-0">
                         ${catTags.map(t => (t.is_new && this.options.allowCategoryChange)
                     ? this.renderDropdownTag(t, cat)
-                    : `<span class="text-xs tag-text tag ${cat} truncate max-w-full inline-block min-w-0" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</span>`
+                    : `<span class="text-xs tag-text tag ${cat} truncate max-w-full inline-block min-w-0" data-tag-rating="${t.rating || 'none'}" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</span>`
                 ).join('')}
                     </div>
                 `;
@@ -148,9 +148,10 @@ class TagPreview {
         const cat = tag.category || 'general';
         const actualColorClass = (typeof colorClass === 'string') ? colorClass : cat;
         const grayscaleClass = (!tag.user_assigned) ? 'grayscale' : '';
+        const tagRating = tag.rating || 'none';
         return `
-            <div class="custom-select booru-tag-select inline-flex max-w-full min-w-0 align-middle shrink" data-value="${cat}" data-tag="${escapeHtml(tag.name)}">
-                <div class="custom-select-trigger tag-text tag ${actualColorClass} ${grayscaleClass} cursor-pointer select-none max-w-full min-w-0 !inline-flex items-center gap-1 flex-nowrap" style="white-space: nowrap; display: inline-flex;">
+            <div class="custom-select booru-tag-select inline-flex max-w-full min-w-0 align-middle shrink" data-value="${cat}" data-tag="${escapeHtml(tag.name)}" data-tag-rating="${tagRating}">
+                <div class="custom-select-trigger tag-text tag ${actualColorClass} ${grayscaleClass} cursor-pointer select-none max-w-full min-w-0 !inline-flex items-center gap-1 flex-nowrap" data-tag-rating="${tagRating}" style="white-space: nowrap; display: inline-flex;">
                     <span class="text-xs truncate min-w-0 flex-1" title="${escapeHtml(tag.name)}">${escapeHtml(tag.name)}</span>
                     <span class="custom-select-value" style="display: none;"></span>
                     ${window.Icons.chevronDown({ size: 10, class: 'custom-select-arrow shrink-0 transition-transform duration-200' })}
