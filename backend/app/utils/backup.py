@@ -80,6 +80,7 @@ def generate_tags_dump(db: Session) -> dict:
         tags_list.append({
             "name": tag.name,
             "category": cat,
+            "rating": tag.rating.value if tag.rating else None,
             "post_count": tag.post_count
         })
 
@@ -290,16 +291,39 @@ def import_tags_logical(db: Session, tags: List[dict], aliases: List[dict]):
     """Imports tags and aliases from JSON format."""
     existing_tags = {t.name: t for t in db.query(Tag).all()}
     tags_to_create = []
+    has_existing_updates = False
 
     for tag_data in tags:
         name = tag_data.get('name', '').strip().lower()
-        if name and name not in existing_tags:
+        if not name:
+            continue
+
+        rating_val = tag_data.get('rating')
+        rating_enum = None
+        has_explicit_rating = rating_val is not None
+        if has_explicit_rating:
+            try:
+                from ..utils.tag_utils import normalize_tag_rating
+                rating_enum = normalize_tag_rating(rating_val)
+            except Exception:
+                has_explicit_rating = False
+
+        if name not in existing_tags:
             cat = tag_data.get('category', 'general')
             tags_to_create.append({
                 'name': name,
                 'category': cat,
+                'rating': rating_enum,
                 'post_count': tag_data.get('post_count', 0)
             })
+        else:
+            existing = existing_tags[name]
+            if has_explicit_rating and existing.rating != rating_enum:
+                existing.rating = rating_enum
+                has_existing_updates = True
+
+    if has_existing_updates:
+        db.commit()
 
     if tags_to_create:
         for i in range(0, len(tags_to_create), DB_BATCH_SIZE):
