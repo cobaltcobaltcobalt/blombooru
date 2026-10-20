@@ -453,6 +453,7 @@
             "confirm_merge_alias": "",
             "tag_name": "",
             "tag_category": "",
+            "tag_rating": "",
             "tag_aliases": "标签别名",
             "tag_aliases_hint": "",
             "tags_exist_hint": "已存在（或作为别名存在）的标签将被忽略。",

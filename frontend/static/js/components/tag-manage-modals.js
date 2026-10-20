@@ -207,14 +207,15 @@ const TagManageModals = {
         });
     },
 
-    async edit({ tagId, tagName, tagCategory, tagInputHelper, onCancel, onSaved }) {
+    async edit({ tagId, tagName, tagCategory, tagRating, tagInputHelper, onCancel, onSaved }) {
         const existingModal = document.getElementById('tag-edit-modal');
         if (existingModal) existingModal.remove();
 
         const helper = this._getHelper(tagInputHelper);
 
-        // Fetch tag details including aliases
+        // Fetch tag details including aliases and rating
         let currentAliases = [];
+        let fetchedRating = tagRating || 'none';
         try {
             const res = await fetch(`/api/admin/tags/${tagId}`);
             if (!res.ok) {
@@ -223,6 +224,9 @@ const TagManageModals = {
             const data = await res.json();
             if (Array.isArray(data.aliases)) {
                 currentAliases = data.aliases;
+            }
+            if (data.rating) {
+                fetchedRating = data.rating;
             }
         } catch (e) {
             console.error('Error fetching tag details:', e);
@@ -244,6 +248,20 @@ const TagManageModals = {
         ).join('');
 
         const currentCategory = categories.find(c => c.value === tagCategory) || categories[0];
+
+        const cleanRating = (typeof TagRating !== 'undefined') ? TagRating.normalize(fetchedRating) : (fetchedRating || 'none');
+        const ratings = [
+            { value: 'none', label: window.i18n.t('common.none', { defaultValue: 'None' }) },
+            { value: 'safe', label: window.i18n.t('common.safe', { defaultValue: 'Safe' }) },
+            { value: 'questionable', label: window.i18n.t('common.questionable', { defaultValue: 'Questionable' }) },
+            { value: 'explicit', label: window.i18n.t('common.explicit', { defaultValue: 'Explicit' }) },
+        ];
+
+        const ratingOptions = ratings.map(r =>
+            `<div class="custom-select-option px-3 py-2 cursor-pointer hover:surface text-xs" data-value="${r.value}">${r.label}</div>`
+        ).join('');
+
+        const currentRatingObj = ratings.find(r => r.value === cleanRating) || ratings[0];
 
         const modal = document.createElement('div');
         modal.id = 'tag-edit-modal';
@@ -275,6 +293,21 @@ const TagManageModals = {
                     </div>
                 </div>
 
+                <div class="mb-4">
+                    <label class="block text-xs font-bold mb-2">${window.i18n.t('admin.tags_management.tag_rating', { defaultValue: 'Tag Rating' })}</label>
+                    <div id="tag-edit-rating-select" class="custom-select w-full" data-value="${currentRatingObj.value}">
+                        <button class="custom-select-trigger w-full flex items-center justify-between gap-3 px-3 py-2 bg border text-xs cursor-pointer focus:outline-none hover:border-primary transition-colors focus:border-primary" type="button">
+                            <span class="custom-select-value text flex items-center gap-2">
+                                <span>${currentRatingObj.label}</span>
+                            </span>
+                            ${window.Icons.selectArrow({ size: 12 })}
+                        </button>
+                        <div class="custom-select-dropdown bg border border-primary max-h-60 overflow-y-auto shadow-lg">
+                            ${ratingOptions}
+                        </div>
+                    </div>
+                </div>
+
                 <div class="mb-6">
                     <label class="block text-xs font-bold mb-2">${window.i18n.t('admin.tags_management.tag_aliases')}</label>
                     <div id="tag-edit-aliases" contenteditable="true" spellcheck="false"
@@ -298,6 +331,10 @@ const TagManageModals = {
         const categorySelectEl = document.getElementById('tag-edit-category-select');
         const categorySelect = new CustomSelect(categorySelectEl);
         categorySelect.setValue(currentCategory.value);
+
+        const ratingSelectEl = document.getElementById('tag-edit-rating-select');
+        const ratingSelect = new CustomSelect(ratingSelectEl);
+        ratingSelect.setValue(currentRatingObj.value);
 
         const aliasesInput = document.getElementById('tag-edit-aliases');
         const currentAliasSet = new Set(currentAliases.map(a => a.toLowerCase()));
@@ -437,11 +474,12 @@ const TagManageModals = {
             }
 
             const newCategory = categorySelect.getValue();
+            const newRating = ratingSelect.getValue();
             closeModal();
             try {
                 const result = await app.apiCall(`/api/admin/tags/${tagId}`, {
                     method: 'PUT',
-                    body: JSON.stringify({ name: newName, category: newCategory, aliases: validAliases })
+                    body: JSON.stringify({ name: newName, category: newCategory, rating: newRating, aliases: validAliases })
                 });
                 app.showNotification(
                     window.i18n.t('notifications.admin.tag_updated', { old_name: result.old_name }),

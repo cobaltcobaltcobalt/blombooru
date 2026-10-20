@@ -285,6 +285,11 @@ location='desktop', is_admin=false) %}
             {{ t('admin.tags_management.tag_category') }}
         </button>
         {% endif %}
+        {% if 'tag_rating' in buttons %}
+        <button id="bulk-tag-rating-btn" class="btn px-3 py-1 cursor-pointer">
+            {{ t('admin.tags_management.tag_rating') }}
+        </button>
+        {% endif %}
         {% if 'tag_implies' in buttons %}
         <button id="bulk-tag-implies-btn" class="btn px-3 py-1 cursor-pointer">
             {{ t('admin.tags_implications.implies_tags') }}

@@ -453,6 +453,7 @@
             "confirm_merge_alias": "Taggen '{source_tag}' och alla dess alias kommer att läggas till som alias för taggen '{target_tag}'.",
             "tag_name": "Taggnamn",
             "tag_category": "Taggkategori",
+            "tag_rating": "Taggbetyg",
             "tag_aliases": "Taggalias",
             "tag_aliases_hint": "Mellanslags-separerad lista med taggalias",
             "tags_exist_hint": "Taggar som redan finns (eller finns som alias) kommer att ignoreras.",

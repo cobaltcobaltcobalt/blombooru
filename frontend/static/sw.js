@@ -49,6 +49,7 @@ const STATIC_ASSETS = [
     '/static/js/components/album-tree.js',
     '/static/js/components/tag-input-helper.js',
     '/static/js/components/tag-preview.js',
+    '/static/js/components/tag-rating.js',
     '/static/js/components/search-query.js',
     '/static/js/components/changelog-modal.js',
     '/static/js/components/acknowledgements-modal.js',

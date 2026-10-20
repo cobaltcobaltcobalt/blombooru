@@ -944,35 +944,31 @@ class AdminContent {
                     }
                 }
 
-                let ratingLabel = 'err';
-                if (tag.rating) {
-                    const ratings = [
-                        { value: 'none', label: window.i18n.t('common.none')},
-                        { value: 'safe', label: window.i18n.t('common.safe') },
-                        { value: 'questionable', label: window.i18n.t('common.questionable') },
-                        { value: 'explicit', label: window.i18n.t('common.explicit') },
-                    ];
-                    ratingLabel = (ratings.find(c => c.value === tag.rating) || ratings[0]).label;
-                }
+                const tagRatingVal = tag.rating || 'none';
+                const ratingBadgeHtml = (typeof TagRating !== 'undefined')
+                    ? TagRating.renderBadge(tagRatingVal)
+                    : `<span class="tag rating-${tagRatingVal} tag-text uppercase text-[10px] font-bold tracking-wider px-2 py-0.5 select-none">${tagRatingVal}</span>`;
 
                 return `
-                <div class="bg px-2 py-1.5 ${i === arr.length - 1 ? '' : 'border-b'} flex flex-wrap items-center gap-2">
+                <div class="bg px-2 py-1.5 ${i === arr.length - 1 ? '' : 'border-b'} flex flex-wrap items-center gap-2" data-tag-rating="${tagRatingVal}">
                     <div class="flex items-center gap-2 min-w-0">
                         <button class="manage-tag-btn flex-shrink-0 flex items-center justify-center w-7 h-7 bg-primary primary-text hover:bg-primary border-primary hover:border-primary transition-colors cursor-pointer"
                             data-tag-id="${tag.id}"
                             data-tag-name="${escapeHtml(tag.name)}"
                             data-tag-category="${tag.category}"
-                            data-tag-rating="${tag.rating}"
+                            data-tag-rating="${tagRatingVal}"
                             title="${window.i18n.t('admin.tags_management.manage_tag')}">
                             ${window.Icons.tagMenu({ size: 14 })}
                         </button>
-                        <a href="/?q=${encodeURIComponent(tag.name)}" class="tag ${tag.category} tag-text overflow-hidden whitespace-nowrap text-ellipsis">${tag.name}</a>
+                        <a href="/?q=${encodeURIComponent(tag.name)}" class="tag ${tag.category} tag-text overflow-hidden whitespace-nowrap text-ellipsis" data-tag-rating="${tagRatingVal}">${tag.name}</a>
                     </div>
                     <div class="flex justify-between items-center gap-2 flex-1">
                         <span class="text-xs text-secondary">(${tag.post_count})</span>
                         ${creationDateStr ? `<span class="text-xs text-secondary text-center">${creationDateStr}</span>` : ''}
-                        <span class="text-xs text-secondary uppercase flex-1 text-right">${ratingLabel}</span>
-                        <span class="text-xs text-secondary uppercase">${tag.category}</span>
+                        <div class="flex items-center gap-2 ml-auto">
+                            <span class="text-xs text-secondary uppercase">${tag.category}</span>
+                            ${ratingBadgeHtml}
+                        </div>
                     </div>
                 </div>
                 `;
