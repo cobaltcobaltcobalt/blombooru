@@ -36,7 +36,8 @@
         const searchInput404 = document.getElementById('search-input-404');
         if (searchInput404 && typeof TagAutocomplete !== 'undefined') {
             new TagAutocomplete(searchInput404, {
-                multipleValues: true
+                multipleValues: true,
+                enableRatingFilter: true
             });
         }
     });

@@ -9,6 +9,8 @@ class TagAutocomplete {
             appendSpace: true,
             allowCreate: false,
             enableQualifiers: false,
+            enableRatingFilter: false,
+            ratingFilter: null,
             ...options
         };
 
@@ -178,8 +180,58 @@ class TagAutocomplete {
         return beforeCursor.substring(lastSpace + 1).trim();
     }
 
+    static resolveStoredRatingFilter() {
+        const validRatings = ['safe', 'questionable', 'explicit'];
+        const sidebarMode = (document.body && document.body.dataset.sidebarMode) || window.SIDEBAR_FILTER_MODE || 'rating';
+        if (sidebarMode === 'custom' || sidebarMode === 'off') {
+            return '';
+        }
+
+        let raw = null;
+        try {
+            raw = localStorage.getItem('selectedRating');
+        } catch (e) {
+            raw = null;
+        }
+        if (!raw) {
+            const match = document.cookie.match(/(?:^|;\s*)rating_filter=([^;]*)/);
+            raw = match ? decodeURIComponent(match[1]) : null;
+        }
+
+        const ratings = (raw || '')
+            .split(',')
+            .map(r => r.trim().toLowerCase())
+            .filter(r => validRatings.includes(r));
+
+        return (ratings.length > 0 ? ratings : ['safe']).join(',');
+    }
+
+    getRatingFilter() {
+        if (typeof this.options.ratingFilter === 'function') {
+            return this.options.ratingFilter();
+        }
+        if (typeof this.options.ratingFilter === 'string') {
+            return this.options.ratingFilter;
+        }
+        if (this.options.enableRatingFilter) {
+            if (window.tagsGallery && window.tagsGallery.currentRating !== undefined) {
+                return window.tagsGallery.currentRating;
+            }
+            if (window.gallery && window.gallery.currentRating !== undefined) {
+                return window.gallery.currentRating;
+            }
+            return TagAutocomplete.resolveStoredRatingFilter();
+        }
+        return null;
+    }
+
     async fetchSuggestions(query) {
-        const response = await fetch(`/api/tags/autocomplete?q=${encodeURIComponent(query)}`);
+        let url = `/api/tags/autocomplete?q=${encodeURIComponent(query)}`;
+        const rating = this.getRatingFilter();
+        if (rating) {
+            url += `&rating=${encodeURIComponent(rating)}`;
+        }
+        const response = await fetch(url);
         if (!response.ok) throw new Error('Failed to fetch suggestions');
         return response.json();
     }
@@ -203,7 +255,7 @@ class TagAutocomplete {
             html = suggestions.map((tag, index) => {
                 if (tag.is_alias) {
                     return `
-                    <div class="tag-suggestion tag-alias-info" data-index="${index}" data-name="${escapeHtml(tag.name)}">
+                    <div class="tag-suggestion tag-alias-info" data-index="${index}" data-name="${escapeHtml(tag.name)}" data-tag-rating="${escapeHtml(tag.rating || 'none')}">
                         <span style="display: flex; align-items: center; gap: 0.5rem;">
                             <span class="text-secondary italic">${escapeHtml(tag.alias_name)}</span>
                             <span class="text-secondary">&#8594;</span>
@@ -225,7 +277,7 @@ class TagAutocomplete {
                 `;
                 }
                 return `
-                <div class="tag-suggestion" data-index="${index}" data-name="${escapeHtml(tag.name)}">
+                <div class="tag-suggestion" data-index="${index}" data-name="${escapeHtml(tag.name)}" data-tag-rating="${escapeHtml(tag.rating || 'none')}">
                     <span>
                         <span class="tag-category"><span class="tag-text ${escapeHtml(tag.category)}">${escapeHtml(tag.category)}</span></span>
                         <span class="tag-name">${escapeHtml(tag.name)}</span>
@@ -866,8 +918,8 @@ class TagAutocomplete {
                 const lLower = (ex.label || '').toLowerCase();
                 const idStr = String(ex.id || '');
                 return vLower.startsWith(searchTerm) || lLower.startsWith(searchTerm) ||
-                       vLower.includes(searchTerm) || lLower.includes(searchTerm) ||
-                       (idStr && idStr === searchTerm);
+                    vLower.includes(searchTerm) || lLower.includes(searchTerm) ||
+                    (idStr && idStr === searchTerm);
             });
 
             if (matched.length > 0) {
