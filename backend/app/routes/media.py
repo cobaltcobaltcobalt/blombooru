@@ -2,7 +2,7 @@ import json
 import shutil
 import uuid
 from pathlib import Path
-from typing import List, Optional, Set
+from typing import Dict, List, Optional, Set
 
 from fastapi import (APIRouter, BackgroundTasks, Depends, File, Form,
                      HTTPException, Query, Request, UploadFile)
@@ -41,6 +41,7 @@ from ..utils.media_sort import apply_media_sort, get_media_sort_clauses
 from ..utils.search_parser import (apply_custom_filters_or,
                                    apply_search_criteria, parse_search_query)
 from ..utils.thumbnail_generator import generate_thumbnail, THUMBNAIL_EXT, thumbnail_mime_type
+from ..utils.tag_utils import get_escalated_rating, get_newly_added_tags
 from ..utils.transcoder import (get_transcoded_path_for_original,
                                 transcode_media_if_needed)
 from ..utils.url_fetch import UrlFetchError, safe_request
@@ -93,9 +94,11 @@ async def update_from_source(
         raise HTTPException(status_code=404, detail="Media not found")
 
     affected_tag_ids: list[int] = []
+    newly_added_tags: list = []
 
     if req.update_tags and req.tags is not None:
         old_tag_ids = [tag.id for tag in media.tags]
+        previous_tags = list(media.tags)
 
         if req.merge_tags:
             # Merge: keep existing tags, add any that are missing
@@ -110,6 +113,7 @@ async def update_from_source(
 
         new_tag_ids = [tag.id for tag in media.tags]
         affected_tag_ids = list(set(old_tag_ids + new_tag_ids))
+        newly_added_tags = get_newly_added_tags(previous_tags, media.tags)
 
     rating_changed = False
     filename_changed = False
@@ -118,6 +122,14 @@ async def update_from_source(
         norm_rating = RatingEnum.normalize(req.rating)
         if norm_rating and media.rating != norm_rating:
             media.rating = norm_rating
+            rating_changed = True
+
+    # Only tags added by this request escalate, and never over a rating the
+    # request explicitly asked to apply.
+    if newly_added_tags and not (req.update_rating and req.rating):
+        escalated = get_escalated_rating(media.rating, newly_added_tags)
+        if escalated and media.rating != escalated:
+            media.rating = escalated
             rating_changed = True
 
     if req.update_source:
@@ -264,7 +276,7 @@ async def update_from_source(
     db.commit()
 
     if rating_changed:
-        handle_media_rating_changed(db, media_id, req.rating)
+        handle_media_rating_changed(db, media_id, media.rating.value if hasattr(media.rating, "value") else media.rating)
 
     if affected_tag_ids:
         update_tag_counts(db, affected_tag_ids)
@@ -527,6 +539,7 @@ def preview_or_create_tags(
                 new_tags.append(ProposedTag(
                     name=name,
                     category=category,
+                    rating="none",
                     is_new=True,
                     source="user"
                 ))
@@ -554,6 +567,7 @@ def preview_or_create_tags(
         result.append(ProposedTag(
             name=tag.name,
             category=tag.category,
+            rating=tag.rating.value if tag.rating else "none",
             is_new=False,
             source="user"
         ))
@@ -639,6 +653,9 @@ def process_and_save_media(
                 pass
         media.tags = get_or_create_tags(db, tag_list, category_hints=parsed_hints)
         tag_ids_to_update = [tag.id for tag in media.tags]
+        escalated = get_escalated_rating(media.rating, media.tags)
+        if escalated and media.rating != escalated:
+            media.rating = escalated
         logger.debug(f"Tags added: {tag_list}")
 
     a_ids = []
@@ -734,7 +751,7 @@ async def get_media_list(
         raise HTTPException(status_code=500, detail=safe_error_detail("Failed to retrieve media list", e))
 
 def _fetch_media_batch_tags_only(db: Session, media_ids: List[int], include_metadata: bool = False) -> List[dict]:
-    """Fast projection query returning only id, filename, file_type, tags (name, category), and optional metadata."""
+    """Fast projection query returning only id, filename, file_type, tags (name, category, rating), and optional metadata."""
     results = []
     
     for i in range(0, len(media_ids), BATCH_CHUNK_SIZE):
@@ -745,6 +762,7 @@ def _fetch_media_batch_tags_only(db: Session, media_ids: List[int], include_meta
             Media.file_type,
             Tag.name,
             Tag.category,
+            Tag.rating,
         ]
         if include_metadata:
             query_cols.append(Media.path)
@@ -764,7 +782,8 @@ def _fetch_media_batch_tags_only(db: Session, media_ids: List[int], include_meta
             file_type = row[2]
             tag_name = row[3]
             tag_cat = row[4]
-            rel_path = row[5] if include_metadata else None
+            tag_rating = row[5]
+            rel_path = row[6] if include_metadata else None
 
             if m_id not in media_map:
                 ft_val = file_type.value if hasattr(file_type, 'value') else file_type
@@ -788,9 +807,11 @@ def _fetch_media_batch_tags_only(db: Session, media_ids: List[int], include_meta
 
             if tag_name:
                 cat_val = tag_cat.value if hasattr(tag_cat, 'value') else tag_cat
+                rat_val = tag_rating.value if hasattr(tag_rating, 'value') else (tag_rating or "none")
                 media_map[m_id]["tags"].append({
                     "name": tag_name,
-                    "category": cat_val
+                    "category": cat_val,
+                    "rating": rat_val
                 })
 
         for m_id in chunk_ids:
@@ -969,11 +990,15 @@ async def bulk_update_tags(
 
     # 4. Fetch old tags to compute affected tag IDs
     old_tag_ids = set()
+    old_tag_ids_by_media: Dict[int, set] = {}
     for i in range(0, len(requested_ids), BATCH_CHUNK_SIZE):
         chunk = requested_ids[i:i + BATCH_CHUNK_SIZE]
-        rows = db.query(blombooru_media_tags.c.tag_id).filter(blombooru_media_tags.c.media_id.in_(chunk)).all()
-        for r in rows:
-            old_tag_ids.add(r[0])
+        rows = db.query(
+            blombooru_media_tags.c.media_id, blombooru_media_tags.c.tag_id
+        ).filter(blombooru_media_tags.c.media_id.in_(chunk)).all()
+        for m_id, t_id in rows:
+            old_tag_ids.add(t_id)
+            old_tag_ids_by_media.setdefault(m_id, set()).add(t_id)
 
     # 5. Delete existing media tags for requested_ids
     for i in range(0, len(requested_ids), BATCH_CHUNK_SIZE):
@@ -985,6 +1010,14 @@ async def bulk_update_tags(
     # 6. Build new associations
     new_associations = []
     affected_tag_ids = set(old_tag_ids)
+    rating_changed_media = []
+
+    media_map = {}
+    for i in range(0, len(requested_ids), BATCH_CHUNK_SIZE):
+        chunk = requested_ids[i:i + BATCH_CHUNK_SIZE]
+        medias = db.query(Media).filter(Media.id.in_(chunk)).all()
+        for m in medias:
+            media_map[m.id] = m
 
     for item in payload.items:
         item_tag_set = {}
@@ -999,6 +1032,15 @@ async def bulk_update_tags(
 
         expand_implications(db, item_tag_set)
 
+        media = media_map.get(item.id)
+        if media:
+            previously_attached = old_tag_ids_by_media.get(item.id, set())
+            added_tags = [t for tid, t in item_tag_set.items() if tid not in previously_attached]
+            escalated = get_escalated_rating(media.rating, added_tags)
+            if escalated and media.rating != escalated:
+                media.rating = escalated
+                rating_changed_media.append((media.id, media.rating.value if hasattr(media.rating, "value") else media.rating))
+
         for tid in item_tag_set.keys():
             affected_tag_ids.add(tid)
             new_associations.append({"media_id": item.id, "tag_id": tid})
@@ -1007,6 +1049,9 @@ async def bulk_update_tags(
         db.execute(blombooru_media_tags.insert(), new_associations)
 
     db.commit()
+
+    for m_id, new_r in rating_changed_media:
+        handle_media_rating_changed(db, m_id, new_r)
 
     # 7. Aggregate update tag counts
     if affected_tag_ids:
@@ -1462,9 +1507,15 @@ async def update_media(
     affected_tag_ids = []
     if updates.tags is not None:
         old_tag_ids = [tag.id for tag in media.tags]
+        previous_tags = list(media.tags)
         media.tags = get_or_create_tags(db, updates.tags, expand=False)
         new_tag_ids = [tag.id for tag in media.tags]
         affected_tag_ids = list(set(old_tag_ids + new_tag_ids))
+        added_tags = [] if updates.rating else get_newly_added_tags(previous_tags, media.tags)
+        escalated = get_escalated_rating(media.rating, added_tags)
+        if escalated and media.rating != escalated:
+            media.rating = escalated
+            rating_changed = True
 
     parent_id_changed = False
     old_parent_id = media.parent_id
@@ -1495,7 +1546,7 @@ async def update_media(
     db.commit()
 
     if rating_changed:
-        handle_media_rating_changed(db, media_id, updates.rating)
+        handle_media_rating_changed(db, media_id, media.rating.value if hasattr(media.rating, "value") else media.rating)
 
     if affected_tag_ids:
         update_tag_counts(db, affected_tag_ids)

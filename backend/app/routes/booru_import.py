@@ -25,6 +25,7 @@ from ..utils.media_processor import calculate_file_hash, process_media_file
 from ..utils.thumbnail_generator import generate_thumbnail, THUMBNAIL_EXT
 from ..utils.url_fetch import UrlFetchError, safe_request
 from ..utils.url_security import UrlValidationError, validate_url_not_ssrf
+from ..utils.tag_utils import get_escalated_rating
 from .media import get_or_create_tags, update_tag_counts
 
 router = APIRouter(prefix="/api/booru-import", tags=["booru-import"])
@@ -94,7 +95,15 @@ async def fetch_booru_post(
 
     return {
         "id": post.id,
-        "tags": [{"name": t.name, "category": t.category, "is_new": getattr(t, "is_new", True)} for t in post.tags],
+        "tags": [
+            {
+                "name": t.name,
+                "category": t.category,
+                "is_new": getattr(t, "is_new", True),
+                "rating": getattr(t, "rating", "none") or "none"
+            }
+            for t in post.tags
+        ],
         "rating": post.rating,
         "source": post.source,
         "file_url": post.file_url,
@@ -261,6 +270,9 @@ async def download_and_import(
             tag_list = [t.strip() for t in final_tags if t.strip()]
             media.tags = get_or_create_tags(db, tag_list, category_hints=category_hints)
             tag_ids_to_update = [tag.id for tag in media.tags]
+            escalated = get_escalated_rating(media.rating, media.tags)
+            if escalated and escalated != media.rating:
+                media.rating = escalated
 
         db.add(media)
         db.commit()

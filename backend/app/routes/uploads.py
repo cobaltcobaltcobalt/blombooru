@@ -38,6 +38,7 @@ from ..utils.thumbnail_generator import generate_thumbnail, THUMBNAIL_EXT, thumb
 from ..utils.transcoder import transcode_media_if_needed
 from ..services.metadata_parsers import get_parser_for_file
 from .media import preview_or_create_tags, update_tag_counts
+from ..utils.tag_utils import get_escalated_rating, get_newly_added_tags, normalize_tag_rating
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
@@ -105,12 +106,14 @@ def _get_session_pending_tags_map(items: dict) -> Dict[str, dict]:
                 if not name:
                     continue
                 cat = t.get("category", "general")
+                rat = t.get("rating", "none")
                 user_assigned = t.get("user_assigned", False)
                 if name not in tag_map:
-                    tag_map[name] = {"category": cat, "user_assigned": user_assigned}
+                    tag_map[name] = {"category": cat, "rating": rat, "user_assigned": user_assigned}
                 else:
                     if user_assigned:
                         tag_map[name]["category"] = cat
+                        tag_map[name]["rating"] = rat
                         tag_map[name]["user_assigned"] = True
     return tag_map
 
@@ -350,6 +353,11 @@ def _process_and_stage_item(
         if norm_rating:
             rating = norm_rating
 
+    # Tags resolved for a brand new item are all "added", so they may escalate its initial rating.
+    escalated_initial = get_escalated_rating(rating, proposed_tags)
+    if escalated_initial:
+        rating = escalated_initial
+
     if not base_source_str and parsed and parsed.source:
         base_source_str = parsed.source
 
@@ -379,6 +387,8 @@ def _process_and_stage_item(
         if td.get("is_new", False) and t_name in session_pending_map:
             session_info = session_pending_map[t_name]
             td["category"] = session_info["category"]
+            if "rating" in session_info:
+                td["rating"] = session_info["rating"]
             if session_info.get("user_assigned", False):
                 td["user_assigned"] = True
 
@@ -695,6 +705,7 @@ async def update_staged_item(
                 item["suggested_album_segments"] = resolve_album_path(db, update.suggested_album_path)
 
     if update.tags is not None:
+        previous_staged_tags = list(item.get("tags", []))
         other_items = {k: v for k, v in meta.get("items", {}).items() if k != item_id}
         session_pending_map = _get_session_pending_tags_map(other_items)
 
@@ -720,10 +731,19 @@ async def update_staged_item(
                     dump["category"] = hints[t_name]
             elif dump.get("is_new", False) and t_name in session_pending_map:
                 dump["category"] = session_pending_map[t_name]["category"]
+                if "rating" in session_pending_map[t_name]:
+                    dump["rating"] = session_pending_map[t_name]["rating"]
                 if session_pending_map[t_name].get("user_assigned", False):
                     dump["user_assigned"] = True
             result_tags.append(dump)
         item["tags"] = result_tags
+        # Only tags added by this update escalate, and never over a rating the
+        # same request explicitly set.
+        if update.rating is None:
+            current_r = RatingEnum.normalize(item.get("rating")) or RatingEnum.safe
+            escalated = get_escalated_rating(current_r, get_newly_added_tags(previous_staged_tags, result_tags))
+            if escalated and escalated != current_r:
+                item["rating"] = escalated.value
 
     meta["items"][item_id] = item
     _save_session_meta(session_dir, meta)
@@ -781,6 +801,7 @@ async def bulk_update_staged_items(
 
             # Tags update
             current_tags_dict = {t["name"].lower(): t for t in item.get("tags", []) if t.get("name")}
+            previous_staged_tags = list(current_tags_dict.values())
 
             if req.remove_tag_names:
                 remove_set = {n.strip().lower() for n in req.remove_tag_names}
@@ -792,7 +813,7 @@ async def bulk_update_staged_items(
                     if isinstance(t, str):
                         t_name = t.strip().lower()
                         if t_name and t_name not in current_tags_dict:
-                            current_tags_dict[t_name] = {"name": t_name, "category": "general", "is_new": True, "user_assigned": False}
+                            current_tags_dict[t_name] = {"name": t_name, "category": "general", "rating": "none", "is_new": True, "user_assigned": False}
                     else:
                         t_name = t.name.strip().lower()
                         if t_name:
@@ -800,6 +821,7 @@ async def bulk_update_staged_items(
                             current_tags_dict[t_name] = {
                                 "name": t_name,
                                 "category": t.category.value,
+                                "rating": getattr(t, "rating", "none") or "none",
                                 "is_new": t.is_new,
                                 "user_assigned": is_user_assigned,
                             }
@@ -831,11 +853,20 @@ async def bulk_update_staged_items(
                     pt_dict["user_assigned"] = True
                 elif pt_dict.get("is_new", False) and t_name in session_pending_map:
                     pt_dict["category"] = session_pending_map[t_name]["category"]
+                    if "rating" in session_pending_map[t_name]:
+                        pt_dict["rating"] = session_pending_map[t_name]["rating"]
                     if session_pending_map[t_name].get("user_assigned", False):
                         pt_dict["user_assigned"] = True
                 resolved_tags.append(pt_dict)
 
             item["tags"] = resolved_tags
+            # Only tags added by this update escalate, and never over a rating the
+            # same request explicitly set.
+            if req.rating is None:
+                current_r = RatingEnum.normalize(item.get("rating")) or RatingEnum.safe
+                escalated = get_escalated_rating(current_r, get_newly_added_tags(previous_staged_tags, resolved_tags))
+                if escalated and escalated != current_r:
+                    item["rating"] = escalated.value
 
             items[item_id] = item
             updated_items.append(item)
@@ -899,6 +930,7 @@ async def get_pending_entities(
                     pending_tags_map[name] = {
                         "name": name,
                         "category": t.get("category", "general"),
+                        "rating": t.get("rating", "none"),
                         "used_by": [],
                         "merge_into": t.get("merge_into"),
                         "user_assigned": t.get("user_assigned", False),
@@ -954,6 +986,7 @@ async def update_pending_tag(
                         t["name"] = merge_target
                         t["is_new"] = existing_db_tag is None
                         t["category"] = existing_db_tag.category.value if existing_db_tag else t.get("category", "general")
+                        t["rating"] = existing_db_tag.rating.value if existing_db_tag and existing_db_tag.rating else t.get("rating", "none")
                         t["user_assigned"] = True
                         new_tags.append(t)
                     else:
@@ -961,6 +994,8 @@ async def update_pending_tag(
                             t["name"] = update.new_name.strip().lower()
                         if update.category:
                             t["category"] = update.category.value
+                        if update.rating is not None:
+                            t["rating"] = update.rating
                         t["user_assigned"] = True
                         new_tags.append(t)
                 else:
@@ -1142,7 +1177,7 @@ async def commit_upload_session(
                     duplicate_item_ids.add(i_id)
 
             # Step 1: Gather and bulk create all confirmed new tags (skipping duplicate items)
-            pending_tags_to_create: Dict[str, str] = {}
+            pending_tags_to_create: Dict[str, dict] = {}
             for i_id, item in items.items():
                 if i_id in duplicate_item_ids:
                     continue
@@ -1152,15 +1187,21 @@ async def commit_upload_session(
                         continue
                     if t.get("is_new", False):
                         cat = t.get("category", "general")
-                        pending_tags_to_create[t_name] = cat
+                        rating = t.get("rating", "none")
+                        pending_tags_to_create[t_name] = {"category": cat, "rating": rating}
 
             if pending_tags_to_create:
                 existing_db_tags = {
                     t.name: t for t in db.query(Tag).filter(Tag.name.in_(list(pending_tags_to_create.keys()))).all()
                 }
-                for t_name, t_cat in pending_tags_to_create.items():
+                for t_name, info in pending_tags_to_create.items():
                     if t_name not in existing_db_tags:
-                        new_tag = Tag(name=t_name, post_count=0, category=t_cat)
+                        new_tag = Tag(
+                            name=t_name,
+                            post_count=0,
+                            category=info["category"],
+                            rating=normalize_tag_rating(info.get("rating"))
+                        )
                         db.add(new_tag)
                 db.flush()
 
@@ -1314,6 +1355,13 @@ async def commit_upload_session(
                     media.tags = preview_or_create_tags(db, item_tag_names, expand=True, dry_run=False)
                     for t in media.tags:
                         all_tag_ids_to_update.add(t.id)
+                    # The staged rating already reflects the staged tags (and any deliberate
+                    # manual change), so only tags that first appear at commit time escalate.
+                    escalated = get_escalated_rating(
+                        media.rating, get_newly_added_tags(item.get("tags", []), media.tags)
+                    )
+                    if escalated and escalated != media.rating:
+                        media.rating = escalated
 
                 # Link albums
                 a_ids = item.get("album_ids", [])
