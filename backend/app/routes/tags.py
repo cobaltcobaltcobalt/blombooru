@@ -8,14 +8,14 @@ from ..auth import require_admin_mode
 from ..config import settings
 from ..database import get_db
 from ..enums import parse_rating_filter
-from ..models import Media, RatingEnum, Tag, TagAlias, TagRating, User, blombooru_media_tags
+from ..models import Media, Tag, TagAlias, User, blombooru_media_tags
 from ..schemas import (BatchResolveCombinedRequest,
                        BatchResolveCombinedResponse, BatchTagValidateRequest,
-                       TagCategoryEnum, TagCreate, TagListItem, TagResponse,
-                       TagImpliedRatings)
+                       TagCategoryEnum, TagCreate, TagListItem, TagResponse)
 from ..utils.cache import cache_response, invalidate_tag_cache
 from ..utils.search_parser import (apply_custom_filters_or,
                                    apply_search_criteria, parse_search_query)
+from ..utils.tag_utils import apply_tag_rating_filter, normalize_tag_rating
 
 router = APIRouter(prefix="/api/tags", tags=["tags"])
 
@@ -250,37 +250,17 @@ async def get_tags(
     query = db.query(Tag)
 
     # Apply Rating Filter
-    if rating:
-        ratings_list = [r.strip().lower() for r in rating.split(",") if r.strip()]
-        valid_ratings = [RatingEnum[r] for r in ratings_list if r in RatingEnum.__members__]
-        if valid_ratings or "none" in ratings_list:
-            query = query.filter(or_(~Tag.rating_entry.has(), Tag.rating_entry.has(TagRating.rating.in_(valid_ratings))))
+    query = apply_tag_rating_filter(query, rating)
 
     # Return only exact Tag name matches
-    if names:
+    if isinstance(names, str) and names.strip():
         tag_names = [n.strip().lower() for n in names.split(",") if n.strip()]
         if tag_names:
             query = query.filter(Tag.name.in_(tag_names))
             limit = max(limit, len(tag_names))
             tags = query.all()
             name_map = {t.name: t for t in tags}
-
-            return_items = []
-            for n in tag_names:
-                if n in name_map:
-                    if name_map[n].rating_entry:
-                        returned_rating = name_map[n].rating_entry.rating
-                    else:
-                        returned_rating = "none"
-                    return_items.append(TagResponse(
-                        name=name_map[n].name,
-                        category=name_map[n].category,
-                        id=name_map[n].id,
-                        rating=returned_rating,
-                        post_count=name_map[n].post_count,
-                        created_at=name_map[n].created_at
-                    ))
-            return return_items
+            return [TagResponse.model_validate(name_map[n]) for n in tag_names if n in name_map]
     
     if search:
         search_lower = search.strip().lower()
@@ -304,22 +284,7 @@ async def get_tags(
         query = query.order_by(desc(Tag.post_count), func.length(Tag.name), Tag.name)
     
     tags = query.limit(limit).all()
-
-    return_items = []
-    for tag in tags:
-        if tag.rating_entry:
-            returned_rating = tag.rating_entry.rating
-        else:
-            returned_rating = "none"
-        return_items.append(TagResponse(
-            name=tag.name,
-            category=tag.category,
-            id=tag.id,
-            rating=returned_rating,
-            post_count=tag.post_count,
-            created_at=tag.created_at
-        ))
-    return return_items
+    return [TagResponse.model_validate(tag) for tag in tags]
 
 TAG_LIST_SORT_COLUMNS = {
     "post_count": Tag.post_count,
@@ -379,20 +344,13 @@ async def get_tags_list(
     query = query.order_by(direction(sort_column), direction(Tag.id))
 
     # Apply Rating Filter
-    if rating:
-        ratings_list = [r.strip().lower() for r in rating.split(",") if r.strip()]
-        valid_ratings = [RatingEnum[r] for r in ratings_list if r in RatingEnum.__members__]
-        if valid_ratings or "none" in ratings_list:
-            query = query.filter(or_(~Tag.rating_entry.has(), Tag.rating_entry.has(TagRating.rating.in_(valid_ratings))))
+    query = apply_tag_rating_filter(query, rating)
 
     total_tags = query.count()
 
     if include_aliases:
         paginated_tags = (
-            query.options(
-                selectinload(Tag.aliases),
-                selectinload(Tag.rating_entry),
-            )
+            query.options(selectinload(Tag.aliases))
             .offset((page - 1) * limit)
             .limit(limit)
             .all()
@@ -403,7 +361,7 @@ async def get_tags_list(
                 name=tag.name,
                 category=tag.category,
                 id=tag.id,
-                rating=tag.rating_entry.rating if tag.rating_entry else "none",
+                rating=tag.rating.value if tag.rating else "none",
                 post_count=tag.post_count,
                 created_at=tag.created_at,
                 aliases=sorted(a.alias_name for a in tag.aliases)
@@ -412,8 +370,7 @@ async def get_tags_list(
         ]
     else:
         tag_rows = (
-            query.outerjoin(TagRating, TagRating.tag_id == Tag.id)
-            .with_entities(Tag.id, Tag.name, Tag.category, TagRating.rating)
+            query.with_entities(Tag.id, Tag.name, Tag.category, Tag.rating)
             .offset((page - 1) * limit)
             .limit(limit)
             .all()
@@ -422,8 +379,8 @@ async def get_tags_list(
             {
                 "id": row[0],
                 "name": row[1],
-                "category": row[2].value if row[2] else "general",
-                "rating": row[3].value if row[3] else "none"
+                "category": row[2].value if hasattr(row[2], 'value') else (row[2] or "general"),
+                "rating": row[3].value if hasattr(row[3], 'value') else (row[3] or "none")
             }
             for row in tag_rows
         ]
@@ -441,6 +398,7 @@ async def get_tags_list(
 async def autocomplete_tags(
     request: Request,
     q: str = Query(..., min_length=1),
+    rating: Optional[str] = Query(default=None),
     db: Session = Depends(get_db)
 ):
     """Autocomplete tag suggestions (includes shared tags if enabled)"""
@@ -454,7 +412,7 @@ async def autocomplete_tags(
         shared_db = next(shared_db_gen, None)
         try:
             service = SharedTagService(db, shared_db)
-            return service.autocomplete_merged(q, limit=50)
+            return service.autocomplete_merged(q, limit=50, rating=rating)
         finally:
             if shared_db:
                 try:
@@ -472,9 +430,12 @@ async def autocomplete_tags(
         else_=3
     )
     
-    tags = db.query(Tag).filter(
+    tag_query = db.query(Tag).filter(
         Tag.name.ilike(f"%{q_lower}%")
-    ).order_by(
+    )
+    tag_query = apply_tag_rating_filter(tag_query, rating)
+
+    tags = tag_query.order_by(
         priority,
         desc(Tag.post_count),
         func.length(Tag.name),
@@ -483,17 +444,23 @@ async def autocomplete_tags(
     
     seen_tags = {tag.name for tag in tags}
     results = [
-        {"name": tag.name, "category": tag.category, "count": tag.post_count}
+        {
+            "name": tag.name,
+            "category": tag.category,
+            "count": tag.post_count,
+            "rating": tag.rating.value if tag.rating else "none"
+        }
         for tag in tags
     ]
     
     if len(results) < 50:
-        aliases = (
+        alias_query = (
             db.query(TagAlias)
+            .join(Tag, TagAlias.target_tag_id == Tag.id)
             .filter(TagAlias.alias_name.ilike(f"{q_lower}%"))
-            .limit(50 - len(results))
-            .all()
         )
+        alias_query = apply_tag_rating_filter(alias_query, rating)
+        aliases = alias_query.limit(50 - len(results)).all()
         for alias in aliases:
             target = db.query(Tag).filter(Tag.id == alias.target_tag_id).first()
             if target and target.name not in seen_tags:
@@ -501,6 +468,7 @@ async def autocomplete_tags(
                     "name": target.name,
                     "category": target.category,
                     "count": target.post_count,
+                    "rating": target.rating.value if target.rating else "none",
                     "is_alias": True,
                     "alias_name": alias.alias_name.lower()
                 })
@@ -551,6 +519,10 @@ async def search_related_tags(
         )
         .join(blombooru_media_tags, blombooru_media_tags.c.tag_id == Tag.id)
         .filter(blombooru_media_tags.c.media_id.in_(media_subquery.select()))
+    )
+    cooccurrence_query = apply_tag_rating_filter(cooccurrence_query, rating)
+    cooccurrence_query = (
+        cooccurrence_query
         .group_by(Tag.id)
         .order_by(desc("frequency"))
         .limit(limit + len(excluded_tag_names))  # over-fetch to allow exclusion
@@ -562,6 +534,7 @@ async def search_related_tags(
         {
             "name": tag.name,
             "category": tag.category,
+            "rating": tag.rating.value if tag.rating else "none",
             "count": tag.post_count,
             "frequency": frequency,
         }
@@ -602,26 +575,6 @@ async def get_suggested_tags(
 
     return {"items": results, "status": "ready"}
 
-@router.get("/{tag_name}", response_model=TagResponse)
-@cache_response(expire=3600, key_prefix="tag_detail")
-async def get_tag(request: Request, tag_name: str, db: Session = Depends(get_db)):
-    """Get single tag"""
-    tag = db.query(Tag).filter(Tag.name == tag_name.lower()).first()
-    if not tag:
-        raise HTTPException(status_code=404, detail="Tag not found")
-    if tag.rating_entry:
-        tag_rating = tag.rating_entry.rating
-    else:
-        tag_rating = "none"
-    return TagResponse(
-        name=tag.name,
-        category=tag.category,
-        id=tag.id,
-        rating=tag_rating,
-        post_count=tag.post_count,
-        created_at=tag.created_at
-    )
-
 @router.post("/", response_model=TagResponse)
 async def create_tag(
     tag_data: TagCreate,
@@ -637,17 +590,19 @@ async def create_tag(
     if alias_existing:
         raise HTTPException(status_code=400, detail="Tag alias with this name already exists")
     
+    rating_enum = normalize_tag_rating(tag_data.rating)
+
     tag = Tag(
         name=tag_data.name.lower(),
         category=tag_data.category,
-        rating_entry=TagRating(rating=tag_data.rating)
+        rating=rating_enum
     )
     db.add(tag)
     db.commit()
     db.refresh(tag)
     invalidate_tag_cache()
     
-    return tag
+    return TagResponse.model_validate(tag)
 
 @router.patch("/{tag_id}")
 async def update_tag(
@@ -657,28 +612,15 @@ async def update_tag(
     current_user: User = Depends(require_admin_mode),
     db: Session = Depends(get_db)
 ):
-    """Update tag category"""
+    """Update tag category and rating"""
     tag = db.query(Tag).filter(Tag.id == tag_id).first()
     if not tag:
         raise HTTPException(status_code=404, detail="Tag not found")
     
     tag.category = category
 
-    # If a rating has been specified, create/apply/delete rating entry.
     if rating is not None:
-        if rating == "none":
-            if tag.rating_entry:
-                db.delete(tag.rating_entry)
-        elif new_rating in RatingEnum:
-            if not tag.rating_entry:
-                db.add(TagRating(
-                    tag_id=tag_id,
-                    rating=rating
-                ))
-            elif tag.rating_entry.rating is not rating:
-                tag.rating_entry.rating = rating
-        else:
-            raise HTTPException(status_code=400, detail=f"Invalid Tag Rating: '{new_rating}'. Submit null or use accepted values: 'none', '{RatingEnum.safe}', '{RatingEnum.questionable}', '{RatingEnum.explicit}'.")
+        tag.rating = normalize_tag_rating(rating)
 
     db.commit()
     invalidate_tag_cache()
@@ -763,6 +705,7 @@ async def related_tags(
         "id": tag.id,
         "name": tag.name,
         "category": tag.category,
+        "rating": tag.rating.value if tag.rating else "none",
         "frequency": freq
     } for tag, freq in related]
 
@@ -795,6 +738,7 @@ async def get_related_tags(
         {
             "name": t.name,
             "category": t.category,
+            "rating": t.rating.value if t.rating else "none",
             "count": t.post_count,
             "cooccurrence": co
         }

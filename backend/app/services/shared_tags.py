@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import desc
@@ -103,11 +102,12 @@ class SharedTagService:
         
         return local_tags
     
-    def autocomplete_merged(self, query: str, limit: int = 50) -> List[Dict[str, Any]]:
+    def autocomplete_merged(self, query: str, limit: int = 50, rating: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get autocomplete suggestions from both databases"""
         from sqlalchemy import case, desc, func
 
         from ..models import Tag, TagAlias
+        from ..utils.tag_utils import apply_tag_rating_filter
         
         results = []
         seen_names = set()
@@ -116,9 +116,13 @@ class SharedTagService:
             return []
         
         # Check local alias first
-        alias = self.local_db.query(TagAlias).filter(
+        alias_query = self.local_db.query(TagAlias).join(
+            Tag, TagAlias.target_tag_id == Tag.id
+        ).filter(
             TagAlias.alias_name.ilike(q_lower)
-        ).first()
+        )
+        alias_query = apply_tag_rating_filter(alias_query, rating)
+        alias = alias_query.first()
         
         if alias:
             target_tag = self.local_db.query(Tag).filter(Tag.id == alias.target_tag_id).first()
@@ -127,6 +131,7 @@ class SharedTagService:
                     "name": target_tag.name,
                     "category": target_tag.category,
                     "count": target_tag.post_count,
+                    "rating": target_tag.rating.value if target_tag.rating else "none",
                     "is_alias": True,
                     "alias_name": q_lower,
                     "source": "local"
@@ -140,9 +145,11 @@ class SharedTagService:
             else_=3
         )
         
-        local_tags = self.local_db.query(Tag).filter(
+        local_tags_query = self.local_db.query(Tag).filter(
             Tag.name.ilike(f"%{q_lower}%")
-        ).order_by(
+        )
+        local_tags_query = apply_tag_rating_filter(local_tags_query, rating)
+        local_tags = local_tags_query.order_by(
             priority,
             desc(Tag.post_count),
             func.length(Tag.name),
@@ -155,6 +162,7 @@ class SharedTagService:
                     "name": tag.name, 
                     "category": tag.category, 
                     "count": tag.post_count,
+                    "rating": tag.rating.value if tag.rating else "none",
                     "source": "local"
                 })
                 seen_names.add(tag.name)
