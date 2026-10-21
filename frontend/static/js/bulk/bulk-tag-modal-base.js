@@ -69,9 +69,9 @@ class BulkTagModalBase {
     }
 
     createModal() {
-        if (document.getElementById(this.options.id)) {
-            this.modalElement = document.getElementById(this.options.id);
-            return;
+        const existing = document.getElementById(this.options.id);
+        if (existing) {
+            existing.remove();
         }
 
         const modal = document.createElement('div');
