@@ -6,8 +6,8 @@ from starlette.datastructures import UploadFile
 
 from backend.app.enums import FileTypeEnum, RatingEnum
 from backend.app.models import Media, Tag, User
-from backend.app.routes.admin.tags import MergeTagRequest, merge_tag
-from backend.app.routes.media import bulk_update_tags, update_media
+from backend.app.routes.admin.tags import MergeTagRequest, merge_tag, simulate_apply_tag_ratings
+from backend.app.routes.media import _fetch_media_batch_tags_only, bulk_update_ratings, bulk_update_tags, update_media
 from backend.app.routes.uploads import (
     BulkUpdateRequest,
     bulk_update_staged_items,
@@ -17,6 +17,8 @@ from backend.app.routes.uploads import (
     upload_files_to_session,
 )
 from backend.app.schemas import (
+    BulkMediaRatingItem,
+    BulkMediaRatingUpdateRequest,
     BulkTagUpdateItem,
     BulkTagUpdateRequest,
     MediaUpdate,
@@ -196,3 +198,60 @@ class TestTagRatingEscalation(BackupTestBase):
             current_user=self.admin, db=self.db))
         self.assertEqual(res["items"][0]["rating"], "safe")
         self.assertEqual(self._commit_rating(sid), RatingEnum.safe)
+
+    # -- retroactive apply tag ratings ----------------------------------
+    def test_simulate_apply_tag_ratings(self):
+        m_safe_hot = self._media("r1.jpg", RatingEnum.safe, ["hot"])
+        m_safe_mild = self._media("r2.jpg", RatingEnum.safe, ["mild"])
+        m_exp_hot = self._media("r3.jpg", RatingEnum.explicit, ["hot"])
+        m_safe_tame = self._media("r4.jpg", RatingEnum.safe, ["tame"])
+        m_safe_plain = self._media("r5.jpg", RatingEnum.safe, ["plain"])
+
+        res = asyncio.run(simulate_apply_tag_ratings(current_user=self.admin))
+        affected = res["affected_media"]
+        affected_ids = {item["media_id"]: item["new_rating"] for item in affected}
+
+        self.assertIn(m_safe_hot.id, affected_ids)
+        self.assertEqual(affected_ids[m_safe_hot.id], "explicit")
+
+        self.assertIn(m_safe_mild.id, affected_ids)
+        self.assertEqual(affected_ids[m_safe_mild.id], "questionable")
+
+        self.assertNotIn(m_exp_hot.id, affected_ids)
+        self.assertNotIn(m_safe_tame.id, affected_ids)
+        self.assertNotIn(m_safe_plain.id, affected_ids)
+
+    def test_simulate_apply_tag_ratings_no_affected(self):
+        m = self._media("r6.jpg", RatingEnum.safe, ["tame"])
+        res = asyncio.run(simulate_apply_tag_ratings(current_user=self.admin))
+        self.assertEqual(res["affected_media"], [])
+
+    def test_bulk_update_ratings_endpoint(self):
+        m1 = self._media("r7.jpg", RatingEnum.safe)
+        m2 = self._media("r8.jpg", RatingEnum.questionable)
+
+        res = asyncio.run(bulk_update_ratings(
+            payload=BulkMediaRatingUpdateRequest(items=[
+                BulkMediaRatingItem(id=m1.id, rating=RatingEnum.explicit),
+                BulkMediaRatingItem(id=m2.id, rating=RatingEnum.safe),
+            ]),
+            current_user=self.admin,
+            db=self.db,
+        ))
+
+        self.assertEqual(res.status, "success")
+        self.assertEqual(res.updated_count, 2)
+        self.assertIn(m1.id, res.updated_media_ids)
+        self.assertIn(m2.id, res.updated_media_ids)
+
+        self.db.refresh(m1)
+        self.db.refresh(m2)
+        self.assertEqual(m1.rating, RatingEnum.explicit)
+        self.assertEqual(m2.rating, RatingEnum.safe)
+
+    def test_fetch_media_batch_tags_only_includes_rating(self):
+        m = self._media("r9.jpg", RatingEnum.questionable, ["plain"])
+        batch = _fetch_media_batch_tags_only(self.db, [m.id])
+        self.assertEqual(len(batch), 1)
+        self.assertEqual(batch[0]["id"], m.id)
+        self.assertEqual(batch[0]["rating"], "questionable")

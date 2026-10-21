@@ -357,6 +357,18 @@ class BulkTagUpdateResponse(BaseModel):
     updated_count: int
     updated_media_ids: List[int]
 
+class BulkMediaRatingItem(BaseModel):
+    id: int
+    rating: RatingEnum
+
+class BulkMediaRatingUpdateRequest(BaseModel):
+    items: List[BulkMediaRatingItem]
+
+class BulkMediaRatingUpdateResponse(BaseModel):
+    status: str = "success"
+    updated_count: int
+    updated_media_ids: List[int]
+
 class ProposedTag(BaseModel):
     name: str
     category: TagCategoryEnum = TagCategoryEnum.general

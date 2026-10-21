@@ -12,7 +12,7 @@ from ...auth import require_admin_mode
 from ...config import settings
 from ...utils.request_helpers import safe_error_detail
 from ...database import get_db
-from ...enums import TagCategoryEnum
+from ...enums import RatingEnum, TagCategoryEnum
 from ...models import Media, Tag, TagAlias, TagImplication, User
 from ...schemas import BulkRatingUpdateRequest, TagResponse
 from ...utils.cache import invalidate_tag_cache
@@ -665,6 +665,48 @@ async def simulate_apply_aliases(
 
     affected_media = await loop.run_in_executor(None, do_simulate)
     return {"affected_media": affected_media}
+
+@router.post("/simulate-apply-tag-ratings")
+async def simulate_apply_tag_ratings(
+    current_user: User = Depends(require_admin_mode),
+):
+    """Simulate retroactively applying/escalating media ratings based on tag ratings."""
+    from ...database import SessionLocal
+
+    loop = asyncio.get_running_loop()
+
+    def do_simulate():
+        local_db = SessionLocal()
+        try:
+            rated_tags_count = local_db.query(Tag.id).filter(Tag.rating.isnot(None)).count()
+            if rated_tags_count == 0:
+                return []
+
+            media_items = (
+                local_db.query(Media)
+                .options(joinedload(Media.tags))
+                .filter(Media.rating != RatingEnum.explicit)
+                .filter(Media.tags.any(Tag.rating.isnot(None)))
+                .all()
+            )
+
+            affected_media = []
+            for media in media_items:
+                escalated = get_escalated_rating(media.rating, media.tags)
+                if escalated and escalated != media.rating:
+                    affected_media.append({
+                        "media_id": media.id,
+                        "current_rating": media.rating.value if hasattr(media.rating, "value") else media.rating,
+                        "new_rating": escalated.value if hasattr(escalated, "value") else escalated,
+                    })
+
+            return affected_media
+        finally:
+            local_db.close()
+
+    affected_media = await loop.run_in_executor(None, do_simulate)
+    return {"affected_media": affected_media}
+
 
 class MergeTagRequest(BaseModel):
     target_tag_name: str

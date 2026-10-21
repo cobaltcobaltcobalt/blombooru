@@ -19,6 +19,7 @@ from ..database import get_db
 from ..models import (Album, Media, Tag, User, blombooru_album_media,
                       blombooru_media_tags)
 from ..schemas import (AlbumListResponse, BatchMediaRequest, BatchMetadataRequest,
+                       BulkMediaRatingUpdateRequest, BulkMediaRatingUpdateResponse,
                        BulkTagUpdateRequest, BulkTagUpdateResponse,
                        MediaDetailResponse, MediaResponse,
                        MediaUpdate, ShareSettingsUpdate)
@@ -760,6 +761,7 @@ def _fetch_media_batch_tags_only(db: Session, media_ids: List[int], include_meta
             Media.id,
             Media.filename,
             Media.file_type,
+            Media.rating,
             Tag.name,
             Tag.category,
             Tag.rating,
@@ -780,17 +782,20 @@ def _fetch_media_batch_tags_only(db: Session, media_ids: List[int], include_meta
             m_id = row[0]
             filename = row[1]
             file_type = row[2]
-            tag_name = row[3]
-            tag_cat = row[4]
-            tag_rating = row[5]
-            rel_path = row[6] if include_metadata else None
+            media_rating = row[3]
+            tag_name = row[4]
+            tag_cat = row[5]
+            tag_rating = row[6]
+            rel_path = row[7] if include_metadata else None
 
             if m_id not in media_map:
                 ft_val = file_type.value if hasattr(file_type, 'value') else file_type
+                r_val = media_rating.value if hasattr(media_rating, 'value') else (media_rating or "safe")
                 item_dict = {
                     "id": m_id,
                     "filename": filename,
                     "file_type": ft_val,
+                    "rating": r_val,
                     "tags": []
                 }
                 if include_metadata:
@@ -1067,6 +1072,60 @@ async def bulk_update_tags(
         status="success",
         updated_count=len(requested_ids),
         updated_media_ids=requested_ids
+    )
+
+@router.post("/bulk-update-ratings", response_model=BulkMediaRatingUpdateResponse)
+async def bulk_update_ratings(
+    payload: BulkMediaRatingUpdateRequest,
+    current_user: User = Depends(require_admin_mode),
+    db: Session = Depends(get_db)
+):
+    """Atomically update ratings across multiple media items."""
+    if not payload.items:
+        return BulkMediaRatingUpdateResponse(status="success", updated_count=0, updated_media_ids=[])
+
+    requested_ids = [item.id for item in payload.items]
+    if len(requested_ids) != len(set(requested_ids)):
+        raise HTTPException(status_code=400, detail="Duplicate media IDs in update request")
+
+    existing_media_map = {}
+    for i in range(0, len(requested_ids), BATCH_CHUNK_SIZE):
+        chunk = requested_ids[i:i + BATCH_CHUNK_SIZE]
+        found = db.query(Media).filter(Media.id.in_(chunk)).all()
+        for m in found:
+            existing_media_map[m.id] = m
+
+    missing_ids = set(requested_ids) - set(existing_media_map.keys())
+    if missing_ids:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Media items not found: {sorted(list(missing_ids))[:10]}"
+        )
+
+    updated_ids = []
+    rating_changed_media = []
+    for item in payload.items:
+        media = existing_media_map[item.id]
+        norm_rating = RatingEnum.normalize(item.rating)
+        if norm_rating and media.rating != norm_rating:
+            media.rating = norm_rating
+            rating_changed_media.append((media.id, norm_rating.value if hasattr(norm_rating, "value") else norm_rating))
+            updated_ids.append(media.id)
+
+    db.commit()
+
+    for m_id, new_r in rating_changed_media:
+        handle_media_rating_changed(db, m_id, new_r)
+
+    if updated_ids:
+        invalidate_media_cache()
+        for m_id in updated_ids:
+            invalidate_media_item_cache(m_id)
+
+    return BulkMediaRatingUpdateResponse(
+        status="success",
+        updated_count=len(updated_ids),
+        updated_media_ids=updated_ids
     )
 
 @router.get("/{media_id}/related")
