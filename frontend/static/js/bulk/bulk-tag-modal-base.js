@@ -134,7 +134,7 @@ class BulkTagModalBase {
                 <div class="spinner"></div>
                 <p class="text-secondary mt-2 ${prefix}-status text-center">${statusText}</p>
                 <p class="text-secondary text-sm text-center">
-                    <span class="${prefix}-progress">0</span> / <span class="${prefix}-total">0</span> <span class="${prefix}-phase">${window.i18n.t('bulk_modal.progress.items_processed')}</span>
+                    <span class="${prefix}-progress">0</span> / <span class="${prefix}-total">0</span> <span class="${prefix}-phase">${window.i18n.t('bulk_modal.progress.items_fetched')}</span>
                 </p>
             </div>
         `;

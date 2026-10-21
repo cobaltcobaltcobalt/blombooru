@@ -599,8 +599,11 @@
             "fetching_metadata": "Hämtar metadata...",
             "initializing_tagger": "Initierar AI-taggare...",
             "items_fetched": "objekt hämtade",
-            "items_processed": "objekt bearbetade",
+            "items_processed": "{scannedMedia} / {totalMedia} bearbetade",
             "predicting_tags": "Förutsäger taggar med AI...",
+            "skipped": "{count} opåverkade",
+            "tagged": "{count} taggade",
+            "tagging_complete": "Taggning klar",
             "tags_checked": "taggar kontrollerade",
             "validating_tags": "Validerar taggar..."
         },

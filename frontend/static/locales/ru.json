@@ -599,8 +599,11 @@
             "fetching_metadata": "Получение метаданных...",
             "initializing_tagger": "Инициализация AI теггера...",
             "items_fetched": "элементов получено",
-            "items_processed": "элементов обработано",
+            "items_processed": "",
             "predicting_tags": "Предсказание тегов с помощью AI...",
+            "skipped": "",
+            "tagged": "",
+            "tagging_complete": "",
             "tags_checked": "теги проверены",
             "validating_tags": "Валидация тегов..."
         },
