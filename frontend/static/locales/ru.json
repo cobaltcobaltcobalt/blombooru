@@ -570,6 +570,11 @@
             "add_tags": "Добавить",
             "remove_tags": "Удалить"
         },
+        "rating": {
+            "quick_apply": "",
+            "review_ratings": "",
+            "reset_rating": ""
+        },
         "ai_tags": {
             "default_media_name": "Медиафайл {id}",
             "empty_message": "Новые AI-теги не найдены в метаданных выбранных элементов",

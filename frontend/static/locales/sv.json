@@ -570,6 +570,11 @@
             "add_tags": "Lägg till",
             "remove_tags": "Ta bort"
         },
+        "rating": {
+            "quick_apply": "Tillämpa betyg på alla",
+            "review_ratings": "Granska och ändra betyg för alla objekt.",
+            "reset_rating": "Återställ betyg"
+        },
         "ai_tags": {
             "default_media_name": "Media {id}",
             "empty_message": "Inga nya AI-taggar hittades i de valda objektens metadata.",

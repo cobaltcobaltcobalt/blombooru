@@ -570,6 +570,11 @@
             "add_tags": "Add",
             "remove_tags": "Remove"
         },
+        "rating": {
+            "quick_apply": "Apply rating to all",
+            "review_ratings": "Review and change ratings for each item.",
+            "reset_rating": "Reset rating"
+        },
         "ai_tags": {
             "default_media_name": "Media {id}",
             "empty_message": "No new AI tags found in the selected items' metadata.",
