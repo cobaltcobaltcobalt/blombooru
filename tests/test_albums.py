@@ -13,9 +13,9 @@ from backend.app.routes.albums import (autocomplete_albums, clear_album_media_or
                                        get_album_contents, get_album_statistics,
                                        get_albums, get_albums_tree,
                                        reorder_album_media, reorder_root_albums,
-                                       reorder_sub_albums)
+                                       reorder_sub_albums, update_album)
 from backend.app.routes.media import get_adjacent_media
-from backend.app.schemas import AlbumReorderRequest, MediaReorderRequest
+from backend.app.schemas import AlbumReorderRequest, AlbumUpdate, MediaReorderRequest
 from backend.app.utils.album_utils import (add_media_to_album, delete_album_cascade,
                                           get_bulk_album_thumbnails,
                                           handle_media_deleted, handle_media_rating_changed,
@@ -851,6 +851,73 @@ class TestAlbumArchitecture(BackupTestBase):
             db=self.db
         ))
         self.assertEqual(large_limit_res["limit"], 5000)
+
+    def test_update_album_reparent_to_root(self):
+        p1 = self._create_album("Parent")
+        child = self._create_album("Child", parent_id=p1.id)
+        m = self._create_media("m.jpg", rating=RatingEnum.safe)
+        add_media_to_album(self.db, child.id, [m.id])
+
+        self.db.refresh(p1)
+        self.assertEqual(p1.cached_media_count, 1)
+
+        # Reparent child to root (parent_album_id=None)
+        res = asyncio.run(update_album(
+            child.id,
+            AlbumUpdate(parent_album_id=None),
+            current_user=self.admin_user,
+            db=self.db
+        ))
+
+        self.assertEqual(res.parent_ids, [])
+        self.db.refresh(p1)
+        self.db.refresh(child)
+        self.assertEqual(p1.cached_media_count, 0)
+
+        # Verify blombooru_album_hierarchy has no record for child
+        row = self.db.execute(
+            blombooru_album_hierarchy.select().where(
+                blombooru_album_hierarchy.c.child_album_id == child.id
+            )
+        ).first()
+        self.assertIsNone(row)
+
+    def test_update_album_name_preserves_parent(self):
+        p1 = self._create_album("Parent")
+        child = self._create_album("Child", parent_id=p1.id)
+
+        res = asyncio.run(update_album(
+            child.id,
+            AlbumUpdate(name="RenamedChild"),
+            current_user=self.admin_user,
+            db=self.db
+        ))
+
+        self.assertEqual(res.name, "RenamedChild")
+        self.assertEqual(res.parent_ids, [p1.id])
+
+        # Verify hierarchy record still exists
+        row = self.db.execute(
+            blombooru_album_hierarchy.select().where(
+                blombooru_album_hierarchy.c.parent_album_id == p1.id,
+                blombooru_album_hierarchy.c.child_album_id == child.id
+            )
+        ).first()
+        self.assertIsNotNone(row)
+
+    def test_update_album_reparent_to_another_parent(self):
+        p1 = self._create_album("Parent1")
+        p2 = self._create_album("Parent2")
+        child = self._create_album("Child", parent_id=p1.id)
+
+        res = asyncio.run(update_album(
+            child.id,
+            AlbumUpdate(parent_album_id=p2.id),
+            current_user=self.admin_user,
+            db=self.db
+        ))
+
+        self.assertEqual(res.parent_ids, [p2.id])
 
 if __name__ == "__main__":
     unittest.main()

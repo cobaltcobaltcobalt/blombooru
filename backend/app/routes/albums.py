@@ -339,7 +339,8 @@ async def update_album(
         db.flush()
     
     # Update parent relationship
-    if album_data.parent_album_id is not None:
+    fields_set = album_data.model_fields_set if hasattr(album_data, "model_fields_set") else getattr(album_data, "__fields_set__", set())
+    if "parent_album_id" in fields_set:
         reparent_album(db, album_id, album_data.parent_album_id or None)
     else:
         db.commit()

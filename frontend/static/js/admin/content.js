@@ -1448,6 +1448,7 @@ class AdminContent {
             }
 
             // Reload data
+            await this.refreshAlbumTree();
             await this.app.content.loadAlbumStats();
             await this.loadAlbums();
 
@@ -1461,6 +1462,19 @@ class AdminContent {
         const query = searchInput ? searchInput.value.trim() : '';
         if (this.albumTree) {
             this.albumTree.handleSearch(query);
+        }
+    }
+
+    async refreshAlbumTree() {
+        if (this.albumTree) {
+            await this.albumTree.loadAlbums();
+            const searchInput = document.getElementById('album-search-input');
+            const query = searchInput ? searchInput.value.trim() : '';
+            if (query) {
+                this.albumTree.handleSearch(query);
+            } else {
+                this.albumTree.render();
+            }
         }
     }
 
@@ -1612,7 +1626,7 @@ class AdminContent {
                 });
 
                 app.showNotification(window.i18n.t('notifications.admin.album_renamed'), 'success');
-                await this.searchAlbums();
+                await this.refreshAlbumTree();
                 await this.loadAlbums();
                 await this.app.content.loadAlbumStats();
 
@@ -1813,7 +1827,7 @@ class AdminContent {
                 });
 
                 app.showNotification(window.i18n.t('notifications.admin.parent_album_updated'), 'success');
-                await this.searchAlbums();
+                await this.refreshAlbumTree();
                 await this.loadAlbums();
                 await this.app.content.loadAlbumStats();
 
@@ -1859,7 +1873,7 @@ class AdminContent {
                         method: 'DELETE'
                     });
                     app.showNotification(window.i18n.t('notifications.admin.album_deleted'), 'success');
-                    await this.searchAlbums();
+                    await this.refreshAlbumTree();
                     await this.loadAlbums();
                     await this.app.content.loadAlbumStats();
                     // Don't return to manage modal since album is deleted
