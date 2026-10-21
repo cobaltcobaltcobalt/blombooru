@@ -701,3 +701,66 @@ class TestMetadataParsers(BackupTestBase):
         self.assertIn("legacy_tag_b", tag_names)
         self.assertEqual(parsed.rating, "questionable")
         self.assertEqual(parsed.source, "https://example.com/posts/888")
+
+    def test_sanitize_metadata_for_json(self):
+        """Test sanitization of PIL IFDRational, NaN/Inf, bytes, and nested objects."""
+        from PIL.TiffImagePlugin import IFDRational
+        from backend.app.utils.media_helpers import sanitize_metadata_for_json
+        from fastapi.encoders import jsonable_encoder
+
+        raw = {
+            "dpi": (IFDRational(300, 1), IFDRational(300, 1)),
+            "ratio": IFDRational(16, 9),
+            "zero_denom": IFDRational(10, 0),
+            "nan_val": float("nan"),
+            "inf_val": float("inf"),
+            "raw_bytes": b"clean_string\x00",
+            "nested": {
+                "sub_ratio": IFDRational(4, 3),
+                "list": [IFDRational(72, 1), "hello"]
+            }
+        }
+
+        sanitized = sanitize_metadata_for_json(raw)
+        encoded = jsonable_encoder(sanitized)
+
+        self.assertEqual(encoded["dpi"], [300.0, 300.0])
+        self.assertAlmostEqual(encoded["ratio"], 16 / 9)
+        self.assertEqual(encoded["zero_denom"], 0.0)
+        self.assertIsNone(encoded["nan_val"])
+        self.assertIsNone(encoded["inf_val"])
+        self.assertEqual(encoded["raw_bytes"], "clean_string")
+        self.assertAlmostEqual(encoded["nested"]["sub_ratio"], 4 / 3)
+        self.assertEqual(encoded["nested"]["list"], [72.0, "hello"])
+
+    def test_extract_image_metadata_with_ifdrational_dpi(self):
+        """Test extract_image_metadata sanitizes IFDRational dpi into a JSON-serializable structure."""
+        from PIL.TiffImagePlugin import IFDRational
+        from backend.app.utils.media_helpers import extract_image_metadata
+        from fastapi.encoders import jsonable_encoder
+        from unittest.mock import patch
+
+        jpeg_path = Path(self.temp_dir) / "test_dpi.jpg"
+        jpeg_path.write_bytes(make_dummy_jpeg())
+
+        original_open = Image.open
+
+        class MockImgContext:
+            def __init__(self, real_img):
+                self.real_img = real_img
+                self.real_img.info["dpi"] = (IFDRational(300, 1), IFDRational(300, 1))
+
+            def __enter__(self):
+                return self.real_img
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                return self.real_img.__exit__(exc_type, exc_val, exc_tb)
+
+        def mock_open(fp, *args, **kwargs):
+            real = original_open(fp, *args, **kwargs)
+            return MockImgContext(real)
+
+        with patch("backend.app.utils.media_helpers.Image.open", side_effect=mock_open):
+            meta = extract_image_metadata(jpeg_path)
+            encoded = jsonable_encoder(meta)
+            self.assertEqual(encoded["dpi"], [300.0, 300.0])
