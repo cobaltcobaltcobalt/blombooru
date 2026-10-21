@@ -431,6 +431,10 @@
             "apply_aliases_confirm_1_msg": "Detta kommer att tillämpa alla taggalias på varje mediaobjekt i ditt bibliotek. Ersatta taggar tas bort så att taggar inte finns som både tagg och alias. Påverkade media öppnas i en redigeringsmodal för granskning.",
             "apply_aliases_processing": "Tillämpar taggalias på all media...",
             "apply_aliases_no_affected": "Ingen media påverkades av de befintliga taggaliasen.",
+            "apply_tag_ratings_to_all": "Tillämpa Taggbetyg på All Media",
+            "apply_tag_ratings_confirm_msg": "Detta söker efter media vars klassificering är lägre än konfigurerade taggar och öppnar dem i massredigeraren för granskning.",
+            "apply_tag_ratings_processing": "Kontrollerar media mot tagg-klassificering...",
+            "apply_tag_ratings_no_affected": "Inga mediabetyg behöver eskaleras.",
             "delete_all_tags": "Radera alla taggar",
             "drop_csv": "Släpp CSV-fil här eller klicka för att bläddra",
             "import_csv": "Importera taggar från CSV",
@@ -439,7 +443,7 @@
                 "search_manage_tags": "Sök & Hantera Taggar",
                 "search_manage_tags_description": "Använd detta för att snabbt hitta och redigera taggar, hantera dess alias eller för att slå ihop med andra taggar.",
                 "apply_rules_title": "Applicera Taggregler",
-                "apply_rules_hint": "Applicera konfigurerade tagg-alias och implikationer retroaktivt på alla media."
+                "apply_rules_hint": "Applicera konfigurerade taggregler retroaktivt på alla media."
             },
             "manage_tag": "Hantera Taggar",
             "edit_tag": "Redigera Taggar",

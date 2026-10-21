@@ -703,6 +703,9 @@ class AdminContent {
         const applyAliasesBtn = document.getElementById('apply-aliases-btn');
         applyAliasesBtn?.addEventListener('click', () => this.handleApplyAllAliases());
 
+        const applyTagRatingsBtn = document.getElementById('apply-tag-ratings-btn');
+        applyTagRatingsBtn?.addEventListener('click', () => this.handleApplyTagRatings());
+
         // Clear tags
         const clearBtn = document.getElementById('clear-tags-btn');
         clearBtn?.addEventListener('click', () => this.clearAllTags());
@@ -1202,6 +1205,80 @@ class AdminContent {
             }
         } catch (e) {
             console.error('Error applying tag aliases:', e);
+            if (typeof app !== 'undefined' && app.showNotification) {
+                app.showNotification(e.message, 'error');
+            }
+        } finally {
+            if (applyBtn) {
+                applyBtn.disabled = false;
+            }
+        }
+    }
+
+    handleApplyTagRatings() {
+        new ModalHelper({
+            type: 'warning',
+            title: window.i18n.t('common.confirm_1_title'),
+            message: window.i18n.t('admin.tags_management.apply_tag_ratings_confirm_msg'),
+            confirmText: window.i18n.t('common.yes'),
+            cancelText: window.i18n.t('common.no'),
+            onConfirm: async () => {
+                this.executeApplyTagRatings();
+            }
+        }).show();
+    }
+
+    async executeApplyTagRatings() {
+        const applyBtn = document.getElementById('apply-tag-ratings-btn');
+        if (applyBtn) {
+            applyBtn.disabled = true;
+        }
+
+        if (typeof app !== 'undefined' && app.showNotification) {
+            app.showNotification(window.i18n.t('admin.tags_management.apply_tag_ratings_processing'), 'info');
+        }
+
+        try {
+            const response = await fetch('/api/admin/simulate-apply-tag-ratings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to simulate applying tag ratings');
+            }
+
+            const data = await response.json();
+            const affectedMedia = data.affected_media || [];
+
+            if (affectedMedia.length === 0) {
+                if (typeof app !== 'undefined' && app.showNotification) {
+                    app.showNotification(window.i18n.t('admin.tags_management.apply_tag_ratings_no_affected'), 'info');
+                }
+            } else if (typeof BulkRatingModal !== 'undefined') {
+                const affectedIds = affectedMedia.map(m => m.media_id);
+                const prefillRatings = {};
+                affectedMedia.forEach(m => {
+                    if (m.new_rating) {
+                        prefillRatings[m.media_id] = m.new_rating;
+                    }
+                });
+
+                const modal = new BulkRatingModal({
+                    prefillRatings,
+                    onSave: () => {
+                        if (typeof app !== 'undefined' && app.content && app.content.loadTagStats) {
+                            app.content.loadTagStats();
+                        }
+                    }
+                });
+                modal.show(affectedIds);
+            } else {
+                console.error('BulkRatingModal is not loaded');
+            }
+        } catch (e) {
+            console.error('Error applying tag ratings:', e);
             if (typeof app !== 'undefined' && app.showNotification) {
                 app.showNotification(e.message, 'error');
             }

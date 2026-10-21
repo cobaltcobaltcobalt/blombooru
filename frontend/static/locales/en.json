@@ -431,6 +431,10 @@
             "apply_aliases_confirm_1_msg": "This will apply all tag aliases to every media item in your library. Replaced tags will be deleted so tags do not exist as both a tag and an alias. Affected media will be opened in a batch edit modal for review.",
             "apply_aliases_processing": "Applying tag aliases to all media...",
             "apply_aliases_no_affected": "No media was affected by the current tag aliases.",
+            "apply_tag_ratings_to_all": "Apply Tag Ratings to All Media",
+            "apply_tag_ratings_confirm_msg": "This will find all media whose ratings are lower than their configured tag ratings, and open them in the bulk rating editor for review.",
+            "apply_tag_ratings_processing": "Checking media against tag ratings...",
+            "apply_tag_ratings_no_affected": "No media ratings need to be escalated.",
             "delete_all_tags": "Delete All Tags",
             "drop_csv": "Drop CSV file here or click to browse",
             "import_csv": "Import Tags from CSV",
@@ -439,7 +443,7 @@
                 "search_manage_tags": "Search & Manage Tags",
                 "search_manage_tags_description": "Use this to quickly find and edit tags, manage their aliases, or merge them with other tags.",
                 "apply_rules_title": "Apply Tag Rules",
-                "apply_rules_hint": "Retroactively apply configured tag aliases and implications to all media."
+                "apply_rules_hint": "Retroactively apply configured tag rules to all media."
             },
             "manage_tag": "Manage Tag",
             "edit_tag": "Edit Tag",
