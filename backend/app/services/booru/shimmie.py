@@ -8,7 +8,7 @@ from urllib.parse import quote_plus, unquote, urljoin, urlparse
 import requests
 
 from .base import (BooruAuthenticationError, BooruClient, BooruNotFoundError,
-                   BooruRateLimitError)
+                   BooruRateLimitError, parse_booru_date)
 from .types import BooruPost, BooruTag
 from ...utils.logger import logger
 
@@ -259,6 +259,7 @@ class ShimmieClient(BooruClient):
             "meta_keywords": [],
             "category_hints": {},
             "description": None,
+            "uploaded_at": None,
         }
 
         # 1. Main media element (img, video, audio)
@@ -401,6 +402,42 @@ class ShimmieClient(BooruClient):
             if desc_clean:
                 data["description"] = html.unescape(desc_clean)
 
+        # 7. Date / Posted time
+        uploader_row = re.search(
+            r"<tr[^>]*data-row=[\x27\"]Uploader[\x27\"][^>]*>(.*?)</tr>",
+            html_text,
+            re.DOTALL | re.IGNORECASE,
+        )
+        if not uploader_row:
+            uploader_row = re.search(
+                r"<th[^>]*>\s*Uploader\s*</th>\s*<td[^>]*>(.*?)</td>",
+                html_text,
+                re.DOTALL | re.IGNORECASE,
+            )
+        if uploader_row:
+            time_match = re.search(
+                r"<time[^>]*datetime=[\x27\"]([^\x27\"]+)[\x27\"]",
+                uploader_row.group(1),
+                re.IGNORECASE,
+            )
+            if time_match:
+                data["uploaded_at"] = time_match.group(1).strip()
+            else:
+                time_text_m = re.search(r"<time[^>]*>(.*?)</time>", uploader_row.group(1), re.DOTALL | re.IGNORECASE)
+                if time_text_m:
+                    data["uploaded_at"] = re.sub(r"<[^>]+>", "", time_text_m.group(1)).strip()
+
+        if not data.get("uploaded_at"):
+            img_info = re.search(r"<table[^>]*class=[\x27\"][^\x27\"]*image_info[^\x27\"]*[\x27\"][^>]*>(.*?)</table>", html_text, re.DOTALL | re.IGNORECASE)
+            if img_info:
+                time_match = re.search(r"<time[^>]*datetime=[\x27\"]([^\x27\"]+)[\x27\"]", img_info.group(1), re.IGNORECASE)
+                if time_match:
+                    data["uploaded_at"] = time_match.group(1).strip()
+                else:
+                    time_text_m = re.search(r"<time[^>]*>(.*?)</time>", img_info.group(1), re.DOTALL | re.IGNORECASE)
+                    if time_text_m:
+                        data["uploaded_at"] = re.sub(r"<[^>]+>", "", time_text_m.group(1)).strip()
+
         return data
 
     def _extract_from_rss(self, rss_text: str, post_id: int) -> Dict[str, Any]:
@@ -413,6 +450,7 @@ class ShimmieClient(BooruClient):
             "rating": None,
             "raw_tags": [],
             "file_size": 0,
+            "uploaded_at": None,
         }
         try:
             root = ET.fromstring(rss_text)
@@ -442,6 +480,10 @@ class ShimmieClient(BooruClient):
                     )
                 if media_thumb is not None and media_thumb.get("url"):
                     data["preview_url"] = self._absolute(media_thumb.get("url"))
+
+                pub_date = item.findtext("pubDate")
+                if pub_date:
+                    data["uploaded_at"] = pub_date.strip()
 
                 desc = item.findtext("description") or ""
                 tags_m = re.search(r"data-tags=[\x27\"]([^\x27\"]*)[\x27\"]", desc)
@@ -598,6 +640,10 @@ class ShimmieClient(BooruClient):
             score=0,
             booru_url=f"{self.base_url}/post/view/{post_id}",
             description=description,
+            uploaded_at=(
+                parse_booru_date(rss_data.get("uploaded_at"))
+                or parse_booru_date(html_data.get("uploaded_at"))
+            ),
         )
 
     def search_posts(self, tags: str = "", page: int = 1, limit: int = 20) -> List[BooruPost]:
@@ -712,6 +758,7 @@ class ShimmieClient(BooruClient):
                         file_size=file_size,
                         score=0,
                         booru_url=f"{self.base_url}/post/view/{post_id}",
+                        uploaded_at=parse_booru_date(item.findtext("pubDate")),
                     )
                 )
             except Exception as item_err:

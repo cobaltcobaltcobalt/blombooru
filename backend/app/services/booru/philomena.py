@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from .base import BooruClient, BooruNotFoundError
+from .base import BooruClient, BooruNotFoundError, parse_booru_date
 from .types import BooruPost, BooruTag
 from ...utils.logger import logger
 
@@ -147,6 +147,7 @@ class PhilomenaClient(BooruClient):
             score=int(data.get("score") or 0),
             booru_url=f"{self.base_url}/images/{post_id}",
             description=(data.get("description") or None),
+            uploaded_at=parse_booru_date(data.get("created_at")),
         )
 
     def fetch_post(self, post_id: int) -> BooruPost:

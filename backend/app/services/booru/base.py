@@ -1,7 +1,9 @@
 import time
 from abc import ABC, abstractmethod
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from dateutil import parser
 import requests
 
 from .types import BooruPost
@@ -22,6 +24,67 @@ class BooruNotFoundError(BooruError):
 class BooruRateLimitError(BooruError):
     """Raised when booru API rate limits requests (HTTP 429)."""
     pass
+
+def parse_booru_date(raw_date: Any) -> Optional[str]:
+    """
+    Parse a booru upload date or timestamp into an ISO-8601 string, or None if unparseable.
+
+    Notes:
+    - Naive datetimes (without timezone offsets) are assumed to be UTC. This affects
+      sources like the Shimmie text fallback ("February 26, 2024; 00:12") where the server
+      timezone is unknown.
+    - Unparseable input (e.g. relative strings like "2 years ago") returns None.
+    - Timestamps <= 0 or invalid epoch numbers are rejected and return None.
+    - Digit strings are only treated as epoch timestamps if they have 10 (seconds) or 13 (milliseconds) digits.
+    """
+    if raw_date is None:
+        return None
+    if isinstance(raw_date, datetime):
+        if raw_date.tzinfo is None:
+            raw_date = raw_date.replace(tzinfo=timezone.utc)
+        return raw_date.isoformat()
+    if isinstance(raw_date, (int, float)):
+        ts = float(raw_date)
+        if ts <= 0:
+            return None
+        raw_int_str = str(int(ts))
+        if len(raw_int_str) not in (10, 13):
+            return None
+        if ts > 1e11:
+            ts /= 1000.0
+        try:
+            return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+        except (ValueError, OSError, OverflowError):
+            return None
+    raw_str = str(raw_date).strip()
+    if not raw_str:
+        return None
+    try:
+        if float(raw_str) <= 0:
+            return None
+    except ValueError:
+        pass
+    if raw_str.isdigit():
+        if len(raw_str) in (10, 13):
+            ts = float(raw_str)
+            if ts <= 0:
+                return None
+            if ts > 1e11:
+                ts /= 1000.0
+            try:
+                return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+            except (ValueError, OSError, OverflowError):
+                return None
+        elif len(raw_str) not in (8, 14):
+            # Digit strings that are not plausible epochs (10, 13) or calendar dates (8 for YYYYMMDD, 14 for YYYYMMDDHHMMSS)
+            return None
+    try:
+        dt = parser.parse(raw_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.isoformat()
+    except (ValueError, OverflowError, parser.ParserError, TypeError):
+        return None
 
 class BooruClient(ABC):
     """Abstract base for booru API clients."""

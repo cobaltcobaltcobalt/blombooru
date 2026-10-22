@@ -8,7 +8,7 @@ import html
 import requests
 
 from .base import (BooruAuthenticationError, BooruClient, BooruNotFoundError,
-                   BooruRateLimitError)
+                   BooruRateLimitError, parse_booru_date)
 from .types import BooruPost, BooruTag
 from ...utils.logger import logger
 from ...utils.tag_utils import dtext_to_plain
@@ -304,6 +304,7 @@ class DanbooruClient(BooruClient):
             score=data.get("score", 0),
             booru_url=f"{self.base_url}/posts/{data.get('id', post_id)}",
             description=description,
+            uploaded_at=parse_booru_date(data.get("created_at")),
         )
 
     def search_posts(self, tags: str = "", page: int = 1, limit: int = 20) -> List[BooruPost]:
@@ -336,6 +337,7 @@ class DanbooruClient(BooruClient):
                     file_size=data.get("file_size", 0),
                     score=data.get("score", 0),
                     booru_url=f"{self.base_url}/posts/{data.get('id', 0)}",
+                    uploaded_at=parse_booru_date(data.get("created_at")),
                 )
                 results.append(post)
             except Exception as e:

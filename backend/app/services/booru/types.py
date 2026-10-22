@@ -25,3 +25,4 @@ class BooruPost:
     score: int = 0
     booru_url: str = ""
     description: Optional[str] = None
+    uploaded_at: Optional[str] = None

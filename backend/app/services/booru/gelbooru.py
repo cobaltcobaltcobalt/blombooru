@@ -7,7 +7,7 @@ import html
 import requests
 
 from .base import (BooruAuthenticationError, BooruClient, BooruNotFoundError,
-                   BooruRateLimitError)
+                   BooruRateLimitError, parse_booru_date)
 from .types import BooruPost, BooruTag
 from ...utils.logger import logger
 
@@ -222,6 +222,8 @@ class GelbooruClient(BooruClient):
             file_size=0,
             score=int(data.get("score") or 0),
             booru_url=f"{self.base_url}/index.php?page=post&s=view&id={data.get('id', post_id)}",
+            # Fall back to 'change' (last-modified timestamp) when 'created_at' is absent or invalid on Gelbooru v0.2 instances
+            uploaded_at=parse_booru_date(data.get("created_at")) or parse_booru_date(data.get("change")),
         )
 
     def search_posts(self, tags: str = "", page: int = 1, limit: int = 20) -> List[BooruPost]:
@@ -274,6 +276,7 @@ class GelbooruClient(BooruClient):
                     file_size=0,
                     score=int(data.get("score") or 0),
                     booru_url=f"{self.base_url}/index.php?page=post&s=view&id={data.get('id', 0)}",
+                    uploaded_at=parse_booru_date(data.get("created_at")) or parse_booru_date(data.get("change")),
                 )
                 results.append(post)
             except Exception as e:

@@ -115,6 +115,7 @@ async def fetch_booru_post(
         "score": post.score,
         "booru_url": post.booru_url,
         "description": post.description,
+        "uploaded_at": post.uploaded_at,
     }
 
 @router.post("/download")

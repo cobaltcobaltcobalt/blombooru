@@ -1,7 +1,7 @@
 ## Booru Import
 
 > [!NOTE]
-> Last updated: `September 8, 2026`
+> Last updated: `October 22, 2026`
 
 **Base path:** `/api/booru-import`
 
@@ -38,9 +38,12 @@ Content-Type: application/json
   "file_size": 2048576,
   "score": 42,
   "booru_url": "https://danbooru.donmai.us/posts/12345",
-  "description": "Artist commentary or translation notes"
+  "description": "Artist commentary or translation notes",
+  "uploaded_at": "2024-05-18T10:14:22.123000-04:00"
 }
 ```
+
+`uploaded_at` contains the ISO-8601 post upload timestamp, or `null` if unavailable. On Gelbooru v0.2 instances (such as safebooru.org) that do not return `created_at`, `uploaded_at` falls back to `change` (the post last-modified timestamp). If a post on such a board was edited after creation, this fallback reflects the edit date rather than the original upload date. Naive timestamps without timezone offsets are assumed to be UTC.
 
 `is_new` on each tag indicates whether that tag exists in the local database. Returns `400` for unsupported URLs, `403`/`404` from the remote booru, or `502` on API errors.
 

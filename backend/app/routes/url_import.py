@@ -69,6 +69,7 @@ def _do_fetch_media_url(url: str) -> dict:
                     "score": post.score,
                     "booru_url": post.booru_url,
                     "description": post.description,
+                    "uploaded_at": post.uploaded_at,
                 }
             except Exception as e:
                 logger.warning(f"Booru fetch failed for {url}, falling back to direct probe: {e}")
