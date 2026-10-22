@@ -128,10 +128,11 @@ class TagsGallery extends BaseGallery {
                 enableRatingFilter: true,
                 ratingFilter: () => this.currentRating,
                 onSelect: (tag) => {
-                    this.searchInput.value = tag.name;
+                    const tagName = typeof tag === 'object' && tag !== null ? tag.name : tag;
+                    this.searchInput.value = tagName;
                     clearTimeout(this.searchDebounceTimer);
                     this.currentPage = 1;
-                    this.updateUrlParams({ q: tag.name, page: null });
+                    this.updateUrlParams({ q: tagName || null, page: null });
                     this.loadContent();
                 }
             });
