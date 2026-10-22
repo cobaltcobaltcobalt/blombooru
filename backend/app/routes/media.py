@@ -1138,6 +1138,7 @@ async def get_related_media(
     media_id: int,
     limit: int = Query(12, ge=1, le=100),
     album_id: Optional[int] = Query(None),
+    q: Optional[str] = Query(default=None),
     rating: Optional[str] = Query(default=None),
     custom_filter: Optional[List[str]] = Query(default=None),
     db: Session = Depends(get_db)
@@ -1147,10 +1148,21 @@ async def get_related_media(
 
     if not isinstance(limit, int) or limit <= 0:
         limit = 12
-    if not isinstance(rating, str):
+    if not isinstance(q, str) or not q.strip():
+        q = None
+    else:
+        q = q.strip()
+    if not isinstance(rating, str) or not rating.strip():
         rating = None
-    if not isinstance(custom_filter, (list, tuple, str, set)):
-        custom_filter = None
+    else:
+        rating = rating.strip()
+    clean_custom_filter = None
+    if isinstance(custom_filter, (list, tuple, set)):
+        clean_custom_filter = [cf.strip() for cf in custom_filter if isinstance(cf, str) and cf.strip()]
+        if not clean_custom_filter:
+            clean_custom_filter = None
+    elif isinstance(custom_filter, str) and custom_filter.strip():
+        clean_custom_filter = [custom_filter.strip()]
 
     if similarity_index.rebuild_pending:
         await similarity_index.wait_for_build(timeout=10.0)
@@ -1161,6 +1173,8 @@ async def get_related_media(
     album_media_ids = None
     if isinstance(album_id, int):
         album_media_ids = set(get_flattened_media_ids(db, album_id))
+        if not album_media_ids:
+            return {"items": [], "status": "ready"}
 
     # Exclude parent, siblings, and children of current media
     excluded_hierarchy_ids: Set[int] = set()
@@ -1177,13 +1191,38 @@ async def get_related_media(
         for (cid,) in db.query(Media.id).filter(Media.parent_id == media_id).all():
             excluded_hierarchy_ids.add(cid)
 
-    has_filters = bool(rating or custom_filter)
-    fetch_limit = max(limit * 5, 50) if has_filters else limit
+    has_filters = bool(q or rating or clean_custom_filter)
+    candidate_media_ids = None
+
+    if has_filters:
+        media_filter_query = db.query(Media.id).distinct().filter(Media.id != media_id)
+        if album_media_ids is not None:
+            media_filter_query = media_filter_query.filter(Media.id.in_(album_media_ids))
+
+        parsed = parse_search_query(q or "")
+        media_filter_query = apply_search_criteria(media_filter_query, parsed, db)
+
+        if rating and 'rating' not in parsed.get('meta', {}):
+            valid_ratings = parse_rating_filter(rating)
+            if valid_ratings:
+                media_filter_query = media_filter_query.filter(Media.rating.in_(valid_ratings))
+            else:
+                return {"items": [], "status": "ready"}
+
+        if clean_custom_filter:
+            media_filter_query = apply_custom_filters_or(media_filter_query, clean_custom_filter, db)
+
+        media_filter_query = media_filter_query.order_by(None)
+        matching_rows = media_filter_query.all()
+        candidate_media_ids = {r[0] for r in matching_rows}
+        if not candidate_media_ids:
+            return {"items": [], "status": "ready"}
 
     similar_pairs = similarity_index.get_similar_media(
         media_id=media_id,
-        limit=fetch_limit,
-        album_media_ids=album_media_ids,
+        limit=limit,
+        album_media_ids=album_media_ids if not has_filters else None,
+        candidate_media_ids=candidate_media_ids,
         excluded_media_ids=excluded_hierarchy_ids,
     )
 
@@ -1194,17 +1233,7 @@ async def get_related_media(
     if not similar_ids:
         return {"items": [], "status": "ready"}
 
-    media_query = db.query(Media).options(selectinload(Media.tags)).filter(Media.id.in_(similar_ids))
-
-    if rating:
-        valid_ratings = parse_rating_filter(rating)
-        if valid_ratings:
-            media_query = media_query.filter(Media.rating.in_(valid_ratings))
-
-    if custom_filter:
-        media_query = apply_custom_filters_or(media_query, custom_filter, db)
-
-    media_records = media_query.all()
+    media_records = db.query(Media).options(selectinload(Media.tags)).filter(Media.id.in_(similar_ids)).all()
     media_dict = {m.id: m for m in media_records}
 
     items = []

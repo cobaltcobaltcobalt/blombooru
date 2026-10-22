@@ -1,7 +1,7 @@
 ## Media
 
 > [!NOTE]
-> Last updated: `October 10, 2026`
+> Last updated: `October 22, 2026`
 
 **Base path:** `/api/media`
 
@@ -124,13 +124,14 @@ Content-Type: application/json
 GET /api/media/{id}/related
 ```
 
-Returns related media items using category-weighted TF-IDF tag similarity.
+Returns related media items using category-weighted TF-IDF tag similarity. When filters or a search query are specified (`q`, `rating`, `custom_filter`, `album_id`), candidate posts are pre-filtered before ranking by similarity, ensuring up to `limit` relevant items are returned.
 
 | Query param | Type | Default | Description |
 |---|---|---|---|
 | `limit` | int | 12 | Maximum items to return (1-100) |
 | `album_id` | int | | Optional album ID to constrain related results within |
-| `rating` | string | | Rating filter: `safe`, `questionable`, `explicit`, or shorthands `s`, `q`, `e` (comma-separated) |
+| `q` | string | | Optional search query string to filter candidate media |
+| `rating` | string | | Rating filter: `safe`, `questionable`, `explicit`, or shorthands `s`, `q`, `e` (comma-separated). A `rating:` term inside `q` takes precedence over this parameter. |
 | `custom_filter` | string[] | | Custom filter tag expressions |
 
 **Response:** `{ "items": [ /* MediaResponse[] */ ], "status": "ready" }`

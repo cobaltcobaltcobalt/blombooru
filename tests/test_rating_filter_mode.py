@@ -582,6 +582,64 @@ class TestRatingFilterMode(BackupTestBase):
         res_short_all = asyncio.run(get_related_media(request=req, media_id=1, rating="s,q,e", db=self.db))
         self.assertCountEqual(get_ids(res_short_all), [2, 3])
 
+        # Search term query parameter 'q'
+        res_q_cool = asyncio.run(get_related_media(request=req, media_id=1, q="cool", db=self.db))
+        self.assertEqual(get_ids(res_q_cool), [3])
+
+        res_q_nonexistent = asyncio.run(get_related_media(request=req, media_id=1, q="nonexistenttag", db=self.db))
+        self.assertEqual(get_ids(res_q_nonexistent), [])
+
+        # Search term with rating qualifier
+        res_q_rating = asyncio.run(get_related_media(request=req, media_id=1, q="rating:questionable", db=self.db))
+        self.assertEqual(get_ids(res_q_rating), [2])
+
+    def test_get_related_media_prefiltering_avoids_starvation(self):
+        """Verify that pre-filtering ensures matching lower-ranked candidates are returned instead of starved out."""
+        from backend.app.services.similarity import similarity_index
+
+        req = make_dummy_request()
+
+        # Tag for query media
+        t_base = Tag(id=200, name="base_tag", category=TagCategoryEnum.artist, post_count=70)
+        t_extra = Tag(id=201, name="extra_tag", category=TagCategoryEnum.character, post_count=65)
+        self.db.add_all([t_base, t_extra])
+
+        # Query media (id=300) is safe, has base_tag and extra_tag
+        m_query = Media(id=300, filename="m_query.jpg", path="original/m_query.jpg", hash="hash_starve_query", file_size=1024, file_type=FileTypeEnum.image, rating=RatingEnum.safe)
+        self.db.add(m_query)
+
+        # 60 explicit media items (ids 301..360) have BOTH base_tag and extra_tag -> higher similarity to m_query
+        # 1 safe media item (id 361) has ONLY base_tag -> lower similarity to m_query
+        bulk_media = []
+        bulk_edges = []
+        for i in range(1, 61):
+            mid = 300 + i
+            m = Media(id=mid, filename=f"m_expl_{i}.jpg", path=f"original/m_expl_{i}.jpg", hash=f"hash_starve_expl_{i}", file_size=1024, file_type=FileTypeEnum.image, rating=RatingEnum.explicit)
+            bulk_media.append(m)
+            bulk_edges.append({"media_id": mid, "tag_id": 200})
+            bulk_edges.append({"media_id": mid, "tag_id": 201})
+
+        m_safe = Media(id=361, filename="m_safe_only.jpg", path="original/m_safe_only.jpg", hash="hash_starve_safe", file_size=1024, file_type=FileTypeEnum.image, rating=RatingEnum.safe)
+        bulk_media.append(m_safe)
+        bulk_edges.append({"media_id": 361, "tag_id": 200})
+        bulk_edges.append({"media_id": 300, "tag_id": 200})
+        bulk_edges.append({"media_id": 300, "tag_id": 201})
+
+        self.db.add_all(bulk_media)
+        self.db.commit()
+        self.db.execute(blombooru_media_tags.insert().values(bulk_edges))
+        self.db.commit()
+
+        similarity_index.rebuild(self.db)
+
+        # Request related media with rating="safe" and limit=12.
+        # There is only 1 safe candidate (id=361).
+        # Previously, the top 60 raw results were all explicit (301..360), leaving 0 results after filtering.
+        # With candidate pre-filtering, 361 is returned!
+        res_safe = asyncio.run(get_related_media(request=req, media_id=300, rating="safe", limit=12, db=self.db))
+        items_safe = [item["id"] if isinstance(item, dict) else item.id for item in res_safe["items"]]
+        self.assertEqual(items_safe, [361])
+
     def test_config_and_schema(self):
         from pydantic import ValidationError
 
