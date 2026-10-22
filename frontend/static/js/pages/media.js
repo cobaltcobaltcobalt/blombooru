@@ -1844,7 +1844,22 @@ class MediaViewer extends MediaViewerBase {
             onConfirm: async () => {
                 try {
                     await app.apiCall(`/api/media/${this.mediaId}`, { method: 'DELETE' });
-                    window.location.href = '/';
+                    const albumMatch = window.location.pathname.match(/\/album\/(\d+)\/media\//);
+                    const albumId = albumMatch ? albumMatch[1] : this.albumId;
+                    const basePath = albumId ? `/album/${albumId}` : '/';
+                    let targetUrl = `${basePath}${window.location.search || ''}`;
+
+                    if (!window.location.search && document.referrer) {
+                        try {
+                            const refUrl = new URL(document.referrer);
+                            if (refUrl.origin === window.location.origin && !refUrl.pathname.includes('/media/')) {
+                                if (!albumId || refUrl.pathname === `/album/${albumId}`) {
+                                    targetUrl = refUrl.pathname + refUrl.search;
+                                }
+                            }
+                        } catch (e) {}
+                    }
+                    window.location.href = targetUrl;
                 } catch (e) {
                     app.showNotification(e.message, 'error', window.i18n.t('media.errors.deleting_media'));
                 }
