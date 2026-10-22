@@ -764,3 +764,279 @@ class TestMetadataParsers(BackupTestBase):
             meta = extract_image_metadata(jpeg_path)
             encoded = jsonable_encoder(meta)
             self.assertEqual(encoded["dpi"], [300.0, 300.0])
+
+    def test_date_colon_normalization(self):
+        """Test EXIF date colon format YYYY:MM:DD normalizes to YYYY-MM-DD."""
+        from datetime import datetime, timezone
+        from backend.app.utils.date_extractor import normalize_date_string, parse_candidate_datetime
+
+        norm = normalize_date_string("2024:05:18 10:14:22")
+        self.assertEqual(norm, "2024-05-18 10:14:22")
+
+        dt = parse_candidate_datetime("2024:05:18 10:14:22")
+        self.assertIsNotNone(dt)
+        self.assertEqual(dt, datetime(2024, 5, 18, 10, 14, 22, tzinfo=timezone.utc))
+
+    def test_zero_and_boundary_dates_rejected(self):
+        """Test zero-dates, pre-1970 dates, and future dates are rejected."""
+        from datetime import datetime, timedelta, timezone
+        from backend.app.utils.date_extractor import is_zero_date_string, parse_candidate_datetime
+
+        self.assertTrue(is_zero_date_string("0000:00:00 00:00:00"))
+        self.assertTrue(is_zero_date_string("0000-00-00"))
+        self.assertIsNone(parse_candidate_datetime("0000:00:00 00:00:00"))
+        self.assertIsNone(parse_candidate_datetime("1970-01-01 00:00:00"))
+        self.assertIsNone(parse_candidate_datetime("1904-01-01"))
+        self.assertIsNone(parse_candidate_datetime("1969-12-31 23:59:59"))
+
+        # Future date rejected
+        future_str = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
+        self.assertIsNone(parse_candidate_datetime(future_str))
+
+        # Valid timestamp allowed
+        valid_dt = parse_candidate_datetime("1970-01-01 00:00:01")
+        self.assertIsNotNone(valid_dt)
+
+    def test_exif_timezone_offset_handling(self):
+        """Test OffsetTimeOriginal and OffsetTime timezone offset parsing."""
+        from datetime import datetime, timezone
+        from backend.app.utils.date_extractor import parse_exif_tag_date
+
+        # Offset +02:00 -> 10:14:22 local is 08:14:22 UTC
+        dt_plus = parse_exif_tag_date("2024:05:18 10:14:22", "+02:00")
+        self.assertIsNotNone(dt_plus)
+        self.assertEqual(dt_plus, datetime(2024, 5, 18, 8, 14, 22, tzinfo=timezone.utc))
+
+        # Offset -05:00 -> 10:14:22 local is 15:14:22 UTC
+        dt_minus = parse_exif_tag_date("2024:05:18 10:14:22", "-05:00")
+        self.assertIsNotNone(dt_minus)
+        self.assertEqual(dt_minus, datetime(2024, 5, 18, 15, 14, 22, tzinfo=timezone.utc))
+
+        # No offset assumes UTC
+        dt_utc = parse_exif_tag_date("2024:05:18 10:14:22", None)
+        self.assertIsNotNone(dt_utc)
+        self.assertEqual(dt_utc, datetime(2024, 5, 18, 10, 14, 22, tzinfo=timezone.utc))
+
+    def test_earliest_embedded_date_selection(self):
+        """Test selecting the earliest valid timestamp between created and modified candidates."""
+        from datetime import datetime, timezone
+        from PIL import Image
+        from backend.app.utils.date_extractor import extract_image_embedded_dates
+
+        img_path = Path(self.temp_dir) / "test_exif_compare.jpg"
+        img = Image.new("RGB", (32, 32), color="blue")
+        exif = img.getexif()
+        # DateTime (tag 306): 2024:05:19 12:00:00 (modified)
+        exif[306] = "2024:05:19 12:00:00"
+        # DateTimeOriginal (tag 36867 in Exif IFD): 2024:05:18 10:00:00 (created)
+        exif_ifd = exif.get_ifd(34665)
+        exif_ifd[36867] = "2024:05:18 10:00:00"
+        img.save(img_path, "JPEG", exif=exif)
+
+        result_dt = extract_image_embedded_dates(img_path)
+        self.assertIsNotNone(result_dt)
+        self.assertEqual(result_dt, datetime(2024, 5, 18, 10, 0, 0, tzinfo=timezone.utc))
+
+    def test_gallery_dl_and_lolisnatcher_date_extraction(self):
+        """Test gallery-dl and LoliSnatcher parsers extract dates into ParsedMetadata."""
+        from backend.app.services.metadata_parsers import GalleryDlParser, LoliSnatcherParser
+
+        media_file = Path(self.temp_dir) / "art_sample.png"
+        media_file.write_bytes(make_dummy_jpeg())
+
+        # 1. Gallery-dl sidecar
+        gdl_sidecar = Path(self.temp_dir) / "art_sample.png.json"
+        gdl_sidecar.write_text(json.dumps({
+            "category": "danbooru",
+            "tag_string": "1girl cat_ears",
+            "date": "2024-05-18 10:14:22"
+        }), encoding="utf-8")
+
+        gdl_parser = GalleryDlParser()
+        self.assertTrue(gdl_parser.can_handle(media_file, [gdl_sidecar]))
+        gdl_meta = gdl_parser.parse(media_file, [gdl_sidecar])
+        self.assertEqual(gdl_meta.date, "2024-05-18T10:14:22+00:00")
+
+        # 2. LoliSnatcher sidecar with real postDate (Gelbooru format)
+        ls_sidecar = Path(self.temp_dir) / "art_sample.json"
+        ls_sidecar.write_text(json.dumps({
+            "isSnatched": True,
+            "tagsList": ["solo", "blue_eyes"],
+            "postDate": "Sun May 18 10:14:22  2024",
+            "postDateFormat": "EEE MMM dd HH:mm:ss  yyyy"
+        }), encoding="utf-8")
+
+        ls_parser = LoliSnatcherParser()
+        self.assertTrue(ls_parser.can_handle(media_file, [ls_sidecar]))
+        ls_meta = ls_parser.parse(media_file, [ls_sidecar])
+        self.assertEqual(ls_meta.date, "2024-05-18T10:14:22+00:00")
+
+        # 3. LoliSnatcher sidecar with ISO postDate
+        ls_sidecar_iso = Path(self.temp_dir) / "art_iso.json"
+        ls_sidecar_iso.write_text(json.dumps({
+            "isSnatched": True,
+            "tagsList": ["solo"],
+            "postDate": "2024-05-18T10:14:22.000Z",
+            "postDateFormat": "iso"
+        }), encoding="utf-8")
+        iso_file = Path(self.temp_dir) / "art_iso.png"
+        iso_file.write_bytes(make_dummy_jpeg())
+        ls_iso_meta = ls_parser.parse(iso_file, [ls_sidecar_iso])
+        self.assertEqual(ls_iso_meta.date, "2024-05-18T10:14:22+00:00")
+
+    def test_explicit_dates_lenient_range(self):
+        """Test explicit dates accept vintage (1890, 1965) and future (2090) dates without auto-detection bounds."""
+        from backend.app.utils.date_extractor import resolve_custom_date
+
+        # Vintage 1890
+        dt, origin = resolve_custom_date(explicit_date="1890-05-01")
+        self.assertEqual(origin, "explicit")
+        self.assertEqual(dt.year, 1890)
+        self.assertEqual(dt.month, 5)
+        self.assertEqual(dt.day, 1)
+
+        # Mid-20th century 1965
+        dt, origin = resolve_custom_date(explicit_date="1965-03-04")
+        self.assertEqual(origin, "explicit")
+        self.assertEqual(dt.year, 1965)
+
+        # Future 2090
+        dt, origin = resolve_custom_date(explicit_date="2090-01-01")
+        self.assertEqual(origin, "explicit")
+        self.assertEqual(dt.year, 2090)
+
+    def test_malformed_timezone_offset_does_not_discard_exif_date(self):
+        """Test malformed/out-of-bounds offset caps and preserves EXIF date with UTC fallback."""
+        from datetime import datetime, timezone
+        from backend.app.utils.date_extractor import parse_exif_tag_date, parse_timezone_offset
+
+        # Out of bounds offset (> 14h) returns None without raising
+        self.assertIsNone(parse_timezone_offset("+99:00"))
+        self.assertIsNone(parse_timezone_offset("-25:00"))
+
+        # Valid offset within 14h returns timezone
+        self.assertIsNotNone(parse_timezone_offset("+14:00"))
+
+        # EXIF date with malformed offset retains date with UTC fallback
+        dt = parse_exif_tag_date("2024:05:18 10:14:22", "+99:00")
+        self.assertIsNotNone(dt)
+        self.assertEqual(dt, datetime(2024, 5, 18, 10, 14, 22, tzinfo=timezone.utc))
+
+    def test_unregistered_extension_embedded_date_extraction_does_not_crash(self):
+        """Test extract_embedded_date on unregistered file extension returns None without AttributeError."""
+        from backend.app.utils.date_extractor import extract_embedded_date
+
+        strange_file = Path(self.temp_dir) / "data_file.xyz_unknown"
+        strange_file.write_bytes(b"some binary data not an image or video")
+        result = extract_embedded_date(strange_file)
+        self.assertIsNone(result)
+
+    def test_resolve_custom_date_precedence(self):
+        """Test resolution precedence: explicit > booru > sidecar > exif > client > default."""
+        from datetime import datetime, timezone
+        from fastapi import HTTPException
+        from backend.app.utils.date_extractor import resolve_custom_date
+
+        explicit_dt = "2024-01-01T00:00:00Z"
+        booru_dt = "2023-01-01T00:00:00Z"
+        sidecar_dt = "2022-01-01T00:00:00Z"
+        client_dt = "2021-01-01T00:00:00Z"
+
+        # 1. Explicit always wins
+        dt, origin = resolve_custom_date(
+            explicit_date=explicit_dt,
+            booru_date=booru_dt,
+            sidecar_date=sidecar_dt,
+            client_date=client_dt,
+        )
+        self.assertEqual(origin, "explicit")
+        self.assertEqual(dt.year, 2024)
+
+        # 2. Malformed explicit raises 422
+        with self.assertRaises(HTTPException) as ctx:
+            resolve_custom_date(explicit_date="not-a-real-date")
+        self.assertEqual(ctx.exception.status_code, 422)
+
+        # 3. Booru wins when explicit is None
+        dt, origin = resolve_custom_date(
+            explicit_date=None,
+            booru_date=booru_dt,
+            sidecar_date=sidecar_dt,
+            client_date=client_dt,
+        )
+        self.assertEqual(origin, "booru")
+        self.assertEqual(dt.year, 2023)
+
+        # 4. Sidecar wins when booru is None
+        dt, origin = resolve_custom_date(
+            explicit_date=None,
+            booru_date=None,
+            sidecar_date=sidecar_dt,
+            client_date=client_dt,
+        )
+        self.assertEqual(origin, "sidecar")
+        self.assertEqual(dt.year, 2022)
+
+        # 5. Client wins when embedded is absent
+        dt, origin = resolve_custom_date(
+            explicit_date=None,
+            booru_date=None,
+            sidecar_date=None,
+            file_path=None,
+            client_date=client_dt,
+        )
+        self.assertEqual(origin, "client")
+        self.assertEqual(dt.year, 2021)
+
+        # 6. Default fallback
+        dt, origin = resolve_custom_date()
+        self.assertEqual(origin, "default")
+        self.assertIsNotNone(dt)
+
+    def test_explicit_dates_reject_incomplete_and_zero(self):
+        """Test incomplete dates ('2024', '12', 'May', '10:30', '2024-05') and epoch zero (0, '0') are rejected."""
+        from fastapi import HTTPException
+        from backend.app.utils.date_extractor import parse_explicit_custom_date, resolve_custom_date
+
+        invalid_candidates = ["2024", "12", "May", "10:30", "2024-05", 0, "0", -1, 0.0]
+        for val in invalid_candidates:
+            with self.subTest(candidate=val):
+                self.assertIsNone(parse_explicit_custom_date(val))
+                with self.assertRaises(HTTPException) as ctx:
+                    resolve_custom_date(explicit_date=val)
+                self.assertEqual(ctx.exception.status_code, 422)
+
+    def test_lolisnatcher_bounds_rejects_epoch_and_future(self):
+        """Test LoliSnatcherParser rejects epoch zero (1970-01-01T00:00:00), pre-1970, and future dates."""
+        from backend.app.services.metadata_parsers.lolisnatcher import LoliSnatcherParser
+
+        parser = LoliSnatcherParser()
+        dummy_media = Path(self.temp_dir) / "art_epoch.jpg"
+        dummy_media.write_bytes(make_dummy_jpeg())
+
+        # postDate: "1970-01-01T00:00:00" -> None
+        sidecar_epoch = Path(self.temp_dir) / "art_epoch.json"
+        sidecar_epoch.write_text(json.dumps({
+            "isSnatched": True,
+            "postDate": "1970-01-01T00:00:00"
+        }), encoding="utf-8")
+        parsed = parser.parse(dummy_media, [sidecar_epoch])
+        self.assertIsNone(parsed.date)
+
+        # postDate: "1969-12-31" -> None
+        sidecar_pre1970 = Path(self.temp_dir) / "art_pre1970.json"
+        sidecar_pre1970.write_text(json.dumps({
+            "isSnatched": True,
+            "postDate": "1969-12-31"
+        }), encoding="utf-8")
+        parsed = parser.parse(dummy_media, [sidecar_pre1970])
+        self.assertIsNone(parsed.date)
+
+        # postDate: "2099-01-01T00:00:00" -> None
+        sidecar_future = Path(self.temp_dir) / "art_future.json"
+        sidecar_future.write_text(json.dumps({
+            "isSnatched": True,
+            "postDate": "2099-01-01T00:00:00"
+        }), encoding="utf-8")
+        parsed = parser.parse(dummy_media, [sidecar_future])
+        self.assertIsNone(parsed.date)

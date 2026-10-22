@@ -296,12 +296,24 @@ class ExifXmpParser(MetadataParser):
                 if values:
                     description = html.unescape("\n".join(values).strip())
 
+        from ...utils.date_extractor import _extract_xmp_dates_from_string
+        c_dates, m_dates = _extract_xmp_dates_from_string(xmp_content)
+        earliest_dt = None
+        if c_dates and m_dates:
+            earliest_dt = min(min(c_dates), min(m_dates))
+        elif c_dates:
+            earliest_dt = min(c_dates)
+        elif m_dates:
+            earliest_dt = min(m_dates)
+        xmp_date = earliest_dt.isoformat() if earliest_dt else None
+
         return ParsedMetadata(
             tags=tags,
             rating=rating,
             source=source,
             description=description,
             confidence="xmp",
+            date=xmp_date,
         )
 
     def _parse_embedded_metadata(self, media_path: Path) -> ParsedMetadata:

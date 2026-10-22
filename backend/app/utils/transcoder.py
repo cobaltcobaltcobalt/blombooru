@@ -197,11 +197,18 @@ def probe_media_streams(file_path: Path) -> dict:
 
         video_streams = []
         audio_streams = []
+        creation_time = None
         stream_pattern = re.compile(
             r'^\s*Stream\s+#\d+:\d+(?:\[0x[0-9a-fA-F]+\])?(?:\([^)]*\))?:\s+(Video|Audio):\s+(.*)$'
         )
+        creation_pattern = re.compile(r'^\s*creation_time\s*:\s*([^\r\n]+)$', re.IGNORECASE)
 
         for line in proc.stderr.splitlines():
+            if creation_time is None:
+                cm = creation_pattern.match(line)
+                if cm:
+                    creation_time = cm.group(1).strip()
+
             m = stream_pattern.match(line)
             if not m:
                 continue
@@ -241,7 +248,8 @@ def probe_media_streams(file_path: Path) -> dict:
         return {
             "success": True,
             "video_streams": video_streams,
-            "audio_streams": audio_streams
+            "audio_streams": audio_streams,
+            "creation_time": creation_time,
         }
     except Exception as e:
         logger.warning(f"Failed to probe media streams for {file_path}: {e}")

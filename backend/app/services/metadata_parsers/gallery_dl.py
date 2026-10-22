@@ -113,6 +113,7 @@ class GalleryDlParser(MetadataParser):
         description = self._parse_description(data)
         pool_names = self._parse_pools(data)
         parent_id = str(data.get("parent_id")) if data.get("parent_id") is not None else None
+        date = self._parse_date(data)
 
         return ParsedMetadata(
             tags=tags,
@@ -122,7 +123,18 @@ class GalleryDlParser(MetadataParser):
             pool_names=pool_names,
             parent_source_id=parent_id,
             confidence="sidecar",
+            date=date,
         )
+
+    def _parse_date(self, data: Dict[str, Any]) -> Optional[str]:
+        for key in ("date", "created_at", "upload_date", "timestamp", "datetime"):
+            val = data.get(key)
+            if val is not None and str(val).strip():
+                from ...utils.date_extractor import parse_candidate_datetime
+                dt = parse_candidate_datetime(val)
+                if dt is not None:
+                    return dt.isoformat()
+        return None
 
     def _parse_tags(self, data: Dict[str, Any]) -> List[BooruTag]:
         tags: List[BooruTag] = []

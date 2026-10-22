@@ -81,6 +81,7 @@ class LoliSnatcherParser(MetadataParser):
         source = self._parse_source(data)
         description = self._parse_description(data)
         pool_names = self._parse_pools(data)
+        date = self._parse_date(data)
 
         return ParsedMetadata(
             tags=tags,
@@ -89,7 +90,32 @@ class LoliSnatcherParser(MetadataParser):
             description=description,
             pool_names=pool_names,
             confidence="sidecar",
+            date=date,
         )
+
+    def _parse_date(self, data: Dict[str, Any]) -> Optional[str]:
+        raw_val = data.get("postDate")
+        if raw_val is None or not str(raw_val).strip():
+            for key in ("created_at", "date", "uploaded_at", "timestamp"):
+                val = data.get(key)
+                if val is not None and str(val).strip():
+                    raw_val = val
+                    break
+
+        if raw_val is None or not str(raw_val).strip():
+            return None
+
+        # 1. Try candidate datetime
+        from ...utils.date_extractor import parse_candidate_datetime
+        dt = parse_candidate_datetime(raw_val)
+        if dt is not None:
+            return dt.isoformat()
+
+        # 2. Try parse_booru_date for Gelbooru-style formats (e.g. 'EEE MMM dd HH:mm:ss yyyy')
+        from ..booru.base import parse_booru_date
+        raw = parse_booru_date(raw_val)
+        dt = parse_candidate_datetime(raw) if raw else None
+        return dt.isoformat() if dt else None
 
     def _parse_tags(self, data: Dict[str, Any]) -> List[BooruTag]:
         tags: List[BooruTag] = []
