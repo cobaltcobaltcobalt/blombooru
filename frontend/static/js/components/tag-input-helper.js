@@ -91,21 +91,27 @@ class TagInputHelper {
     async checkTagsBatch(tagNames) {
         if (!tagNames || tagNames.length === 0) return {};
 
-        try {
-            const namesParam = tagNames.map(n => encodeURIComponent(n.toLowerCase().trim())).join(',');
-            const res = await fetch(`/api/tags?names=${namesParam}`);
-            if (res.ok) {
+        const chunkSize = 50;
+        const uniqueNames = Array.from(new Set(tagNames.map(n => n.toLowerCase().trim()).filter(Boolean)));
+        const result = {};
+
+        for (let i = 0; i < uniqueNames.length; i += chunkSize) {
+            const chunk = uniqueNames.slice(i, i + chunkSize);
+            try {
+                const namesParam = chunk.map(n => encodeURIComponent(n)).join(',');
+                const res = await fetch(`/api/tags?names=${namesParam}`);
+                if (!res.ok) continue;
+
                 const tags = await res.json();
-                const result = {};
-                tagNames.forEach(n => result[n.toLowerCase().trim()] = null);
-                tags.forEach(t => result[t.name.toLowerCase().trim()] = t);
-                return result;
+                chunk.forEach(n => result[n] = null);
+                tags.forEach(t => {
+                    result[t.name.toLowerCase().trim()] = t;
+                });
+            } catch (e) {
+                console.error('Error checking tag batch chunk:', e);
             }
-            return {};
-        } catch (e) {
-            console.error('Error checking tags batch:', e);
-            return {};
         }
+        return result;
     }
 
     // Check if tag or alias exists (for admin)
@@ -138,11 +144,13 @@ class TagInputHelper {
     async validateAndStyleTags(inputElement, options = {}) {
         const {
             validationCache = this.tagValidationCache,
-            checkFunction = (tag) => this.checkTagExists(tag),
+            checkFunction = null,
             invertLogic = false, // If true, invalid means exists (for admin new tags)
             allowWildcards = false, // If true, tokens containing * are never marked invalid
             highlightTags = null // Set of tag names (lowercase) to highlight as new
         } = options;
+
+        const effectiveCheckFunction = checkFunction || ((tag) => this.checkTagExists(tag));
 
         if (!inputElement) return;
 
@@ -165,20 +173,20 @@ class TagInputHelper {
         }
 
         // Batch fetch uncached tags if possible (only when using default tag existence check)
-        if (!options.checkFunction && uncachedTags.size > 0) {
+        if (!checkFunction && uncachedTags.size > 0) {
             const results = await this.checkTagsBatch(Array.from(uncachedTags));
             for (let tag of uncachedTags) {
                 if (results.hasOwnProperty(tag)) {
                     validationCache.set(tag, !!results[tag]);
                 } else {
                     // Fallback to individual check if not in batch results
-                    const exists = await checkFunction(tag);
+                    const exists = await effectiveCheckFunction(tag);
                     validationCache.set(tag, exists);
                 }
             }
         } else if (uncachedTags.size > 0) {
             for (let tag of uncachedTags) {
-                const exists = await checkFunction(tag);
+                const exists = await effectiveCheckFunction(tag);
                 validationCache.set(tag, exists);
             }
         }
@@ -289,7 +297,7 @@ class TagInputHelper {
             onValidate = null,
             validateDelay = 300,
             validationCache = this.tagValidationCache,
-            checkFunction = (tag) => this.checkTagExists(tag),
+            checkFunction = null,
             invertLogic = false,
             expandImplications = true,
             allowWildcards = false, // If true, tokens containing * are never marked invalid

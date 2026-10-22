@@ -78,8 +78,13 @@ class MediaViewer extends MediaViewerBase {
 
             if (this.currentMedia && Array.isArray(this.currentMedia.tags)) {
                 for (const tag of this.currentMedia.tags) {
-                    if (tag.name && tag.category) {
-                        this.tagCategoryCache.set(tag.name.toLowerCase().trim(), tag.category);
+                    const tagName = (tag.name || tag).toLowerCase().trim();
+                    if (tagName) {
+                        if (this.tagInputHelper) {
+                            this.tagInputHelper.tagValidationCache.set(tagName, true);
+                        }
+                        const cat = tag.category || 'general';
+                        this.tagCategoryCache.set(tagName, cat);
                     }
                 }
             }
@@ -330,7 +335,6 @@ class MediaViewer extends MediaViewerBase {
         this.tagInputHelper.setupTagInput(tagsInput, 'media-tags-input', {
             onValidate: () => { },
             validationCache: this.tagInputHelper.tagValidationCache,
-            checkFunction: (tag) => this.tagInputHelper.checkTagExists(tag),
             getHighlightTags: (inputElement) => {
                 const inputTags = this.tagInputHelper.getPlainTextFromDiv(inputElement).split(/\s+/).filter(t => t.length > 0);
                 const highlightTags = new Set();
@@ -358,7 +362,6 @@ class MediaViewer extends MediaViewerBase {
 
         await this.tagInputHelper.validateAndStyleTags(tagsInput, {
             validationCache: this.tagInputHelper.tagValidationCache,
-            checkFunction: (tag) => this.tagInputHelper.checkTagExists(tag),
             highlightTags: highlightTags
         });
     }
@@ -617,6 +620,9 @@ class MediaViewer extends MediaViewerBase {
             currentTags.push(tagName);
             tagsInput.textContent = currentTags.join(' ');
             this.prefilledTags.add(tagName.toLowerCase());
+            if (this.tagInputHelper) {
+                this.tagInputHelper.tagValidationCache.set(tagName.toLowerCase().trim(), true);
+            }
             await this.validateAndStyleTags();
             this.updateSuggestedTags();
         }
@@ -973,7 +979,12 @@ class MediaViewer extends MediaViewerBase {
             } else {
                 const allTags = [...currentTags, ...validTags];
                 tagsInput.textContent = allTags.join(' ');
-                validTags.forEach(t => this.prefilledTags.add(t.toLowerCase()));
+                validTags.forEach(t => {
+                    this.prefilledTags.add(t.toLowerCase());
+                    if (this.tagInputHelper) {
+                        this.tagInputHelper.tagValidationCache.set(t.toLowerCase().trim(), true);
+                    }
+                });
                 await this.validateAndStyleTags();
                 this.updateSuggestedTags();
                 app.showNotification(window.i18n.t('notifications.media.tags_added', { count: validTags.length }), 'success');
@@ -1909,7 +1920,12 @@ class MediaViewer extends MediaViewerBase {
             const allTags = [...currentTags, ...newTags];
             tagsInput.textContent = allTags.join(' ');
 
-            newTags.forEach(t => this.prefilledTags.add(t.toLowerCase()));
+            newTags.forEach(t => {
+                this.prefilledTags.add(t.toLowerCase());
+                if (this.tagInputHelper) {
+                    this.tagInputHelper.tagValidationCache.set(t.toLowerCase().trim(), true);
+                }
+            });
 
             await this.validateAndStyleTags();
             this.updateSuggestedTags();
