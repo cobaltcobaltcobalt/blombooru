@@ -43,7 +43,9 @@ from ..utils.search_parser import (apply_custom_filters_or,
                                    apply_search_criteria, parse_search_query)
 from ..utils.thumbnail_generator import generate_thumbnail, THUMBNAIL_EXT, thumbnail_mime_type
 from ..utils.tag_utils import get_escalated_rating, get_newly_added_tags
-from ..utils.transcoder import (get_transcoded_path_for_original,
+from ..utils.transcoder import (get_transcode_target_ext,
+                                get_transcoded_path_for_original,
+                                is_transcoding_required,
                                 transcode_media_if_needed)
 from ..utils.url_fetch import UrlFetchError, safe_request
 
@@ -152,9 +154,10 @@ async def update_from_source(
                 old_path.rename(new_path)
 
             # Handle transcoded file rename/move if needed
-            fmt = format_registry.get_format(new_unique)
-            if fmt and fmt.requires_transcode:
-                new_transc_path = get_transcoded_path_for_original(new_path, fmt.transcode_target)
+            needs_transcode = is_transcoding_required(new_path)
+            if needs_transcode is True:
+                target_ext = get_transcode_target_ext(new_path)
+                new_transc_path = get_transcoded_path_for_original(new_path, target_ext)
                 if media.transcoded_path:
                     old_transc_path = settings.BASE_DIR / media.transcoded_path
                     if old_transc_path.exists():
@@ -168,7 +171,7 @@ async def update_from_source(
                 else:
                     trans_file = transcode_media_if_needed(new_path)
                     media.transcoded_path = str(trans_file.relative_to(settings.BASE_DIR)) if trans_file else None
-            else:
+            elif needs_transcode is False:
                 if media.transcoded_path:
                     old_transc_path = settings.BASE_DIR / media.transcoded_path
                     if old_transc_path.exists():

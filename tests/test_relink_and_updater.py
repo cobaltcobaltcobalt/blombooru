@@ -76,7 +76,7 @@ class TestRelinkAndUpdater(AsyncBackupTestBase):
             self.assertEqual(media.filename, "renamed_sample.mkv")
             self.assertEqual(media.path, str(new_orig_file.relative_to(self.base_path)))
 
-            expected_new_trans = self.transcoded_dir / "new_folder" / "renamed_sample.mp4"
+            expected_new_trans = self.transcoded_dir / "new_folder" / "renamed_sample.mkv.mp4"
             self.assertEqual(media.transcoded_path, str(expected_new_trans.relative_to(self.base_path)))
 
             # Verify files on disk
@@ -132,7 +132,7 @@ class TestRelinkAndUpdater(AsyncBackupTestBase):
             self.db.refresh(media)
 
             expected_new_orig = self.original_dir / "renamed_target.mkv"
-            expected_new_trans = self.transcoded_dir / "renamed_target.mp4"
+            expected_new_trans = self.transcoded_dir / "renamed_target.mkv.mp4"
             expected_new_thumb = self.thumbnail_dir / "renamed_target.jpg"
 
             self.assertEqual(media.path, str(expected_new_orig.relative_to(self.base_path)))
