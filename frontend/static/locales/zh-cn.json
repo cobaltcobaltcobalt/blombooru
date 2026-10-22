@@ -188,6 +188,13 @@
                     "done_relinked": "",
                     "done_none": "",
                     "unresolved_warning": ""
+                },
+                "transcoding": {
+                    "title": "",
+                    "hint": "",
+                    "button": "",
+                    "progress": "",
+                    "done": ""
                 }
             },
             "booru_import": {

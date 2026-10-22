@@ -188,6 +188,13 @@
                     "done_relinked": "Successfully re-linked {count} media file(s).",
                     "done_none": "All media files are correctly linked. No moved or renamed files found.",
                     "unresolved_warning": "{count} media file(s) were not found."
+                },
+                "transcoding": {
+                    "title": "Media Transcoding",
+                    "hint": "Transcode media files with codecs or audio incompatible with web browsers to a web-compatible format.",
+                    "button": "Transcode Incompatible Media",
+                    "progress": "Transcoding: {current}/{total}{file} - Transcoded: {transcoded}, Skipped: {skipped}",
+                    "done": "Done! Transcoded: {transcoded}, Skipped: {skipped}, Failed: {failed}."
                 }
             },
             "booru_import": {

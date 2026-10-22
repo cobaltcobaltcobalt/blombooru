@@ -188,6 +188,13 @@
                     "done_relinked": "Lyckades återskapa länk för {count} mediafil(er).",
                     "done_none": "Alla mediafiler är korrekt länkade. Inga flyttade eller omdöpta filer hittades.",
                     "unresolved_warning": "{count} mediafil(er) hittades ej."
+                },
+                "transcoding": {
+                    "title": "Mediatranskodning",
+                    "hint": "Transkoda media med codecs eller ljud som är inkompatibla med webbläsare till ett webbkompatibelt format.",
+                    "button": "Transkoda Inkompatibel Media",
+                    "progress": "Transkodar: {current}/{total}{file} - Transkodade: {transcoded}, Överhoppade: {skipped}",
+                    "done": "Klart! Transkodade: {transcoded}, Överhoppade: {skipped}, Misslyckades: {failed}."
                 }
             },
             "booru_import": {

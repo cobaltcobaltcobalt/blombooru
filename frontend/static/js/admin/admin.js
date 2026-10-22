@@ -28,6 +28,7 @@ class AdminPanel {
         this.content.loadTagStats();
         this.content.loadMediaStats();
         this.content.loadAlbumStats();
+        this.content.checkTranscodeStatus();
         this.system.setupCustomSelects();
         this.system.loadThemes();
         this.system.loadLanguages();
@@ -118,6 +119,12 @@ class AdminPanel {
         const relinkMediaBtn = document.getElementById('relink-media-btn');
         if (relinkMediaBtn) {
             relinkMediaBtn.addEventListener('click', () => this.content.relinkMedia());
+        }
+
+        // Transcode media button
+        const transcodeMediaBtn = document.getElementById('transcode-media-btn');
+        if (transcodeMediaBtn) {
+            transcodeMediaBtn.addEventListener('click', () => this.content.transcodeMedia());
         }
 
         // Add tags form

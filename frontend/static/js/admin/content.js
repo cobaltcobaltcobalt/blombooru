@@ -4,6 +4,8 @@ class AdminContent {
         this.isScanning = false;
         this.scanAbortController = null;
         this._scanOriginalText = null;
+        this.isTranscoding = false;
+        this._transcodeOriginalText = null;
     }
 
     cancelScan() {
@@ -517,7 +519,7 @@ class AdminContent {
             });
             resultDiv.innerHTML = `<div class="bg-success p-3 tag-text"><strong>${msg}</strong></div>`;
         } catch (error) {
-            resultDiv.innerHTML = `<div class="bg-danger p-3 tag-text"><strong>Error:</strong> ${error.message}</div>`;
+            resultDiv.innerHTML = `<div class="bg-danger p-3 tag-text"><strong>${window.i18n.t('common.error')}:</strong> ${error.message}</div>`;
         } finally {
             btn.disabled = false;
             allBtn.disabled = false;
@@ -557,7 +559,7 @@ class AdminContent {
                     });
                     resultDiv.innerHTML = `<div class="bg-success p-3 tag-text"><strong>${msg}</strong></div>`;
                 } catch (error) {
-                    resultDiv.innerHTML = `<div class="bg-danger p-3 tag-text"><strong>Error:</strong> ${error.message}</div>`;
+                    resultDiv.innerHTML = `<div class="bg-danger p-3 tag-text"><strong>${window.i18n.t('common.error')}:</strong> ${error.message}</div>`;
                 } finally {
                     btn.disabled = false;
                     missingBtn.disabled = false;
@@ -603,6 +605,154 @@ class AdminContent {
         } finally {
             btn.disabled = false;
             btn.textContent = originalText;
+        }
+    }
+
+    async checkTranscodeStatus() {
+        if (this.isTranscoding) return;
+        try {
+            const status = await app.apiCall('/api/admin/transcode-media/status');
+            if (status && status.running) {
+                await this.pollTranscodeJob();
+            }
+        } catch (error) {
+            console.error('Error checking transcode status:', error);
+        }
+    }
+
+    async pollTranscodeJob() {
+        if (this.isTranscoding) return;
+        this.isTranscoding = true;
+
+        const btn = document.getElementById('transcode-media-btn');
+        const statusDiv = document.getElementById('transcode-media-status');
+        const resultDiv = document.getElementById('transcode-media-result');
+        const originalText = this._transcodeOriginalText || btn?.textContent;
+        if (btn && !this._transcodeOriginalText) {
+            this._transcodeOriginalText = originalText;
+        }
+
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = window.i18n.t('common.processing');
+        }
+        if (statusDiv) statusDiv.style.display = 'block';
+
+        const updateProgressUI = (status) => {
+            if (!resultDiv) return;
+            if (!status.total) {
+                resultDiv.innerHTML = `<div class="bg-primary primary-text p-3"><strong>${window.i18n.t('common.processing')}</strong></div>`;
+                return;
+            }
+            const fileInfo = status.current_file ? ` (${escapeHtml(status.current_file)})` : '';
+            const text = window.i18n.t('admin.media_management.maintenance.transcoding.progress', {
+                current: status.current,
+                total: status.total,
+                file: fileInfo,
+                transcoded: status.transcoded,
+                skipped: status.skipped + status.already_transcoded,
+            });
+            resultDiv.innerHTML = `<div class="bg-primary primary-text p-3"><strong>${text}</strong></div>`;
+        };
+
+        try {
+            let done = false;
+            let finalStatus = null;
+            while (!done) {
+                const status = await app.apiCall('/api/admin/transcode-media/status');
+                if (status.error) {
+                    throw new Error(status.error);
+                }
+                if (!status.running) {
+                    done = true;
+                    finalStatus = status.last_result || status;
+                } else {
+                    updateProgressUI(status);
+                    await new Promise((resolve) => setTimeout(resolve, 1000));
+                }
+            }
+
+            const msg = window.i18n.t('admin.media_management.maintenance.transcoding.done', {
+                transcoded: finalStatus.transcoded,
+                skipped: finalStatus.skipped + finalStatus.already_transcoded,
+                failed: finalStatus.failed
+            });
+            if (resultDiv) {
+                resultDiv.innerHTML = `<div class="bg-success p-3 tag-text"><strong>${msg}</strong></div>`;
+            }
+            app.showNotification(msg, 'success');
+            await this.loadMediaStats();
+        } catch (error) {
+            if (resultDiv) {
+                resultDiv.innerHTML = `<div class="bg-danger p-3 tag-text"><strong>${window.i18n.t('common.error')}:</strong> ${escapeHtml(error.message)}</div>`;
+            }
+            app.showNotification(error.message, 'error');
+        } finally {
+            this.isTranscoding = false;
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = this._transcodeOriginalText || originalText;
+            }
+        }
+    }
+
+    async transcodeMedia() {
+        if (this.isTranscoding) return;
+        const btn = document.getElementById('transcode-media-btn');
+        const statusDiv = document.getElementById('transcode-media-status');
+        const resultDiv = document.getElementById('transcode-media-result');
+        if (!btn) return;
+        const originalText = this._transcodeOriginalText || btn.textContent;
+        this._transcodeOriginalText = originalText;
+
+        btn.disabled = true;
+        btn.textContent = window.i18n.t('common.processing');
+        if (statusDiv) statusDiv.style.display = 'block';
+        if (resultDiv) {
+            resultDiv.innerHTML = `<div class="bg-primary primary-text p-3"><strong>${window.i18n.t('common.processing')}</strong></div>`;
+        }
+
+        try {
+            const res = await fetch('/api/admin/transcode-media', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (res.status === 409) {
+                // Check if transcoding job is already running to reattach
+                const status = await app.apiCall('/api/admin/transcode-media/status');
+                if (status && status.running) {
+                    await this.pollTranscodeJob();
+                    return;
+                }
+                throw new Error(window.i18n.t('common.processing'));
+            }
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                let errorMsg = errData.detail || 'API call failed';
+                if (typeof errorMsg === 'string') {
+                    const translated = window.i18n.t(`notifications.admin.${errorMsg}`);
+                    if (translated !== `notifications.admin.${errorMsg}`) {
+                        errorMsg = translated;
+                    } else {
+                        const directTranslated = window.i18n.t(errorMsg);
+                        if (directTranslated !== errorMsg) {
+                            errorMsg = directTranslated;
+                        }
+                    }
+                }
+                throw new Error(errorMsg);
+            }
+
+            await this.pollTranscodeJob();
+        } catch (error) {
+            if (resultDiv) {
+                resultDiv.innerHTML = `<div class="bg-danger p-3 tag-text"><strong>${window.i18n.t('common.error')}:</strong> ${escapeHtml(error.message)}</div>`;
+            }
+            app.showNotification(error.message, 'error');
+            btn.disabled = false;
+            btn.textContent = this._transcodeOriginalText || originalText;
         }
     }
 
@@ -823,6 +973,8 @@ class AdminContent {
         } catch (error) {
             console.error('Error loading media stats:', error);
         }
+
+        await this.checkTranscodeStatus();
     }
 
     async uploadCSV(file) {

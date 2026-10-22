@@ -188,6 +188,13 @@
                     "done_relinked": "Готово! Перепривязано: {count}.",
                     "done_none": "Нет медиафайлов для перепривязки.",
                     "unresolved_warning": "{count} медиафайлов не удалось перепривязать."
+                },
+                "transcoding": {
+                    "title": "",
+                    "hint": "",
+                    "button": "",
+                    "progress": "",
+                    "done": ""
                 }
             },
             "booru_import": {
