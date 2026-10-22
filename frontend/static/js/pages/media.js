@@ -10,7 +10,7 @@ class MediaViewer extends MediaViewerBase {
             this.albumId = albumMatch ? albumMatch[1] : null;
         }
         this.tagInputHelper = new TagInputHelper();
-        this.prefilledTags = new Set();
+        this.originalTags = new Set();
         this.validationTimeout = null;
         this.tooltipHelper = null;
         this.ratingSelect = null;
@@ -77,6 +77,7 @@ class MediaViewer extends MediaViewerBase {
             this.applyDescriptionLayout();
 
             if (this.currentMedia && Array.isArray(this.currentMedia.tags)) {
+                this.originalTags = new Set(this.currentMedia.tags.map(t => (t.name || t).toLowerCase().trim()));
                 for (const tag of this.currentMedia.tags) {
                     const tagName = (tag.name || tag).toLowerCase().trim();
                     if (tagName) {
@@ -87,6 +88,8 @@ class MediaViewer extends MediaViewerBase {
                         this.tagCategoryCache.set(tagName, cat);
                     }
                 }
+            } else {
+                this.originalTags = new Set();
             }
             this.renderMedia(this.currentMedia);
             this.renderInfo(this.currentMedia);
@@ -328,6 +331,19 @@ class MediaViewer extends MediaViewerBase {
         this.el('download-btn').download = media.filename;
     }
 
+    getHighlightTags(inputElement) {
+        if (!inputElement) return new Set();
+        const inputTags = this.tagInputHelper.getPlainTextFromDiv(inputElement).split(/\s+/).filter(t => t.length > 0);
+        const highlightTags = new Set();
+        for (const t of inputTags) {
+            const lower = t.toLowerCase().trim();
+            if (!this.originalTags.has(lower)) {
+                highlightTags.add(lower);
+            }
+        }
+        return highlightTags;
+    }
+
     setupTagInput() {
         const tagsInput = this.el('tags-input');
         if (!tagsInput) return;
@@ -335,16 +351,7 @@ class MediaViewer extends MediaViewerBase {
         this.tagInputHelper.setupTagInput(tagsInput, 'media-tags-input', {
             onValidate: () => { },
             validationCache: this.tagInputHelper.tagValidationCache,
-            getHighlightTags: (inputElement) => {
-                const inputTags = this.tagInputHelper.getPlainTextFromDiv(inputElement).split(/\s+/).filter(t => t.length > 0);
-                const highlightTags = new Set();
-                for (const t of inputTags) {
-                    if (this.prefilledTags.has(t.toLowerCase())) {
-                        highlightTags.add(t.toLowerCase());
-                    }
-                }
-                return highlightTags;
-            }
+            getHighlightTags: (inputElement) => this.getHighlightTags(inputElement)
         });
     }
 
@@ -352,13 +359,7 @@ class MediaViewer extends MediaViewerBase {
         const tagsInput = this.el('tags-input');
         if (!tagsInput) return;
 
-        const inputTags = this.tagInputHelper.getPlainTextFromDiv(tagsInput).split(/\s+/).filter(t => t.length > 0);
-        const highlightTags = new Set();
-        for (const t of inputTags) {
-            if (this.prefilledTags.has(t.toLowerCase())) {
-                highlightTags.add(t.toLowerCase());
-            }
-        }
+        const highlightTags = this.getHighlightTags(tagsInput);
 
         await this.tagInputHelper.validateAndStyleTags(tagsInput, {
             validationCache: this.tagInputHelper.tagValidationCache,
@@ -619,7 +620,6 @@ class MediaViewer extends MediaViewerBase {
         if (!existingTagsSet.has(tagName.toLowerCase())) {
             currentTags.push(tagName);
             tagsInput.textContent = currentTags.join(' ');
-            this.prefilledTags.add(tagName.toLowerCase());
             if (this.tagInputHelper) {
                 this.tagInputHelper.tagValidationCache.set(tagName.toLowerCase().trim(), true);
             }
@@ -980,7 +980,6 @@ class MediaViewer extends MediaViewerBase {
                 const allTags = [...currentTags, ...validTags];
                 tagsInput.textContent = allTags.join(' ');
                 validTags.forEach(t => {
-                    this.prefilledTags.add(t.toLowerCase());
                     if (this.tagInputHelper) {
                         this.tagInputHelper.tagValidationCache.set(t.toLowerCase().trim(), true);
                     }
@@ -1921,7 +1920,6 @@ class MediaViewer extends MediaViewerBase {
             tagsInput.textContent = allTags.join(' ');
 
             newTags.forEach(t => {
-                this.prefilledTags.add(t.toLowerCase());
                 if (this.tagInputHelper) {
                     this.tagInputHelper.tagValidationCache.set(t.toLowerCase().trim(), true);
                 }
