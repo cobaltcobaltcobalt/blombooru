@@ -42,6 +42,13 @@ class Media(Base):
     duration = Column(Float, nullable=True)
     rating = Column(Enum(RatingEnum), default=RatingEnum.safe, index=True)
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    custom_date = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda ctx: ctx.get_current_parameters().get("uploaded_at") or datetime.now(timezone.utc),
+        server_default=func.now(),
+        index=True,
+    )
     is_shared = Column(Boolean, default=False, index=True)
     share_uuid = Column(String(36), unique=True, nullable=True, index=True)
     share_ai_metadata = Column(Boolean, default=False)

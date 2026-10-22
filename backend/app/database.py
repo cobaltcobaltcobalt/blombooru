@@ -194,6 +194,7 @@ def check_and_migrate_schema(engine):
         migrate_add_album_cached_columns,
         migrate_add_manual_sort_positions,
         migrate_add_tag_rating,
+        migrate_add_custom_date,
     ]
     
     for migration in migrations:
@@ -547,4 +548,27 @@ def migrate_add_tag_rating(engine, inspector):
             logger.info("Dropping table blombooru_tags_ratings...")
             conn.execute(text("DROP TABLE blombooru_tags_ratings"))
 
+        conn.commit()
+
+def migrate_add_custom_date(engine, inspector):
+    """Add custom_date column, backfill with uploaded_at, and add index to blombooru_media."""
+    from sqlalchemy import text
+
+    tables = inspector.get_table_names()
+    if 'blombooru_media' not in tables:
+        return
+
+    columns = [c['name'] for c in inspector.get_columns('blombooru_media')]
+    if 'custom_date' in columns:
+        return
+
+    logger.info("Adding custom_date column to blombooru_media...")
+    is_postgres = engine.dialect.name == 'postgresql'
+
+    with engine.connect() as conn:
+        conn.execute(text("ALTER TABLE blombooru_media ADD COLUMN custom_date TIMESTAMP WITH TIME ZONE"))
+        conn.execute(text("UPDATE blombooru_media SET custom_date = COALESCE(uploaded_at, CURRENT_TIMESTAMP) WHERE custom_date IS NULL"))
+        if is_postgres:
+            conn.execute(text("ALTER TABLE blombooru_media ALTER COLUMN custom_date SET NOT NULL"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_blombooru_media_custom_date ON blombooru_media (custom_date)"))
         conn.commit()
