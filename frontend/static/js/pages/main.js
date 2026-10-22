@@ -374,7 +374,7 @@ class Blombooru {
         if (adminToggle) {
             adminToggle.addEventListener('click', (e) => {
                 e.preventDefault();
-                this.handleAdminToggle();
+                this.toggleAdminMode();
             });
         }
 
