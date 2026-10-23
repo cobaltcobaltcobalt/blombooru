@@ -165,16 +165,6 @@ download_icon, share_icon, select_arrow_icon, edit_icon, eye_icon, enlarge_icon,
                 <h3 class="text-sm font-bold mb-3 pb-2 border-b">{{ t('common.information') }}</h3>
                 <div id="media-info-content" class="text-xs"></div>
 
-                <!-- Edit Source (Admin Mode Only) -->
-                <div id="edit-source-section" style="display: none;" class="pt-2 mt-2 border-t">
-                    <label class="block text-xs font-bold mb-2">{{ t('media.info.source_url') }}</label>
-                    <input type="url" id="source-input" placeholder="https://example.com/source"
-                        class="w-full bg px-2 py-1 border text-xs focus:outline-none hover:border-primary transition-colors focus:border-primary mb-2">
-                    <button id="save-source-btn" class="btn-primary w-full px-3 py-1 cursor-pointer">
-                        {{ t('media.info.save_source') }}
-                    </button>
-                </div>
-
                 <!-- View Description (Non-admin Mode Only) -->
                 <div id="description-display-section" style="display: none;" class="pt-2 mt-2 border-t">
                     <p class="block text-xs font-bold mb-2">{{ t('common.description') }}</p>
@@ -182,7 +172,7 @@ download_icon, share_icon, select_arrow_icon, edit_icon, eye_icon, enlarge_icon,
                         class="w-full bg px-2 py-1 border text-xs break-words max-h-80 overflow-y-auto"></div>
                 </div>
                 <!-- Edit Description (Admin Mode Only) -->
-                <div id="edit-description-section" style="display: none;" class="pt-2 mt-3 border-t">
+                <div id="edit-description-section" style="display: none;" class="pt-2 mt-2 border-t">
                     <div class="flex items-center justify-between mb-2">
                         <label class="block text-xs font-bold">{{ t('common.description') }}</label>
                         <div class="flex items-center gap-1">

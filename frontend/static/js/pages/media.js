@@ -92,7 +92,7 @@ class MediaViewer extends MediaViewerBase {
                 this.originalTags = new Set();
             }
             this.renderMedia(this.currentMedia);
-            this.renderInfo(this.currentMedia);
+            this.renderInfo(this.currentMedia, { isAdmin: app.isAdminMode });
             this.renderTags(this.currentMedia, { clickable: true });
 
             // Show rendered description for non-admin viewers
@@ -132,17 +132,12 @@ class MediaViewer extends MediaViewerBase {
 
     setupAdminMode() {
         this.el('edit-tags-section').style.display = 'block';
-        this.el('edit-source-section').style.display = 'block';
         this.el('admin-actions').style.display = 'flex';
         this.setupTagInput();
         this.setupEditTagsToggle();
         this.setupSuggestedTags();
-
-        // Set source input value
-        const sourceInput = this.el('source-input');
-        if (sourceInput) {
-            sourceInput.value = this.currentMedia.source || '';
-        }
+        this.setupEditDateToggle();
+        this.setupEditSourceToggle();
 
         // Set description input value and tabs
         const desc = (this.currentMedia && this.currentMedia.description) || '';
@@ -247,6 +242,117 @@ class MediaViewer extends MediaViewerBase {
                 this.updateSuggestedTags();
             }
         });
+    }
+
+    setupEditDateToggle() {
+        const toggle = this.el('edit-date-toggle');
+        const content = this.el('edit-date-content');
+
+        if (!toggle || !content) return;
+
+        // Ensure initial state
+        content.style.display = 'none';
+        const chevron = toggle.querySelector('#edit-date-chevron');
+        if (chevron) {
+            chevron.style.transform = 'rotate(0deg)';
+        }
+
+        // Remove any existing listeners by cloning
+        const newToggle = toggle.cloneNode(true);
+        toggle.parentNode.replaceChild(newToggle, toggle);
+
+        newToggle.addEventListener('click', () => {
+            const isHidden = content.style.display === 'none';
+            content.style.display = isHidden ? 'block' : 'none';
+
+            const activeChevron = newToggle.querySelector('#edit-date-chevron');
+            if (activeChevron) {
+                activeChevron.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+            }
+        });
+
+        const customDateInput = this.el('custom-date-input');
+        if (customDateInput) {
+            customDateInput.value = toLocalInputDateTime(this.currentMedia.custom_date || this.currentMedia.uploaded_at);
+            this.initialCustomDateValue = customDateInput.value;
+            this.updateSaveCustomDateButtonVisibility();
+
+            customDateInput.oninput = () => this.updateSaveCustomDateButtonVisibility();
+            customDateInput.onchange = () => this.updateSaveCustomDateButtonVisibility();
+            customDateInput.onkeydown = async (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const saveBtn = this.el('save-custom-date-btn');
+                    if (saveBtn && saveBtn.style.display !== 'none') {
+                        await this.saveCustomDate();
+                    }
+                }
+            };
+        }
+
+        const saveDateBtn = this.el('save-custom-date-btn');
+        if (saveDateBtn) {
+            saveDateBtn.onclick = async () => {
+                await this.saveCustomDate();
+            };
+        }
+    }
+
+    setupEditSourceToggle() {
+        const toggle = this.el('edit-source-toggle');
+        const content = this.el('edit-source-content');
+
+        if (!toggle || !content) return;
+
+        // Ensure initial state
+        content.style.display = 'none';
+        const chevron = toggle.querySelector('#edit-source-chevron');
+        if (chevron) {
+            chevron.style.transform = 'rotate(0deg)';
+        }
+
+        // Remove any existing listeners by cloning
+        const newToggle = toggle.cloneNode(true);
+        toggle.parentNode.replaceChild(newToggle, toggle);
+
+        newToggle.addEventListener('click', (e) => {
+            if (e.target.closest('a')) {
+                return;
+            }
+            const isHidden = content.style.display === 'none';
+            content.style.display = isHidden ? 'block' : 'none';
+
+            const activeChevron = newToggle.querySelector('#edit-source-chevron');
+            if (activeChevron) {
+                activeChevron.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+            }
+        });
+
+        const sourceInput = this.el('source-input');
+        if (sourceInput) {
+            sourceInput.value = this.currentMedia.source || '';
+            this.initialSourceValue = sourceInput.value.trim();
+            this.updateSaveSourceButtonVisibility();
+
+            sourceInput.oninput = () => this.updateSaveSourceButtonVisibility();
+            sourceInput.onchange = () => this.updateSaveSourceButtonVisibility();
+            sourceInput.onkeydown = async (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const saveBtn = this.el('save-source-btn');
+                    if (saveBtn && saveBtn.style.display !== 'none') {
+                        await this.saveSource();
+                    }
+                }
+            };
+        }
+
+        const saveSourceBtn = this.el('save-source-btn');
+        if (saveSourceBtn) {
+            saveSourceBtn.onclick = async () => {
+                await this.saveSource();
+            };
+        }
     }
 
     async checkAlbumsExistence() {
@@ -825,10 +931,6 @@ class MediaViewer extends MediaViewerBase {
         this.el('edit-tags-form')?.addEventListener('submit', async (e) => {
             e.preventDefault();
             await this.saveTags();
-        });
-
-        this.el('save-source-btn')?.addEventListener('click', async () => {
-            await this.saveSource();
         });
 
         this.el('save-description-btn')?.addEventListener('click', async () => {
@@ -1445,10 +1547,39 @@ class MediaViewer extends MediaViewerBase {
                 method: 'PATCH',
                 body: JSON.stringify({ source: sourceValue || null })
             });
+            this.initialSourceValue = sourceValue;
+            this.updateSaveSourceButtonVisibility();
             app.showNotification(window.i18n.t('notifications.media.source_updated'), 'success');
             location.reload();
         } catch (e) {
             app.showNotification(e.message, 'error', window.i18n.t('notifications.media.error_updating_source'));
+        }
+    }
+
+    async saveCustomDate() {
+        const input = this.el('custom-date-input');
+        if (!input) return;
+        const val = input.value.trim();
+        let isoValue = null;
+        if (val) {
+            isoValue = parseLocalInputDateTime(val);
+            if (!isoValue) {
+                app.showNotification(window.i18n.t('notifications.media.error_updating_date'), 'error');
+                return;
+            }
+        }
+
+        try {
+            await app.apiCall(`/api/media/${this.mediaId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ custom_date: isoValue })
+            });
+            this.initialCustomDateValue = input.value;
+            this.updateSaveCustomDateButtonVisibility();
+            app.showNotification(window.i18n.t('notifications.media.date_updated'), 'success');
+            location.reload();
+        } catch (e) {
+            app.showNotification(e.message, 'error', window.i18n.t('notifications.media.error_updating_date'));
         }
     }
 
@@ -1634,6 +1765,32 @@ class MediaViewer extends MediaViewerBase {
 
         if (saveBtn) saveBtn.style.display = displayStyle;
         if (enlargedSaveBtn) enlargedSaveBtn.style.display = displayStyle;
+    }
+
+    updateSaveCustomDateButtonVisibility() {
+        const input = this.el('custom-date-input');
+        const saveBtn = this.el('save-custom-date-btn');
+        if (!saveBtn) return;
+
+        const currentVal = input ? input.value.trim() : '';
+        const initialVal = (this.initialCustomDateValue !== undefined)
+            ? this.initialCustomDateValue.trim()
+            : (this.currentMedia ? toLocalInputDateTime(this.currentMedia.custom_date || this.currentMedia.uploaded_at).trim() : '');
+        const isDifferent = currentVal !== initialVal;
+        saveBtn.style.display = isDifferent ? 'block' : 'none';
+    }
+
+    updateSaveSourceButtonVisibility() {
+        const input = this.el('source-input');
+        const saveBtn = this.el('save-source-btn');
+        if (!saveBtn) return;
+
+        const currentVal = input ? input.value.trim() : '';
+        const initialVal = (this.initialSourceValue !== undefined)
+            ? this.initialSourceValue.trim()
+            : ((this.currentMedia && this.currentMedia.source) ? this.currentMedia.source.trim() : '');
+        const isDifferent = currentVal !== initialVal;
+        saveBtn.style.display = isDifferent ? 'block' : 'none';
     }
 
     async showDescriptionMode(mode) {
