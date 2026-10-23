@@ -762,6 +762,7 @@
         "sort_random": "Random",
         "sort_regen_random": "Shuffle again",
         "sort_tag_count": "# of Tags",
+        "sort_custom_date": "Custom Date",
         "sort_toggle_order": "Toggle sort order",
         "sort_manual": "Manual",
         "sort_edit_order": "Edit Order",
@@ -799,6 +800,8 @@
         "info": {
             "save_source": "Save Source",
             "source_url": "Source URL",
+            "custom_date": "Date",
+            "save_custom_date": "Save Date",
             "filename": "Filename",
             "type": "Type",
             "size": "Size",
@@ -1019,7 +1022,8 @@
             "replacement_file": "Replacement File",
             "change_file": "Change File",
             "keep_filename_hint": "Keep existing filename: {name}",
-            "new_filename_hint": "Update filename to: {name}"
+            "new_filename_hint": "Update filename to: {name}",
+            "update_date_from_file": "Update Date from Replacement File"
         }
     },
     "nav": {
@@ -1144,6 +1148,8 @@
             "parent_set": "Parent set successfully",
             "removed_from_album": "Removed from album",
             "source_updated": "Source updated successfully",
+            "date_updated": "Date updated successfully",
+            "error_updating_date": "Failed to update date",
             "description_updated": "Description updated successfully",
             "error_updating_description": "Error updating description",
             "rating_updated": "Rating updated successfully",
@@ -1242,7 +1248,12 @@
             "final_tags": "Final Tags",
             "title": "Staged Media",
             "remove_confirm": "Are you sure you want to remove this item from the upload queue?",
-            "remove_item_title": "Remove item"
+            "remove_item_title": "Remove item",
+            "origin_sidecar": "From sidecar",
+            "origin_exif": "From EXIF",
+            "origin_booru": "From booru",
+            "origin_client": "Client date",
+            "origin_explicit": "Explicit"
         },
         "bulk": {
             "editing_selected": "Editing: {count} selected items",
@@ -1253,7 +1264,8 @@
             "description_applied": "Description applied to selected items",
             "album_added": "Album added to selected items",
             "common_folder_album": "Common Folder Album",
-            "common_tags": "Common Tags"
+            "common_tags": "Common Tags",
+            "date_applied": "Date applied to selected items"
         },
         "progress": {
             "duplicates_skipped": "{count} duplicate(s) skipped.",

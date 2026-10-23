@@ -762,6 +762,7 @@
         "sort_random": "",
         "sort_regen_random": "",
         "sort_tag_count": "",
+        "sort_custom_date": "",
         "sort_toggle_order": "",
         "sort_manual": "",
         "sort_edit_order": "",
@@ -799,6 +800,8 @@
         "info": {
             "save_source": "保存来源",
             "source_url": "来源 URL",
+            "custom_date": "",
+            "save_custom_date": "",
             "filename": "文件名",
             "type": "类型",
             "size": "大小",
@@ -1019,7 +1022,8 @@
             "replacement_file": "",
             "change_file": "",
             "keep_filename_hint": "",
-            "new_filename_hint": ""
+            "new_filename_hint": "",
+            "update_date_from_file": ""
         }
     },
     "nav": {
@@ -1144,6 +1148,8 @@
             "parent_set": "父项设置成功",
             "removed_from_album": "已从相册移除",
             "source_updated": "来源更新成功",
+            "date_updated": "",
+            "error_updating_date": "",
             "description_updated": "",
             "error_updating_description": "",
             "rating_updated": "分级更新成功",
@@ -1242,7 +1248,12 @@
             "final_tags": "最终标签",
             "title": "已上传媒体 (点击以编辑单个媒体的分级、来源和标签)",
             "remove_confirm": "",
-            "remove_item_title": ""
+            "remove_item_title": "",
+            "origin_sidecar": "",
+            "origin_exif": "",
+            "origin_booru": "",
+            "origin_client": "",
+            "origin_explicit": ""
         },
         "bulk": {
             "editing_selected": "",
@@ -1253,7 +1264,8 @@
             "description_applied": "",
             "album_added": "",
             "common_folder_album": "",
-            "common_tags": ""
+            "common_tags": "",
+            "date_applied": ""
         },
         "progress": {
             "duplicates_skipped": "已跳过 {count} 个重复项。",

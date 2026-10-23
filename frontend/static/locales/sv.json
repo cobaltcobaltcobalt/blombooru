@@ -762,6 +762,7 @@
         "sort_random": "Slumpmässig",
         "sort_regen_random": "Slumpa igen",
         "sort_tag_count": "Antal taggar",
+        "sort_custom_date": "Anpassat datum",
         "sort_toggle_order": "Växla sorteringsordning",
         "sort_manual": "Manuell",
         "sort_edit_order": "Ändra ordning",
@@ -797,8 +798,10 @@
         },
         "fullscreen_close_hint": "Tryck ESC eller klicka utanför media för att stänga",
         "info": {
-            "save_source": "Spara källa",
+            "save_source": "Spara Källa",
             "source_url": "Käll-URL",
+            "custom_date": "Datum",
+            "save_custom_date": "Spara Datum",
             "filename": "Filnamn",
             "type": "Typ",
             "size": "Storlek",
@@ -1019,7 +1022,8 @@
             "replacement_file": "Ersättningsfil",
             "change_file": "Byt Fil",
             "keep_filename_hint": "Behåll nuvarande filnamn: {name}",
-            "new_filename_hint": "Uppdatera filnamnet till: {name}"
+            "new_filename_hint": "Uppdatera filnamnet till: {name}",
+            "update_date_from_file": "Uppdatera Datum från Ersättningsfil"
         }
     },
     "nav": {
@@ -1144,6 +1148,8 @@
             "parent_set": "Förälder satt",
             "removed_from_album": "Borttagen från album",
             "source_updated": "Källa uppdaterad",
+            "date_updated": "Datum uppdaterades",
+            "error_updating_date": "Kunde inte uppdatera datum",
             "description_updated": "Beskrivning uppdaterad",
             "error_updating_description": "Fel vid uppdatering av beskrivning",
             "rating_updated": "Betyg uppdaterat",
@@ -1242,7 +1248,12 @@
             "final_tags": "Slutliga taggar",
             "title": "Förberedd media",
             "remove_confirm": "Är du säker på att du vill ta bort det här medieobjektet från uppladdningskön?",
-            "remove_item_title": "Ta bort media"
+            "remove_item_title": "Ta bort media",
+            "origin_sidecar": "Från följefil",
+            "origin_exif": "Från EXIF",
+            "origin_booru": "Från booru",
+            "origin_client": "Klientdatum",
+            "origin_explicit": "Explicit"
         },
         "bulk": {
             "editing_selected": "Redigerar: {count} valda objekt",
@@ -1253,7 +1264,8 @@
             "description_applied": "Beskrivning applicerad på valda objekt",
             "album_added": "Album lades till för valda objekt",
             "common_folder_album": "Gemensamt mappalbum",
-            "common_tags": "Gemensamma taggar"
+            "common_tags": "Gemensamma taggar",
+            "date_applied": "Datum tillämpades på valda objekt"
         },
         "progress": {
             "duplicates_skipped": "{count} dubblett(er) hoppades över.",

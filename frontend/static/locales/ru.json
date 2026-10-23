@@ -762,6 +762,7 @@
         "sort_random": "В случайном порядке",
         "sort_regen_random": "Новый случайный порядок",
         "sort_tag_count": "Количество тегов",
+        "sort_custom_date": "",
         "sort_toggle_order": "Переключить порядок",
         "sort_manual": "",
         "sort_edit_order": "",
@@ -799,6 +800,8 @@
         "info": {
             "save_source": "Сохранить источник",
             "source_url": "URL источника",
+            "custom_date": "",
+            "save_custom_date": "",
             "filename": "Имя файла",
             "type": "Тип",
             "size": "Вес файла",
@@ -1019,7 +1022,8 @@
             "replacement_file": "Файл для замены",
             "change_file": "Изменить файл",
             "keep_filename_hint": "Сохранить текущее название файла {name}",
-            "new_filename_hint": "Обновить название файла на {name}"
+            "new_filename_hint": "Обновить название файла на {name}",
+            "update_date_from_file": ""
         }
     },
     "nav": {
@@ -1144,6 +1148,8 @@
             "parent_set": "Родитель успешно установлен",
             "removed_from_album": "Удалено из альбома",
             "source_updated": "Источник успешно обновлен",
+            "date_updated": "",
+            "error_updating_date": "",
             "description_updated": "Описание успешно обновлено",
             "error_updating_description": "Ошибка обновления описания",
             "rating_updated": "Рейтинг успешно обновлен",
@@ -1242,7 +1248,12 @@
             "final_tags": "Финальные теги",
             "title": "Загруженные медиафайлы",
             "remove_confirm": "Вы действительно хотите удалить этот элемент из очереди загрузки?",
-            "remove_item_title": "Удалить элемент"
+            "remove_item_title": "Удалить элемент",
+            "origin_sidecar": "",
+            "origin_exif": "",
+            "origin_booru": "",
+            "origin_client": "",
+            "origin_explicit": ""
         },
         "bulk": {
             "editing_selected": "Редактирование {count} выбранных элемент(-а/ов)",
@@ -1253,7 +1264,8 @@
             "description_applied": "Описание добавлено ко всем выбранным элементам",
             "album_added": "Альбом добавлен ко всем выбранным элементам",
             "common_folder_album": "",
-            "common_tags": "Общие теги"
+            "common_tags": "Общие теги",
+            "date_applied": ""
         },
         "progress": {
             "duplicates_skipped": "{count} дублей пропущено",
