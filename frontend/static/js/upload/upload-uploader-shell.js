@@ -867,6 +867,8 @@ class UploadUploaderShell {
             baseDescription: metadata.description || '',
             categoryHints: metadata.categoryHints || null,
             userAssignedTags: metadata.userAssignedTags || null,
+            booru_date: metadata.booru_date || metadata.uploaded_at || null,
+            custom_date: metadata.custom_date || null,
             ...options,
             signal,
         });

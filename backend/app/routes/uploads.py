@@ -198,6 +198,8 @@ def _process_and_stage_item(
     db: Session,
     folder_mapping_mode: Optional[str] = "use_root",
     client_date: Optional[str] = None,
+    booru_date: Optional[str] = None,
+    custom_date: Optional[str] = None,
 ) -> dict:
     thumbs_dir = session_dir / "thumbs"
     thumbs_dir.mkdir(parents=True, exist_ok=True)
@@ -259,6 +261,9 @@ def _process_and_stage_item(
     category_hints_str = category_hints if isinstance(category_hints, str) else None
     base_description_str = base_description if isinstance(base_description, str) else None
     folder_mapping_mode_str = folder_mapping_mode if isinstance(folder_mapping_mode, str) else "use_root"
+    client_date_str = client_date if isinstance(client_date, str) else None
+    booru_date_str = booru_date if isinstance(booru_date, str) else None
+    custom_date_str = custom_date if isinstance(custom_date, str) else None
 
     # Detect sibling files for metadata parsing
     sibling_files: List[Path] = []
@@ -424,11 +429,23 @@ def _process_and_stage_item(
         suggested_album_segments = resolve_album_path(db, suggested_album_path)
 
     from ..utils.date_extractor import resolve_custom_date
-    resolved_custom_date, date_origin = resolve_custom_date(
+    auto_custom_date, auto_date_origin = resolve_custom_date(
         file_path=file_path,
+        booru_date=booru_date_str,
         sidecar_date=parsed.date if parsed else None,
-        client_date=client_date,
+        client_date=client_date_str,
     )
+
+    if custom_date_str is not None and custom_date_str.strip() != "":
+        resolved_custom_date, date_origin = resolve_custom_date(
+            file_path=file_path,
+            explicit_date=custom_date_str,
+            booru_date=booru_date_str,
+            sidecar_date=parsed.date if parsed else None,
+            client_date=client_date_str,
+        )
+    else:
+        resolved_custom_date, date_origin = auto_custom_date, auto_date_origin
 
     item_data = {
         "item_id": item_id,
@@ -456,8 +473,8 @@ def _process_and_stage_item(
         "metadata_source": metadata_source,
         "custom_date": resolved_custom_date.isoformat(),
         "custom_date_origin": date_origin,
-        "custom_date_auto": resolved_custom_date.isoformat(),
-        "custom_date_auto_origin": date_origin,
+        "custom_date_auto": auto_custom_date.isoformat(),
+        "custom_date_auto_origin": auto_date_origin,
     }
 
     meta.setdefault("items", {})[item_id] = item_data
@@ -480,6 +497,8 @@ async def upload_files_to_session(
     user_assigned_tags: Optional[str] = Form(None),
     base_description: Optional[str] = Form(None),
     client_date: Optional[str] = Form(None),
+    booru_date: Optional[str] = Form(None),
+    custom_date: Optional[str] = Form(None),
     current_user: User = Depends(require_admin_mode),
     db: Session = Depends(get_db),
 ):
@@ -528,6 +547,8 @@ async def upload_files_to_session(
             base_description=base_description,
             db=db,
             client_date=client_date,
+            booru_date=booru_date,
+            custom_date=custom_date,
         )
 
 @router.post("/sessions/{session_id}/untracked-files")
@@ -576,6 +597,8 @@ async def add_untracked_file_to_session(
             base_description=request.base_description,
             db=db,
             client_date=request.client_date,
+            booru_date=request.booru_date,
+            custom_date=request.custom_date,
         )
 
 @router.get("/sessions/{session_id}/items/{item_id}/thumbnail")

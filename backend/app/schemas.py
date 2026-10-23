@@ -422,6 +422,8 @@ class UploadSessionAddUntrackedRequest(BaseModel):
     user_assigned_tags: Optional[str] = None
     base_description: Optional[str] = None
     client_date: Optional[str] = None
+    booru_date: Optional[str] = None
+    custom_date: Optional[str] = None
 
 class AlbumPathSegment(BaseModel):
     name: str

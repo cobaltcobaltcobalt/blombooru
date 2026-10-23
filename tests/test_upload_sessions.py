@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 import io
 import json
 from pathlib import Path
@@ -1098,6 +1099,63 @@ class TestUploadSessions(BackupTestBase):
         self.assertEqual(item.get("custom_date_origin"), "client")
         self.assertEqual(item.get("custom_date_auto"), "2024-05-20T08:00:00+00:00")
         self.assertEqual(item.get("custom_date_auto_origin"), "client")
+
+    def test_stage_file_with_booru_date(self):
+        """Test uploading file to session with booru_date resolves origin to booru and persists on commit."""
+        session_res = asyncio.run(create_upload_session(current_user=self.admin_user))
+        s_id = session_res["session_id"]
+
+        f1 = UploadFile(filename="booru_staged.jpg", file=io.BytesIO(make_dummy_jpeg() + b"booru1"))
+        item = asyncio.run(upload_files_to_session(
+            session_id=s_id,
+            file=f1,
+            booru_date="2021-11-17T16:32:23.400000-05:00",
+            client_date="2026-10-23T19:00:00+00:00",
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+
+        self.assertEqual(item.get("custom_date"), "2021-11-17T21:32:23.400000+00:00")
+        self.assertEqual(item.get("custom_date_origin"), "booru")
+        self.assertEqual(item.get("custom_date_auto"), "2021-11-17T21:32:23.400000+00:00")
+        self.assertEqual(item.get("custom_date_auto_origin"), "booru")
+
+        commit_res = asyncio.run(commit_upload_session(
+            session_id=s_id,
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+        self.assertEqual(commit_res.total_created, 1)
+        media_id = commit_res.results[0].media_id
+        db_media = self.db.query(Media).filter(Media.id == media_id).first()
+        self.assertIsNotNone(db_media)
+        cdate = db_media.custom_date if db_media.custom_date.tzinfo else db_media.custom_date.replace(tzinfo=timezone.utc)
+        self.assertEqual(cdate, datetime(2021, 11, 17, 21, 32, 23, 400000, tzinfo=timezone.utc))
+
+    def test_stage_untracked_file_with_booru_date(self):
+        """Test adding untracked file to session with booru_date resolves origin to booru."""
+        sample_path = settings.ORIGINAL_DIR / "untracked_booru.jpg"
+        sample_path.write_bytes(make_dummy_jpeg() + b"untracked_booru")
+
+        session_res = asyncio.run(create_upload_session(current_user=self.admin_user))
+        s_id = session_res["session_id"]
+
+        req = UploadSessionAddUntrackedRequest(
+            file_path=str(sample_path),
+            booru_date="2026-10-23T19:00:17+00:00",
+            client_date="2026-10-23T20:00:00+00:00",
+        )
+        item = asyncio.run(add_untracked_file_to_session(
+            session_id=s_id,
+            request=req,
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+
+        self.assertEqual(item.get("custom_date"), "2026-10-23T19:00:17+00:00")
+        self.assertEqual(item.get("custom_date_origin"), "booru")
+        self.assertEqual(item.get("custom_date_auto"), "2026-10-23T19:00:17+00:00")
+        self.assertEqual(item.get("custom_date_auto_origin"), "booru")
 
     def test_booru_import_carries_booru_date(self):
         """Test download_and_import sets media.custom_date from booru post.uploaded_at."""

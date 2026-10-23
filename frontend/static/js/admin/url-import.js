@@ -230,6 +230,7 @@ class UrlImporter {
             rating: this.uploader.baseRating,
             source: media.file_url,
             tags: [],
+            booru_date: media.uploaded_at || null,
         };
 
         if (media.is_booru_post) {
@@ -250,6 +251,7 @@ class UrlImporter {
                 categoryHints: categoryHints,
                 userAssignedTags: [],
                 autoCreateTags: false,
+                booru_date: media.uploaded_at || null,
             };
         }
 

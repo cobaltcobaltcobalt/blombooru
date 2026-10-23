@@ -73,10 +73,48 @@ function formatBytes(bytes, options = {}) {
     return formatFileSize(bytes, options);
 }
 
+function toLocalInputDateTime(dateOrIso) {
+    if (!dateOrIso) return '';
+    const d = (dateOrIso instanceof Date) ? dateOrIso : new Date(dateOrIso);
+    if (isNaN(d.getTime())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    const year = String(d.getFullYear()).padStart(4, '0');
+    return `${year}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function parseLocalInputDateTime(value) {
+    if (!value) return null;
+    const trimmed = typeof value === 'string' ? value.trim() : String(value);
+    if (!trimmed) return null;
+    const d = new Date(trimmed);
+    if (isNaN(d.getTime())) return null;
+    return d.toISOString();
+}
+
+function formatCustomDateOriginBadge(origin) {
+    if (!origin) return '';
+    const keyMap = {
+        sidecar: 'upload.preview.origin_sidecar',
+        exif: 'upload.preview.origin_exif',
+        booru: 'upload.preview.origin_booru',
+        client: 'upload.preview.origin_client',
+        explicit: 'upload.preview.origin_explicit'
+    };
+    const translationKey = keyMap[origin];
+    if (translationKey) {
+        const label = window.i18n.t(translationKey);
+        return `<span class="badge bg-primary primary-text border border-color text-[10px] px-1.5 py-0.5 shrink-0" title="${escapeHtml(label)}">${escapeHtml(label)}</span>`;
+    }
+    return '';
+}
+
 window.escapeHtml = escapeHtml;
 window.escapeAttr = escapeAttr;
 window.formatFileSize = formatFileSize;
 window.formatBytes = formatBytes;
+window.toLocalInputDateTime = toLocalInputDateTime;
+window.parseLocalInputDateTime = parseLocalInputDateTime;
+window.formatCustomDateOriginBadge = formatCustomDateOriginBadge;
 
 class I18n {
     constructor() {
