@@ -444,6 +444,16 @@ def import_media_logical(db: Session, zf: zipfile.ZipFile, media_list: List[dict
         if uploaded_at_val is None:
             uploaded_at_val = datetime.now(timezone.utc)
 
+        # Parse custom_date (falling back to uploaded_at_val for legacy archives)
+        custom_date_val = None
+        if media_data.get('custom_date'):
+            try:
+                custom_date_val = datetime.fromisoformat(media_data['custom_date'])
+            except Exception:
+                custom_date_val = None
+        if custom_date_val is None:
+            custom_date_val = uploaded_at_val
+
         new_media = Media(
             filename=target_path.name,
             path=str(target_path.relative_to(settings.BASE_DIR)),
@@ -461,6 +471,7 @@ def import_media_logical(db: Session, zf: zipfile.ZipFile, media_list: List[dict
             description=media_data.get('description'),
             description_enlarged=bool(media_data.get('description_enlarged', False)),
             uploaded_at=uploaded_at_val,
+            custom_date=custom_date_val,
             is_shared=bool(media_data.get('is_shared', False)),
             share_uuid=media_data.get('share_uuid'),
             share_ai_metadata=bool(media_data.get('share_ai_metadata', False)),

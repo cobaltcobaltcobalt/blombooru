@@ -157,6 +157,7 @@ async def backup_full_db(
             "description": m.description,
             "description_enlarged": bool(m.description_enlarged),
             "uploaded_at": m.uploaded_at.isoformat() if m.uploaded_at else None,
+            "custom_date": m.custom_date.isoformat() if m.custom_date else (m.uploaded_at.isoformat() if m.uploaded_at else None),
             "is_shared": bool(m.is_shared),
             "share_uuid": m.share_uuid,
             "share_ai_metadata": bool(m.share_ai_metadata),
