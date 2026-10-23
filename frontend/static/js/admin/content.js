@@ -1420,9 +1420,7 @@ class AdminContent {
                 const modal = new BulkRatingModal({
                     prefillRatings,
                     onSave: () => {
-                        if (typeof app !== 'undefined' && app.content && app.content.loadTagStats) {
-                            app.content.loadTagStats();
-                        }
+                        window.adminPanel.content.loadTagStats();
                     }
                 });
                 modal.show(affectedIds);

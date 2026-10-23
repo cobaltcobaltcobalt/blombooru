@@ -379,7 +379,7 @@ class TagImplicationManager {
             this.showStatus(window.i18n.t('notifications.save_success'), 'success');
             this.resetForm();
             this.loadImplications(this.currentPage, this.currentSearch);
-            window.app.content.loadTagStats();
+            window.adminPanel.content.loadTagStats();
         } catch (e) {
             console.error('Save error:', e);
             this.showStatus(e.message, 'error');
@@ -400,7 +400,7 @@ class TagImplicationManager {
                     this.showStatus(window.i18n.t('notifications.delete_success'), 'success');
                     if (this.editingId === id) this.resetForm();
                     this.loadImplications(this.currentPage, this.currentSearch);
-                    window.app.content.loadTagStats();
+                    window.adminPanel.content.loadTagStats();
                 } catch (e) {
                     this.showStatus(e.message, 'error');
                 }
