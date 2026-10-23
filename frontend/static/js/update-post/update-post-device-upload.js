@@ -153,8 +153,9 @@ class UpdatePostDeviceUpload extends UpdatePostModalBase {
                             <p class="text-xs font-bold text-secondary uppercase tracking-wide mb-2">
                                 ${window.i18n.t('modal.update_post.what_to_update')}
                             </p>
-                            <div class="w-full">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 ${this._checkboxRow('upm-device-upd-filename', window.i18n.t('modal.update_post.update_filename'), false)}
+                                ${this._checkboxRow('upm-device-upd-custom-date', window.i18n.t('modal.update_post.update_date_from_file'), false)}
                             </div>
                             <p id="upm-device-filename-hint" class="text-[11px] text-secondary mt-2 text-center"></p>
                         </div>
@@ -382,6 +383,8 @@ class UpdatePostDeviceUpload extends UpdatePostModalBase {
         const applyBtn = this._modal?.querySelector('#upm-device-apply');
         const chk = this._modal?.querySelector('#upm-device-upd-filename');
         const updateFilename = chk ? chk.checked : false;
+        const chkDate = this._modal?.querySelector('#upm-device-upd-custom-date');
+        const updateCustomDate = chkDate ? chkDate.checked : false;
 
         if (applyBtn) {
             applyBtn.disabled = true;
@@ -428,6 +431,7 @@ class UpdatePostDeviceUpload extends UpdatePostModalBase {
             const finalizeForm = new FormData();
             finalizeForm.append('upload_id', uploadId);
             finalizeForm.append('update_filename', updateFilename ? 'true' : 'false');
+            finalizeForm.append('update_custom_date', updateCustomDate ? 'true' : 'false');
 
             const finalRes = await fetch(`/api/media/${this.mediaId}/update-file-finalize`, {
                 method: 'POST',
