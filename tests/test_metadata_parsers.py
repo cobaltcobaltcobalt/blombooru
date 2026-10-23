@@ -173,6 +173,7 @@ class TestMetadataParsers(BackupTestBase):
             "subcategory": "post",
             "rating": "e",
             "tags": "tag_one tag_two tag_three",
+            "post_url": "https://booru.example.com/index.php?page=post&s=view&id=67890",
         }
 
         media_path = self.tmp_path / "illust.png"
@@ -185,7 +186,7 @@ class TestMetadataParsers(BackupTestBase):
 
         parsed = parser.parse(media_path, [media_path, sidecar_path])
         self.assertEqual(parsed.rating, "explicit")
-        self.assertEqual(parsed.source, "https://gelbooru.com/index.php?page=post&s=view&id=67890")
+        self.assertEqual(parsed.source, "https://booru.example.com/index.php?page=post&s=view&id=67890")
         tag_names = [t.name for t in parsed.tags]
         self.assertIn("tag_one", tag_names)
         self.assertIn("tag_two", tag_names)

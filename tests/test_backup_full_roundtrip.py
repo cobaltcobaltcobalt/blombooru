@@ -97,7 +97,7 @@ class TestBackupFullRoundtrip(BackupTestBase):
 
         # Booru config
         booru_cfg = BooruConfig(
-            domain="danbooru.donmai.us",
+            domain="booru.example.com",
             username="test_scraper_user",
             api_key="secret_booru_api_key_123"
         )
@@ -215,7 +215,7 @@ class TestBackupFullRoundtrip(BackupTestBase):
                 ],
                 "booru_config": [
                     {
-                        "domain": "danbooru.donmai.us",
+                        "domain": "booru.example.com",
                         "username": "test_scraper_user",
                         "api_key": "secret_booru_api_key_123"
                     }
@@ -296,7 +296,7 @@ class TestBackupFullRoundtrip(BackupTestBase):
         self.assertEqual([t.name for t in restored_imp.implied_tags], ["fox_ears"])
 
         # Verify Booru Config
-        restored_booru = self.db.query(BooruConfig).filter(BooruConfig.domain == "danbooru.donmai.us").first()
+        restored_booru = self.db.query(BooruConfig).filter(BooruConfig.domain == "booru.example.com").first()
         self.assertIsNotNone(restored_booru)
         self.assertEqual(restored_booru.username, "test_scraper_user")
         self.assertEqual(restored_booru.api_key, "secret_booru_api_key_123")

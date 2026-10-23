@@ -134,7 +134,7 @@ class TestBackupImportEdgeCases(BackupTestBase):
         """Test that booru domains are normalized (scheme/trailing slash stripped) and existing configs updated."""
         # Pre-insert existing config
         existing_cfg = BooruConfig(
-            domain="danbooru.donmai.us",
+            domain="booru.example.com",
             username="old_admin",
             api_key="old_api_key"
         )
@@ -149,12 +149,12 @@ class TestBackupImportEdgeCases(BackupTestBase):
                 "type": "full_backup",
                 "booru_config": [
                     {
-                        "domain": "https://danbooru.donmai.us/",
+                        "domain": "https://booru.example.com/",
                         "username": "updated_admin",
                         "api_key": "new_api_key"
                     },
                     {
-                        "domain": "http://gelbooru.com/",
+                        "domain": "http://otherbooru.example.com/",
                         "username": "gel_user",
                         "api_key": "gel_key"
                     }
@@ -166,14 +166,14 @@ class TestBackupImportEdgeCases(BackupTestBase):
         result = import_full_backup(zip_buffer, self.db)
         self.assertEqual(result["stats"]["booru_config"]["imported"], 2)
 
-        # Verify danbooru was updated in place (no duplicate row)
-        dan_cfgs = self.db.query(BooruConfig).filter(BooruConfig.domain == "danbooru.donmai.us").all()
+        # Verify booru was updated in place (no duplicate row)
+        dan_cfgs = self.db.query(BooruConfig).filter(BooruConfig.domain == "booru.example.com").all()
         self.assertEqual(len(dan_cfgs), 1)
         self.assertEqual(dan_cfgs[0].username, "updated_admin")
         self.assertEqual(dan_cfgs[0].api_key, "new_api_key")
 
-        # Verify gelbooru was created with normalized domain
-        gel_cfg = self.db.query(BooruConfig).filter(BooruConfig.domain == "gelbooru.com").first()
+        # Verify otherbooru was created with normalized domain
+        gel_cfg = self.db.query(BooruConfig).filter(BooruConfig.domain == "otherbooru.example.com").first()
         self.assertIsNotNone(gel_cfg)
         self.assertEqual(gel_cfg.username, "gel_user")
 
