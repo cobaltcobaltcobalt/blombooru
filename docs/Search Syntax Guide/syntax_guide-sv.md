@@ -47,6 +47,7 @@ OBS: Intervall och flervärdeslistor kan användas med de flesta metaqualifiers.
 - `rating`: safe, questionable, explicit (s, q, e) (`rating:s,q`, `-rating:e`)
 - `source`: Käll-URL, domän, http eller none (`source:twitter`, `source:none`, `source:http`)
 - `date`, `age`: Uppladdningsdatum (ÅÅÅÅ-MM-DD) eller relativ ålder (s, mi, h, d, w, mo, y) (`date:>=2024-01-01`, `age:<24h`, `age:1w..1mo`)
+- `custom_date`, `custom_age`: Anpassat mediedatum (ÅÅÅÅ-MM-DD) eller relativ anpassad ålder (s, mi, h, d, w, mo, y) (`custom_date:>=2024-01-01`, `custom_age:<30d`, `custom_date:2024-01-01..2024-12-31`)
 - `md5`: Exakt fil-MD5-hashkontrollsumma (`md5:d34e...`)
 
 ### Antal taggar
@@ -61,6 +62,7 @@ Använd `order:värde` eller `sort:värde`. Lägg till `_asc` eller `_desc`. De 
 - `id` / `id_desc`: Nyast först (standard)
 - `id_asc`: Äldst först
 - `date_desc` / `date_asc`: Uppladdningsdatum
+- `custom_date_desc` / `custom_date_asc`: Anpassat mediedatum
 - `filesize` / `filesize_asc`: Filstorlek
 - `width_desc` / `height_desc` / `mpixels_desc`: Dimensioner och upplösning
 - `duration_desc` / `duration_asc`: Längd

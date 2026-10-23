@@ -1,7 +1,7 @@
 ## Media
 
 > [!NOTE]
-> Last updated: `October 22, 2026`
+> Last updated: `October 23, 2026`
 
 **Base path:** `/api/media`
 
@@ -16,7 +16,7 @@ GET /api/media
 | `page` | int | Page number (default: 1) |
 | `limit` | int | Items per page (default: from settings) |
 | `rating` | string | Rating filter: `safe`, `questionable`, or `explicit` |
-| `sort` | string | Sort field: `uploaded_at` (default), `filename`, `file_size`, `file_type` |
+| `sort` | string | Sort field: `uploaded_at` (default), `custom_date`, `filename`, `file_size`, `file_type` |
 | `order` | string | `asc` or `desc` (default: `desc`) |
 
 **Response:**
@@ -53,6 +53,7 @@ Every endpoint returning media records outputs a `MediaResponse`:
   "description": "Artwork description text",
   "description_enlarged": false,
   "uploaded_at": "2026-09-08T18:00:00+00:00",
+  "custom_date": "2022-11-02T18:00:00+00:00",
   "is_shared": false,
   "share_uuid": null,
   "share_language": null,
@@ -90,6 +91,7 @@ Returns a `MediaDetailResponse` extending `MediaResponse` with parsed descriptio
   "description_enlarged": false,
   "description_html": "<p class=\"mb-3 text-xs last:mb-0 leading-relaxed\">Artwork description text</p>",
   "uploaded_at": "2026-09-08T18:00:00+00:00",
+  "custom_date": "2022-11-02T18:00:00+00:00",
   "is_shared": false,
   "share_uuid": null,
   "share_language": null,
@@ -285,6 +287,7 @@ Content-Type: multipart/form-data
 | `album_ids` | string | No | Comma-separated album IDs |
 | `source` | string | No | Source URL |
 | `description` | string | No | Optional media description |
+| `custom_date` | string | No | Optional custom media date (ISO 8601 string or YYYY-MM-DD). If omitted, automatically resolved from booru URL, sidecar, EXIF, or upload time. |
 | `category_hints` | string | No | JSON object mapping tag names to category strings, e.g. `{"bob": "artist"}` |
 
 If the uploaded file format requires transcoding (such as `.heic`, `.mkv`, or `.avi`), the transcoded file is generated in `media/transcoded/` and used as the source for the thumbnail.
@@ -305,11 +308,12 @@ Content-Type: application/json
   "source": "https://...",
   "description": "...",
   "description_enlarged": false,
+  "custom_date": "2022-11-02T18:00:00+00:00",
   "parent_id": null
 }
 ```
 
-All fields are optional. Supplying `tags` replaces the tag list entirely. Setting `parent_id` to `null` clears the parent relationship.
+All fields are optional. Supplying `tags` replaces the tag list entirely. Setting `parent_id` to `null` clears the parent relationship. Setting `custom_date` to `null` resets the custom date to `uploaded_at`.
 
 **Response:** Updated `MediaResponse`.
 
@@ -328,10 +332,12 @@ Content-Type: application/json
   "description": "Updated description",
   "filename": "new_name.jpg",
   "file_url": "https://example.com/new_image.jpg",
+  "custom_date": "2022-11-02T18:00:00+00:00",
   "update_rating": true,
   "update_tags": true,
   "update_source": true,
   "update_description": true,
+  "update_custom_date": true,
   "update_filename": false,
   "update_file": true,
   "merge_tags": true,
@@ -346,6 +352,8 @@ Content-Type: application/json
 | `merge_tags` | bool | When `true` and `update_tags` is `true`, merges new tags into existing tags instead of replacing them |
 | `update_source` | bool | When `true`, updates the source URL |
 | `update_description` | bool | When `true`, updates the description |
+| `update_custom_date` | bool | When `true`, updates the custom date with `custom_date` |
+| `custom_date` | string | Custom date ISO string (required when `update_custom_date` is `true`) |
 | `update_filename` | bool | When `true`, renames the media file and transcoded file on disk |
 | `update_file` | bool | When `true`, downloads the replacement file from `file_url`, recalculates hash, and regenerates transcoded media and thumbnails |
 
@@ -366,6 +374,7 @@ upload_id=<uuid>&update_filename=false
 |---|---|---|
 | `upload_id` | string | UUID of the completed chunked upload |
 | `update_filename` | bool | Optional (default: `false`). When `true`, adopts the uploaded file's sanitized filename; when `false`, retains the post's current filename stem. |
+| `update_custom_date` | bool | Optional (default: `false`). When `true`, attempts EXIF date extraction from the replacement file and updates `custom_date` if found. |
 
 Replaces the stored file, updates or creates transcoded media, regenerates thumbnails, and refreshes dimensions and metadata.
 
