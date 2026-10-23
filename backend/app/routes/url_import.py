@@ -204,6 +204,7 @@ def _do_import_media_url(req: ImportRequest) -> MediaResponse:
             if booru_post and booru_post.description:
                 description = booru_post.description
 
+            booru_date = booru_post.uploaded_at if booru_post and booru_post.uploaded_at else None
             try:
                 return process_and_save_media(
                     db=db,
@@ -215,6 +216,7 @@ def _do_import_media_url(req: ImportRequest) -> MediaResponse:
                     source=source,
                     category_hints=category_hints_str,
                     description=description,
+                    booru_date=booru_date,
                 )
             except HTTPException:
                 if file_path and file_path.exists():

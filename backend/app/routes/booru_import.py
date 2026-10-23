@@ -241,6 +241,9 @@ async def download_and_import(
         final_tags = req.tags if req.tags is not None else [t.name for t in post.tags]
         final_description = req.description if req.description is not None else post.description
 
+        from ..utils.date_extractor import resolve_custom_date
+        custom_dt, _ = resolve_custom_date(file_path=file_path, booru_date=post.uploaded_at)
+
         media = Media(
             filename=unique_filename,
             path=str(relative_path),
@@ -256,6 +259,7 @@ async def download_and_import(
             rating=final_rating,
             source=final_source if final_source else None,
             description=final_description if final_description else None,
+            custom_date=custom_dt,
         )
 
         # Handle tags

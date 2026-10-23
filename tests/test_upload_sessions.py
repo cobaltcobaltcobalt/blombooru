@@ -764,3 +764,430 @@ class TestUploadSessions(BackupTestBase):
         self.assertEqual(parent_album.cached_direct_media_count, 1)
         self.assertEqual(parent_album.cached_media_count, 2)
         self.assertEqual(parent_album.cached_rating, RatingEnum.explicit)
+
+    def test_upload_media_direct_endpoint_custom_date(self):
+        """Test POST /api/media/ with custom_date parameter sets custom_date and raises 422 on invalid date."""
+        from backend.app.routes.media import upload_media
+        from datetime import datetime, timezone
+
+        # 1. Valid custom_date
+        f1 = UploadFile(filename="valid_date.jpg", file=io.BytesIO(make_dummy_jpeg() + b"test_1"))
+        res = asyncio.run(upload_media(
+            file=f1,
+            scanned_path=None,
+            rating=RatingEnum.safe,
+            tags="",
+            album_ids=None,
+            source=None,
+            category_hints=None,
+            description=None,
+            custom_date="2021-06-15T12:00:00Z",
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+        media = self.db.query(Media).filter(Media.id == res.id).first()
+        self.assertIsNotNone(media)
+        cdate = media.custom_date if media.custom_date.tzinfo else media.custom_date.replace(tzinfo=timezone.utc)
+        self.assertEqual(cdate, datetime(2021, 6, 15, 12, 0, 0, tzinfo=timezone.utc))
+
+        # 2. Invalid custom_date raises 422
+        f2 = UploadFile(filename="invalid_date.jpg", file=io.BytesIO(make_dummy_jpeg() + b"test_2"))
+        with self.assertRaises(HTTPException) as ctx:
+            asyncio.run(upload_media(
+                file=f2,
+                scanned_path=None,
+                rating=RatingEnum.safe,
+                tags="",
+                album_ids=None,
+                source=None,
+                category_hints=None,
+                description=None,
+                custom_date="not-a-valid-date",
+                current_user=self.admin_user,
+                db=self.db,
+            ))
+        self.assertEqual(ctx.exception.status_code, 422)
+
+    def test_upload_media_invalid_date_leaves_no_orphan_files(self):
+        """Test that passing an invalid custom_date to upload_media raises 422 and leaves no files behind."""
+        from backend.app.routes.media import upload_media
+
+        orig_before = set(settings.ORIGINAL_DIR.glob("*"))
+        thumb_before = set(settings.THUMBNAIL_DIR.glob("*"))
+
+        f = UploadFile(filename="orphan_test.jpg", file=io.BytesIO(make_dummy_jpeg() + b"unique_orphan"))
+        with self.assertRaises(HTTPException) as ctx:
+            asyncio.run(upload_media(
+                file=f,
+                scanned_path=None,
+                rating=RatingEnum.safe,
+                tags="",
+                album_ids=None,
+                source=None,
+                category_hints=None,
+                description=None,
+                custom_date="completely-invalid-date",
+                current_user=self.admin_user,
+                db=self.db,
+            ))
+        self.assertEqual(ctx.exception.status_code, 422)
+
+        orig_after = set(settings.ORIGINAL_DIR.glob("*"))
+        thumb_after = set(settings.THUMBNAIL_DIR.glob("*"))
+
+        self.assertEqual(orig_before, orig_after)
+        self.assertEqual(thumb_before, thumb_after)
+
+    def test_process_and_save_media_post_commit_failure_retains_files(self):
+        """Test that if an exception occurs after db.commit() in process_and_save_media, committed media and thumbnail are retained."""
+        from unittest.mock import patch
+        from backend.app.routes.media import process_and_save_media
+
+        img_path = settings.ORIGINAL_DIR / "post_commit_test.jpg"
+        img_path.write_bytes(make_dummy_jpeg() + b"post_commit_uniq")
+
+        thumb_name = "post_commit_test.webp"
+        expected_thumb = settings.THUMBNAIL_DIR / thumb_name
+
+        with patch("backend.app.routes.media.set_media_albums", side_effect=RuntimeError("Forced post-commit failure")):
+            with self.assertRaises(RuntimeError):
+                process_and_save_media(
+                    db=self.db,
+                    file_path=img_path,
+                    unique_filename="post_commit_test.jpg",
+                    rating=RatingEnum.safe,
+                    tags="",
+                    album_ids="999",
+                    source=None,
+                    category_hints=None,
+                    description=None,
+                )
+
+        # Committed media row exists in database
+        saved_media = self.db.query(Media).filter(Media.filename == "post_commit_test.jpg").first()
+        self.assertIsNotNone(saved_media)
+
+        # Thumbnail file exists on disk and was not unlinked
+        self.assertTrue(expected_thumb.exists())
+
+    def test_bulk_update_staged_items_custom_date_dedicated(self):
+        """Dedicated test for bulk updating custom_date with valid date, 422 on invalid date, and reset with None, empty string, or whitespace."""
+        session_res = asyncio.run(create_upload_session(current_user=self.admin_user))
+        s_id = session_res["session_id"]
+
+        f1 = UploadFile(filename="bulk1.jpg", file=io.BytesIO(make_dummy_jpeg() + b"bulk1"))
+        f2 = UploadFile(filename="bulk2.jpg", file=io.BytesIO(make_dummy_jpeg() + b"bulk2"))
+        f3 = UploadFile(filename="bulk3.jpg", file=io.BytesIO(make_dummy_jpeg() + b"bulk3"))
+
+        item1 = asyncio.run(upload_files_to_session(session_id=s_id, file=f1, client_date="2023-01-01T00:00:00Z", current_user=self.admin_user, db=self.db))
+        item2 = asyncio.run(upload_files_to_session(session_id=s_id, file=f2, client_date="2023-02-01T00:00:00Z", current_user=self.admin_user, db=self.db))
+        item3 = asyncio.run(upload_files_to_session(session_id=s_id, file=f3, client_date="2023-03-01T00:00:00Z", current_user=self.admin_user, db=self.db))
+
+        # 1. Bulk update item1 and item2 with explicit date
+        res1 = asyncio.run(bulk_update_staged_items(
+            session_id=s_id,
+            req=BulkUpdateRequest(item_ids=[item1["item_id"], item2["item_id"]], custom_date="2025-06-01T15:30:00Z"),
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+        self.assertEqual(res1["updated_count"], 2)
+        res_map = {it["item_id"]: it for it in res1["items"]}
+        self.assertEqual(res_map[item1["item_id"]]["custom_date"], "2025-06-01T15:30:00+00:00")
+        self.assertEqual(res_map[item1["item_id"]]["custom_date_origin"], "explicit")
+        self.assertEqual(res_map[item2["item_id"]]["custom_date"], "2025-06-01T15:30:00+00:00")
+        self.assertEqual(res_map[item2["item_id"]]["custom_date_origin"], "explicit")
+
+        # Item3 unaffected
+        sess = asyncio.run(get_upload_session(session_id=s_id, current_user=self.admin_user))
+        s_items = {it["item_id"]: it for it in sess["items"]}
+        self.assertEqual(s_items[item3["item_id"]]["custom_date"], "2023-03-01T00:00:00+00:00")
+        self.assertEqual(s_items[item3["item_id"]]["custom_date_origin"], "client")
+
+        # 2. Invalid date raises 422
+        with self.assertRaises(HTTPException) as ctx:
+            asyncio.run(bulk_update_staged_items(
+                session_id=s_id,
+                req=BulkUpdateRequest(item_ids=[item1["item_id"]], custom_date="not-a-valid-date"),
+                current_user=self.admin_user,
+                db=self.db,
+            ))
+        self.assertEqual(ctx.exception.status_code, 422)
+
+        # 3. Bulk reset with whitespace string "   "
+        res_ws = asyncio.run(bulk_update_staged_items(
+            session_id=s_id,
+            req=BulkUpdateRequest(item_ids=[item1["item_id"], item2["item_id"]], custom_date="   "),
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+        res_ws_map = {it["item_id"]: it for it in res_ws["items"]}
+        self.assertEqual(res_ws_map[item1["item_id"]]["custom_date"], "2023-01-01T00:00:00+00:00")
+        self.assertEqual(res_ws_map[item1["item_id"]]["custom_date_origin"], "client")
+        self.assertEqual(res_ws_map[item2["item_id"]]["custom_date"], "2023-02-01T00:00:00+00:00")
+        self.assertEqual(res_ws_map[item2["item_id"]]["custom_date_origin"], "client")
+
+        # 4. Single-item update with whitespace string "   " resets to auto
+        asyncio.run(update_staged_item(
+            session_id=s_id,
+            item_id=item1["item_id"],
+            update=UploadSessionItemUpdate(custom_date="2025-01-01T00:00:00Z"),
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+        reset_ws = asyncio.run(update_staged_item(
+            session_id=s_id,
+            item_id=item1["item_id"],
+            update=UploadSessionItemUpdate(custom_date="   "),
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+        self.assertEqual(reset_ws["custom_date"], "2023-01-01T00:00:00+00:00")
+        self.assertEqual(reset_ws["custom_date_origin"], "client")
+
+    def test_upload_session_custom_date_lifecycle(self):
+        """Test client_date staging, single update, single reset, bulk update, bulk reset, and commit persistence."""
+        from datetime import datetime, timezone
+
+        session_res = asyncio.run(create_upload_session(current_user=self.admin_user))
+        s_id = session_res["session_id"]
+
+        # 1. Stage item with client_date
+        f1 = UploadFile(filename="staged_pic1.jpg", file=io.BytesIO(make_dummy_jpeg() + b"uniq1"))
+        item1 = asyncio.run(upload_files_to_session(
+            session_id=s_id,
+            file=f1,
+            client_date="2023-04-01T10:00:00Z",
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+        self.assertEqual(item1.get("custom_date"), "2023-04-01T10:00:00+00:00")
+        self.assertEqual(item1.get("custom_date_origin"), "client")
+        self.assertEqual(item1.get("custom_date_auto"), "2023-04-01T10:00:00+00:00")
+        self.assertEqual(item1.get("custom_date_auto_origin"), "client")
+
+        # 2. Update item custom_date via single PATCH
+        updated_item = asyncio.run(update_staged_item(
+            session_id=s_id,
+            item_id=item1["item_id"],
+            update=UploadSessionItemUpdate(custom_date="2022-02-02T00:00:00Z"),
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+        self.assertEqual(updated_item.get("custom_date"), "2022-02-02T00:00:00+00:00")
+        self.assertEqual(updated_item.get("custom_date_origin"), "explicit")
+
+        # 3. Reset item custom_date via custom_date=None, restoring auto-detected client date
+        reset_item = asyncio.run(update_staged_item(
+            session_id=s_id,
+            item_id=item1["item_id"],
+            update=UploadSessionItemUpdate(custom_date=None),
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+        self.assertEqual(reset_item.get("custom_date"), "2023-04-01T10:00:00+00:00")
+        self.assertEqual(reset_item.get("custom_date_origin"), "client")
+
+        # 4. Invalid single PATCH raises 422
+        with self.assertRaises(HTTPException) as ctx:
+            asyncio.run(update_staged_item(
+                session_id=s_id,
+                item_id=item1["item_id"],
+                update=UploadSessionItemUpdate(custom_date="bad-date"),
+                current_user=self.admin_user,
+                db=self.db,
+            ))
+        self.assertEqual(ctx.exception.status_code, 422)
+
+        # 5. Stage second item
+        f2 = UploadFile(filename="staged_pic2.jpg", file=io.BytesIO(make_dummy_jpeg() + b"uniq2"))
+        item2 = asyncio.run(upload_files_to_session(
+            session_id=s_id,
+            file=f2,
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+
+        # 6. Bulk update custom_date
+        bulk_res = asyncio.run(bulk_update_staged_items(
+            session_id=s_id,
+            req=BulkUpdateRequest(
+                item_ids=[item1["item_id"], item2["item_id"]],
+                custom_date="2020-01-01T00:00:00Z",
+            ),
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+        self.assertEqual(bulk_res["updated_count"], 2)
+        for bi in bulk_res["items"]:
+            self.assertEqual(bi.get("custom_date"), "2020-01-01T00:00:00+00:00")
+            self.assertEqual(bi.get("custom_date_origin"), "explicit")
+
+        # 7. Bulk reset custom_date with custom_date=None restores auto-detected dates
+        bulk_reset_res = asyncio.run(bulk_update_staged_items(
+            session_id=s_id,
+            req=BulkUpdateRequest(
+                item_ids=[item1["item_id"], item2["item_id"]],
+                custom_date=None,
+            ),
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+        self.assertEqual(bulk_reset_res["updated_count"], 2)
+        items_map = {it["item_id"]: it for it in bulk_reset_res["items"]}
+        self.assertEqual(items_map[item1["item_id"]].get("custom_date"), "2023-04-01T10:00:00+00:00")
+        self.assertEqual(items_map[item1["item_id"]].get("custom_date_origin"), "client")
+        self.assertEqual(items_map[item2["item_id"]].get("custom_date_origin"), item2.get("custom_date_auto_origin"))
+
+        # Re-set explicit date on both items before committing
+        asyncio.run(bulk_update_staged_items(
+            session_id=s_id,
+            req=BulkUpdateRequest(
+                item_ids=[item1["item_id"], item2["item_id"]],
+                custom_date="2020-01-01T00:00:00Z",
+            ),
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+
+        # 8. Bulk update with invalid date raises 422
+        with self.assertRaises(HTTPException) as ctx:
+            asyncio.run(bulk_update_staged_items(
+                session_id=s_id,
+                req=BulkUpdateRequest(
+                    item_ids=[item1["item_id"]],
+                    custom_date="bad-bulk-date",
+                ),
+                current_user=self.admin_user,
+                db=self.db,
+            ))
+        self.assertEqual(ctx.exception.status_code, 422)
+
+        # 9. Commit session persists custom_date to DB
+        commit_res = asyncio.run(commit_upload_session(
+            session_id=s_id,
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+        self.assertEqual(commit_res.total_created, 2)
+        for result in commit_res.results:
+            db_media = self.db.query(Media).filter(Media.id == result.media_id).first()
+            self.assertIsNotNone(db_media)
+            cdate = db_media.custom_date if db_media.custom_date.tzinfo else db_media.custom_date.replace(tzinfo=timezone.utc)
+            self.assertEqual(cdate, datetime(2020, 1, 1, 0, 0, 0, tzinfo=timezone.utc))
+
+    def test_untracked_files_with_client_date(self):
+        """Test adding untracked file to session propagates client_date into staged custom_date and custom_date_auto."""
+        sample_path = settings.ORIGINAL_DIR / "untracked_sample.jpg"
+        sample_path.write_bytes(make_dummy_jpeg() + b"untracked")
+
+        session_res = asyncio.run(create_upload_session(current_user=self.admin_user))
+        s_id = session_res["session_id"]
+
+        req = UploadSessionAddUntrackedRequest(
+            file_path=str(sample_path),
+            client_date="2024-05-20T08:00:00Z",
+        )
+        item = asyncio.run(add_untracked_file_to_session(
+            session_id=s_id,
+            request=req,
+            current_user=self.admin_user,
+            db=self.db,
+        ))
+
+        self.assertEqual(item.get("custom_date"), "2024-05-20T08:00:00+00:00")
+        self.assertEqual(item.get("custom_date_origin"), "client")
+        self.assertEqual(item.get("custom_date_auto"), "2024-05-20T08:00:00+00:00")
+        self.assertEqual(item.get("custom_date_auto_origin"), "client")
+
+    def test_booru_import_carries_booru_date(self):
+        """Test download_and_import sets media.custom_date from booru post.uploaded_at."""
+        from datetime import datetime, timezone
+        from unittest.mock import MagicMock, patch
+        from backend.app.routes.booru_import import ImportRequest, download_and_import
+        from backend.app.services.booru.types import BooruPost, BooruTag
+
+        mock_post = BooruPost(
+            id=101,
+            tags=[BooruTag(name="tag1", category="general")],
+            rating="safe",
+            source="https://example.com/source1",
+            file_url="https://booru.example.com/data/sample.jpg",
+            preview_url="https://booru.example.com/preview/sample.jpg",
+            filename="booru_sample.jpg",
+            file_size=len(make_dummy_jpeg()),
+            width=100,
+            height=100,
+            booru_url="https://booru.example.com/posts/101",
+            description="desc",
+            uploaded_at="2022-08-15T14:30:00+00:00",
+        )
+
+        mock_client = MagicMock()
+        mock_client.base_url = "https://booru.example.com"
+        mock_client.fetch_post_by_url.return_value = mock_post
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.iter_content.return_value = [make_dummy_jpeg()]
+
+        req = ImportRequest(
+            url="https://booru.example.com/posts/101",
+            auto_create_tags=False,
+        )
+
+        with patch("backend.app.routes.booru_import.get_client_for_url", return_value=mock_client), \
+             patch("backend.app.routes.booru_import.safe_request", return_value=mock_response):
+            res = asyncio.run(download_and_import(
+                req=req,
+                current_user=self.admin_user,
+                db=self.db,
+            ))
+
+        media = self.db.query(Media).filter(Media.id == res.id).first()
+        self.assertIsNotNone(media)
+        cdate = media.custom_date if media.custom_date.tzinfo else media.custom_date.replace(tzinfo=timezone.utc)
+        self.assertEqual(cdate, datetime(2022, 8, 15, 14, 30, 0, tzinfo=timezone.utc))
+
+    def test_url_import_carries_booru_date(self):
+        """Test _do_import_media_url sets media.custom_date from booru post.uploaded_at."""
+        import tempfile
+        from datetime import datetime, timezone
+        from unittest.mock import MagicMock, patch
+        from backend.app.routes.url_import import ImportRequest, _do_import_media_url
+        from backend.app.services.booru.types import BooruPost
+
+        mock_post = BooruPost(
+            id=202,
+            tags=[],
+            rating="safe",
+            source="https://example.com/source2",
+            file_url="https://booru.example.com/data/sample2.jpg",
+            preview_url="https://booru.example.com/preview/sample2.jpg",
+            filename="url_booru_sample.jpg",
+            file_size=len(make_dummy_jpeg() + b"url"),
+            width=100,
+            height=100,
+            booru_url="https://booru.example.com/posts/202",
+            description="desc2",
+            uploaded_at="2021-11-20T09:15:00+00:00",
+        )
+
+        mock_client = MagicMock()
+        mock_client.fetch_post_by_url.return_value = mock_post
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+            tmp.write(make_dummy_jpeg() + b"url")
+            tmp_path = Path(tmp.name)
+
+        req = ImportRequest(
+            url="https://booru.example.com/posts/202",
+        )
+
+        with patch("backend.app.routes.url_import.get_client_for_url", return_value=mock_client), \
+             patch("backend.app.routes.url_import.download_media_to_temp", return_value=(tmp_path, "url_booru_sample.jpg")):
+            res = _do_import_media_url(req)
+
+        media = self.db.query(Media).filter(Media.id == res.id).first()
+        self.assertIsNotNone(media)
+        cdate = media.custom_date if media.custom_date.tzinfo else media.custom_date.replace(tzinfo=timezone.utc)
+        self.assertEqual(cdate, datetime(2021, 11, 20, 9, 15, 0, tzinfo=timezone.utc))

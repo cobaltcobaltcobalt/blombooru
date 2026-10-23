@@ -1,8 +1,9 @@
 import json
 import shutil
 import uuid
+from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Union
 
 from fastapi import (APIRouter, BackgroundTasks, Depends, File, Form,
                      HTTPException, Query, Request, UploadFile)
@@ -78,6 +79,8 @@ class PostUpdateRequest(BaseModel):
     filename: Optional[str] = None
     update_file: bool = False
     file_url: Optional[str] = None
+    update_custom_date: bool = False
+    custom_date: Optional[str] = None
 
 @router.patch("/{media_id}/update-from-source", response_model=MediaDetailResponse)
 async def update_from_source(
@@ -141,6 +144,15 @@ async def update_from_source(
     if req.update_description:
         media.description = req.description or None
         sync_description_enlarged(media)
+
+    if req.update_custom_date:
+        if not req.custom_date or not str(req.custom_date).strip():
+            raise HTTPException(status_code=422, detail="custom_date is required when update_custom_date is true")
+        from ..utils.date_extractor import parse_explicit_custom_date
+        parsed_dt = parse_explicit_custom_date(req.custom_date)
+        if parsed_dt is None:
+            raise HTTPException(status_code=422, detail="Invalid custom_date format")
+        media.custom_date = parsed_dt
 
     if req.update_filename and req.filename:
         new_filename = sanitize_filename(req.filename)
@@ -301,6 +313,7 @@ async def update_file_finalize(
     media_id: int,
     upload_id: str = Form(...),
     update_filename: bool = Form(False),
+    update_custom_date: bool = Form(False),
     background_tasks: BackgroundTasks = None,
     current_user: User = Depends(require_admin_mode),
     db: Session = Depends(get_db),
@@ -415,6 +428,12 @@ async def update_file_finalize(
         media.width = new_meta["width"]
         media.height = new_meta["height"]
         media.duration = new_meta["duration"]
+
+        if update_custom_date:
+            from ..utils.date_extractor import extract_embedded_date
+            embedded_dt = extract_embedded_date(target_file)
+            if embedded_dt is not None:
+                media.custom_date = embedded_dt
 
         db.commit()
         db.refresh(media)
@@ -595,6 +614,10 @@ def process_and_save_media(
     source: Optional[str],
     category_hints: Optional[str],
     description: Optional[str] = None,
+    explicit_date: Optional[Union[datetime, str]] = None,
+    booru_date: Optional[Union[datetime, str]] = None,
+    sidecar_date: Optional[Union[datetime, str]] = None,
+    client_date: Optional[Union[datetime, str]] = None,
 ) -> "MediaResponse":
     """Hash-check, thumbnail generation, DB insert, tag/album linking, and cache
     invalidation for a media file that is already on disk at *file_path*.
@@ -602,6 +625,11 @@ def process_and_save_media(
     Raises HTTPException 409 on duplicate hash.  Does NOT delete file_path on
     error. Callers are responsible for cleanup of files they created.
     """
+    if explicit_date is not None:
+        from ..utils.date_extractor import parse_explicit_custom_date
+        if parse_explicit_custom_date(explicit_date) is None:
+            raise HTTPException(status_code=422, detail="Invalid custom_date format")
+
     file_hash = calculate_file_hash(file_path)
 
     existing = db.query(Media).filter(Media.hash == file_hash).first()
@@ -629,62 +657,85 @@ def process_and_save_media(
     relative_path = file_path.relative_to(settings.BASE_DIR)
     relative_thumb = thumbnail_path.relative_to(settings.BASE_DIR) if thumbnail_generated else None
 
-    media = Media(
-        filename=unique_filename,
-        path=str(relative_path),
-        transcoded_path=metadata.get("transcoded_path"),
-        thumbnail_path=str(relative_thumb) if relative_thumb else None,
-        hash=file_hash,
-        file_type=metadata["file_type"],
-        mime_type=metadata["mime_type"],
-        file_size=metadata["file_size"],
-        width=metadata["width"],
-        height=metadata["height"],
-        duration=metadata["duration"],
-        rating=rating,
-        source=source if source else None,
-        description=description if description else None,
-    )
+    committed = False
+    try:
+        from ..utils.date_extractor import resolve_custom_date
+        resolved_custom_date, _origin = resolve_custom_date(
+            file_path=file_path,
+            explicit_date=explicit_date,
+            booru_date=booru_date,
+            sidecar_date=sidecar_date,
+            client_date=client_date,
+        )
 
-    tag_ids_to_update = []
-    if tags:
-        tag_list = [t.strip() for t in tags.split() if t.strip()]
-        parsed_hints = None
-        if category_hints:
+        media = Media(
+            filename=unique_filename,
+            path=str(relative_path),
+            transcoded_path=metadata.get("transcoded_path"),
+            thumbnail_path=str(relative_thumb) if relative_thumb else None,
+            hash=file_hash,
+            file_type=metadata["file_type"],
+            mime_type=metadata["mime_type"],
+            file_size=metadata["file_size"],
+            width=metadata["width"],
+            height=metadata["height"],
+            duration=metadata["duration"],
+            rating=rating,
+            source=source if source else None,
+            description=description if description else None,
+            custom_date=resolved_custom_date,
+        )
+
+        tag_ids_to_update = []
+        if tags:
+            tag_list = [t.strip() for t in tags.split() if t.strip()]
+            parsed_hints = None
+            if category_hints:
+                try:
+                    parsed_hints = json.loads(category_hints)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            media.tags = get_or_create_tags(db, tag_list, category_hints=parsed_hints)
+            tag_ids_to_update = [tag.id for tag in media.tags]
+            escalated = get_escalated_rating(media.rating, media.tags)
+            if escalated and media.rating != escalated:
+                media.rating = escalated
+            logger.debug(f"Tags added: {tag_list}")
+
+        a_ids = []
+        if album_ids:
             try:
-                parsed_hints = json.loads(category_hints)
-            except (json.JSONDecodeError, TypeError):
-                pass
-        media.tags = get_or_create_tags(db, tag_list, category_hints=parsed_hints)
-        tag_ids_to_update = [tag.id for tag in media.tags]
-        escalated = get_escalated_rating(media.rating, media.tags)
-        if escalated and media.rating != escalated:
-            media.rating = escalated
-        logger.debug(f"Tags added: {tag_list}")
+                a_ids = [
+                    int(id_str.strip())
+                    for id_str in album_ids.split(",")
+                    if id_str.strip().isdigit()
+                ]
+            except Exception as e:
+                logger.error(f"Error parsing album_ids: {e}")
 
-    a_ids = []
-    if album_ids:
-        try:
-            a_ids = [
-                int(id_str.strip())
-                for id_str in album_ids.split(",")
-                if id_str.strip().isdigit()
-            ]
-        except Exception as e:
-            logger.error(f"Error parsing album_ids: {e}")
-
-    db.add(media)
-    db.commit()
-    db.refresh(media)
-
-    if tag_ids_to_update:
-        update_tag_counts(db, tag_ids_to_update)
+        db.add(media)
         db.commit()
+        committed = True
+        db.refresh(media)
 
-    if a_ids:
-        set_media_albums(db, media.id, a_ids)
+        if tag_ids_to_update:
+            update_tag_counts(db, tag_ids_to_update)
+            db.commit()
 
-    db.refresh(media)
+        if a_ids:
+            set_media_albums(db, media.id, a_ids)
+
+        db.refresh(media)
+    except Exception:
+        if not committed:
+            db.rollback()
+            if thumbnail_generated and thumbnail_path.exists():
+                thumbnail_path.unlink(missing_ok=True)
+            if metadata.get("transcoded_path"):
+                t_path = settings.BASE_DIR / metadata["transcoded_path"]
+                if t_path.exists():
+                    t_path.unlink(missing_ok=True)
+        raise
 
     logger.info(f"Media saved: ID={media.id}, filename={unique_filename}")
 
@@ -1492,6 +1543,7 @@ async def upload_media(
     source: Optional[str] = Form(None),
     category_hints: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
+    custom_date: Optional[str] = Form(None),
     current_user: User = Depends(require_admin_mode),
     db: Session = Depends(get_db)
 ):
@@ -1546,12 +1598,11 @@ async def upload_media(
                 source=source,
                 category_hints=category_hints,
                 description=description,
+                explicit_date=custom_date,
             )
         except HTTPException as e:
-            if e.status_code == 409:
-                # Duplicate: clean up only if it was a fresh upload (not a scan)
-                if not scanned_path and file_path.exists():
-                    file_path.unlink(missing_ok=True)
+            if not scanned_path and file_path.exists():
+                file_path.unlink(missing_ok=True)
             raise
 
     except HTTPException:
@@ -1594,6 +1645,20 @@ async def update_media(
         media.description_enlarged = updates.description_enlarged
 
     sync_description_enlarged(media)
+
+    custom_date_changed = False
+    if 'custom_date' in updates.model_fields_set:
+        old_custom_date = media.custom_date
+        if updates.custom_date is None or str(updates.custom_date).strip() == "":
+            media.custom_date = media.uploaded_at
+        else:
+            from ..utils.date_extractor import parse_explicit_custom_date
+            parsed = parse_explicit_custom_date(updates.custom_date)
+            if parsed is None:
+                raise HTTPException(status_code=422, detail="Invalid custom_date format")
+            media.custom_date = parsed
+        if old_custom_date != media.custom_date:
+            custom_date_changed = True
     
     affected_tag_ids = []
     if updates.tags is not None:
@@ -1653,6 +1718,9 @@ async def update_media(
 
         if media.parent_id:
             invalidate_media_item_cache(media.parent_id)
+
+        if custom_date_changed:
+            invalidate_media_cache()
     else:
         invalidate_media_cache()
         invalidate_tag_cache()
@@ -2209,6 +2277,7 @@ async def finalize_chunked_upload(
     source: Optional[str] = Form(None),
     category_hints: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
+    custom_date: Optional[str] = Form(None),
     current_user: User = Depends(require_admin_mode),
     db: Session = Depends(get_db)
 ):
@@ -2263,10 +2332,10 @@ async def finalize_chunked_upload(
                 source=source,
                 category_hints=category_hints,
                 description=description,
+                explicit_date=custom_date,
             )
         except HTTPException as e:
-            if e.status_code == 409:
-                file_path.unlink(missing_ok=True)
+            file_path.unlink(missing_ok=True)
             raise
 
     except HTTPException:

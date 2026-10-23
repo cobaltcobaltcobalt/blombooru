@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
 from .enums import (ApiKeyPermissionEnum, FileTypeEnum, RatingEnum,
                     TagCategoryEnum)
@@ -54,6 +54,7 @@ class MediaUpdate(BaseModel):
     description: Optional[str] = None
     description_enlarged: Optional[bool] = None
     parent_id: Optional[int] = None
+    custom_date: Optional[Union[datetime, str]] = None
 
 class MediaResponse(MediaBase):
     id: int
@@ -69,6 +70,7 @@ class MediaResponse(MediaBase):
     height: Optional[int]
     duration: Optional[float]
     uploaded_at: datetime
+    custom_date: Optional[datetime] = None
     is_shared: bool
     share_uuid: Optional[str]
     share_language: Optional[str] = None
@@ -80,6 +82,12 @@ class MediaResponse(MediaBase):
     tags: List[TagResponse] = []
     
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="after")
+    def ensure_custom_date(self) -> "MediaResponse":
+        if self.custom_date is None and self.uploaded_at is not None:
+            self.custom_date = self.uploaded_at
+        return self
 
 class MediaDetailResponse(MediaResponse):
     @computed_field
@@ -109,6 +117,7 @@ class SharedMediaResponse(MediaBase):
     height: Optional[int]
     duration: Optional[float]
     uploaded_at: datetime
+    custom_date: Optional[datetime] = None
     is_shared: bool
     share_uuid: Optional[str]
     share_language: Optional[str] = None
@@ -117,6 +126,12 @@ class SharedMediaResponse(MediaBase):
     tags: List[SharedTagResponse] = []
     
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="after")
+    def ensure_custom_date(self) -> "SharedMediaResponse":
+        if self.custom_date is None and self.uploaded_at is not None:
+            self.custom_date = self.uploaded_at
+        return self
 
 class UserCreate(BaseModel):
     username: str
@@ -394,6 +409,7 @@ class UploadSessionItemUpdate(BaseModel):
     description: Optional[str] = None
     album_ids: Optional[List[int]] = None
     suggested_album_path: Optional[str] = None
+    custom_date: Optional[str] = None
 
 class UploadSessionAddUntrackedRequest(BaseModel):
     file_path: str
@@ -405,6 +421,7 @@ class UploadSessionAddUntrackedRequest(BaseModel):
     category_hints: Optional[str] = None
     user_assigned_tags: Optional[str] = None
     base_description: Optional[str] = None
+    client_date: Optional[str] = None
 
 class AlbumPathSegment(BaseModel):
     name: str
@@ -435,6 +452,10 @@ class UploadSessionItem(BaseModel):
     folder_album_custom_path: Optional[str] = None
     is_duplicate: bool = False
     duplicate_of: Optional[str] = None
+    custom_date: Optional[str] = None
+    custom_date_origin: Optional[str] = None
+    custom_date_auto: Optional[str] = None
+    custom_date_auto_origin: Optional[str] = None
 
 class PendingTagEntity(BaseModel):
     name: str

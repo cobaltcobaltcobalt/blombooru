@@ -128,6 +128,7 @@ class BulkUpdateRequest(BaseModel):
     suggested_album_path: Optional[str] = None
     add_tags: Optional[List[Union[str, ProposedTag]]] = None
     remove_tag_names: Optional[List[str]] = None
+    custom_date: Optional[str] = None
 
 @router.post("/sessions")
 async def create_upload_session(
@@ -196,6 +197,7 @@ def _process_and_stage_item(
     base_description: Optional[str],
     db: Session,
     folder_mapping_mode: Optional[str] = "use_root",
+    client_date: Optional[str] = None,
 ) -> dict:
     thumbs_dir = session_dir / "thumbs"
     thumbs_dir.mkdir(parents=True, exist_ok=True)
@@ -421,6 +423,13 @@ def _process_and_stage_item(
     if suggested_album_path:
         suggested_album_segments = resolve_album_path(db, suggested_album_path)
 
+    from ..utils.date_extractor import resolve_custom_date
+    resolved_custom_date, date_origin = resolve_custom_date(
+        file_path=file_path,
+        sidecar_date=parsed.date if parsed else None,
+        client_date=client_date,
+    )
+
     item_data = {
         "item_id": item_id,
         "filename": clean_filename,
@@ -445,6 +454,10 @@ def _process_and_stage_item(
         "folder_album_removed": False,
         "folder_album_custom_path": None,
         "metadata_source": metadata_source,
+        "custom_date": resolved_custom_date.isoformat(),
+        "custom_date_origin": date_origin,
+        "custom_date_auto": resolved_custom_date.isoformat(),
+        "custom_date_auto_origin": date_origin,
     }
 
     meta.setdefault("items", {})[item_id] = item_data
@@ -466,6 +479,7 @@ async def upload_files_to_session(
     category_hints: Optional[str] = Form(None),
     user_assigned_tags: Optional[str] = Form(None),
     base_description: Optional[str] = Form(None),
+    client_date: Optional[str] = Form(None),
     current_user: User = Depends(require_admin_mode),
     db: Session = Depends(get_db),
 ):
@@ -513,6 +527,7 @@ async def upload_files_to_session(
             user_assigned_tags=user_assigned_tags,
             base_description=base_description,
             db=db,
+            client_date=client_date,
         )
 
 @router.post("/sessions/{session_id}/untracked-files")
@@ -560,6 +575,7 @@ async def add_untracked_file_to_session(
             user_assigned_tags=request.user_assigned_tags,
             base_description=request.base_description,
             db=db,
+            client_date=request.client_date,
         )
 
 @router.get("/sessions/{session_id}/items/{item_id}/thumbnail")
@@ -704,6 +720,30 @@ async def update_staged_item(
                 item["suggested_album_path"] = update.suggested_album_path
                 item["suggested_album_segments"] = resolve_album_path(db, update.suggested_album_path)
 
+        if "custom_date" in fields_set:
+            if update.custom_date is not None and str(update.custom_date).strip() != "":
+                from ..utils.date_extractor import parse_explicit_custom_date
+                parsed_dt = parse_explicit_custom_date(update.custom_date)
+                if parsed_dt is None:
+                    raise HTTPException(status_code=422, detail="Invalid custom_date format")
+                item["custom_date"] = parsed_dt.isoformat()
+                item["custom_date_origin"] = "explicit"
+            else:
+                auto_date = item.get("custom_date_auto")
+                auto_origin = item.get("custom_date_auto_origin")
+                if auto_date:
+                    item["custom_date"] = auto_date
+                    item["custom_date_origin"] = auto_origin or "default"
+                else:
+                    from ..utils.date_extractor import resolve_custom_date
+                    raw_path = (session_dir / "raw" / item.get("staged_filename")) if item.get("staged_filename") else None
+                    if not raw_path or not raw_path.exists():
+                        source_p = item.get("source_path")
+                        raw_path = Path(source_p) if source_p and Path(source_p).exists() else None
+                    resolved_dt, date_origin = resolve_custom_date(file_path=raw_path)
+                    item["custom_date"] = resolved_dt.isoformat()
+                    item["custom_date_origin"] = date_origin
+
     if update.tags is not None:
         previous_staged_tags = list(item.get("tags", []))
         other_items = {k: v for k, v in meta.get("items", {}).items() if k != item_id}
@@ -767,9 +807,38 @@ async def bulk_update_staged_items(
         target_ids = set(req.item_ids)
         bulk_fields_set = req.model_fields_set if hasattr(req, "model_fields_set") else getattr(req, "__fields_set__", set())
 
+        parsed_bulk_custom_date = None
+        has_custom_date_update = "custom_date" in bulk_fields_set
+        if has_custom_date_update:
+            if req.custom_date is not None and str(req.custom_date).strip() != "":
+                from ..utils.date_extractor import parse_explicit_custom_date
+                parsed_bulk_custom_date = parse_explicit_custom_date(req.custom_date)
+                if parsed_bulk_custom_date is None:
+                    raise HTTPException(status_code=422, detail="Invalid custom_date format")
+
         for item_id, item in items.items():
             if item_id not in target_ids:
                 continue
+
+            if has_custom_date_update:
+                if parsed_bulk_custom_date is not None:
+                    item["custom_date"] = parsed_bulk_custom_date.isoformat()
+                    item["custom_date_origin"] = "explicit"
+                else:
+                    auto_date = item.get("custom_date_auto")
+                    auto_origin = item.get("custom_date_auto_origin")
+                    if auto_date:
+                        item["custom_date"] = auto_date
+                        item["custom_date_origin"] = auto_origin or "default"
+                    else:
+                        from ..utils.date_extractor import resolve_custom_date
+                        raw_path = (session_dir / "raw" / item.get("staged_filename")) if item.get("staged_filename") else None
+                        if not raw_path or not raw_path.exists():
+                            source_p = item.get("source_path")
+                            raw_path = Path(source_p) if source_p and Path(source_p).exists() else None
+                        resolved_dt, date_origin = resolve_custom_date(file_path=raw_path)
+                        item["custom_date"] = resolved_dt.isoformat()
+                        item["custom_date_origin"] = date_origin
 
             if req.rating is not None:
                 item["rating"] = req.rating.value
@@ -1331,6 +1400,12 @@ async def commit_upload_session(
                 rel_path = dest_path.relative_to(settings.BASE_DIR)
                 rel_thumb = thumb_dest_path.relative_to(settings.BASE_DIR) if thumb_gen else None
 
+                item_cdate_str = item.get("custom_date")
+                parsed_cdate = None
+                if item_cdate_str:
+                    from ..utils.date_extractor import parse_explicit_custom_date
+                    parsed_cdate = parse_explicit_custom_date(item_cdate_str)
+
                 # Create Media DB record
                 media = Media(
                     filename=unique_filename,
@@ -1347,6 +1422,7 @@ async def commit_upload_session(
                     rating=RatingEnum.normalize(item.get("rating")) or RatingEnum.safe,
                     source=item.get("source") or None,
                     description=item.get("description") or None,
+                    custom_date=parsed_cdate,
                 )
 
                 # Link tags
