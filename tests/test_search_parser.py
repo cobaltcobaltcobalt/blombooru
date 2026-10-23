@@ -6,7 +6,8 @@ from sqlalchemy.orm import sessionmaker
 
 from backend.app.database import Base
 from backend.app.enums import FileTypeEnum, RatingEnum, TagCategoryEnum
-from backend.app.models import Album, Media, Tag, blombooru_media_tags
+from backend.app.models import Album, Media, Tag
+from backend.app.utils.media_sort import get_media_sort_clauses
 from backend.app.utils.search_parser import (apply_search_criteria,
                                             canonicalize_query,
                                             fold_condition_items,
@@ -56,10 +57,28 @@ class TestSearchParser(unittest.TestCase):
         folded = fold_condition_items(items)
         self.assertEqual(folded, ["<=2024-06-01"])
 
+    def test_fold_condition_items_custom_date_subsumption(self):
+        items = ["2024-01-01", "<=2024-06-01"]
+        folded = fold_condition_items(items, key="custom_date")
+        self.assertEqual(folded, ["<=2024-06-01"])
+
+    def test_canonicalize_custom_date(self):
+        canonical = canonicalize_query("custom_date:2024-01-01 custom_date:<=2024-06-01")
+        self.assertEqual(canonical, "custom_date:<=2024-06-01")
+
+    def test_canonicalize_custom_age(self):
+        canonical = canonicalize_query("custom_age:2w custom_age:<=1mo")
+        self.assertEqual(canonical, "custom_age:<=1mo")
+
     def test_fold_condition_items_age_subsumption(self):
         # age:2w,<=1mo -> <=1mo
         items = ["2w", "<=1mo"]
         folded = fold_condition_items(items)
+        self.assertEqual(folded, ["<=1mo"])
+
+    def test_fold_condition_items_custom_age_subsumption(self):
+        items = ["2w", "<=1mo"]
+        folded = fold_condition_items(items, key="custom_age")
         self.assertEqual(folded, ["<=1mo"])
 
     def test_fold_condition_items_operator_subsumption(self):
@@ -253,7 +272,8 @@ class TestSearchParserDBIntegration(unittest.TestCase):
             duration=None,
             rating=RatingEnum.safe,
             uploaded_at=now - timedelta(days=5),
-            source="https://twitter.com/post1"
+            custom_date=datetime(2021, 5, 10, 12, 0, 0),
+            source="https://source-a.example.com/post1"
         )
         self.m1.tags.extend([self.t_general1, self.t_artist])
         self.m1.albums.append(self.album1)
@@ -270,7 +290,8 @@ class TestSearchParserDBIntegration(unittest.TestCase):
             duration=None,
             rating=RatingEnum.questionable,
             uploaded_at=now - timedelta(days=2),
-            source="https://pixiv.net/art2"
+            custom_date=datetime(2023, 8, 20, 15, 0, 0),
+            source="https://source-b.example.com/art2"
         )
         self.m2.tags.extend([self.t_general1, self.t_general2, self.t_general3, self.t_char])
         self.m2.albums.append(self.album1)
@@ -287,6 +308,7 @@ class TestSearchParserDBIntegration(unittest.TestCase):
             duration=45.5,
             rating=RatingEnum.explicit,
             uploaded_at=now - timedelta(hours=1),
+            custom_date=datetime(2020, 1, 1, 9, 0, 0),
             source=None
         )
         self.m3.tags.extend([self.t_char])
@@ -304,6 +326,7 @@ class TestSearchParserDBIntegration(unittest.TestCase):
             duration=None,
             rating=RatingEnum.safe,
             uploaded_at=now - timedelta(days=10),
+            custom_date=datetime(2024, 12, 25, 18, 0, 0),
             source="https://example.com/anim",
             parent_id=1
         )
@@ -321,6 +344,7 @@ class TestSearchParserDBIntegration(unittest.TestCase):
             duration=None,
             rating=RatingEnum.safe,
             uploaded_at=now - timedelta(days=20),
+            custom_date=datetime(2019, 6, 15, 8, 0, 0),
             source=None
         )
 
@@ -388,8 +412,8 @@ class TestSearchParserDBIntegration(unittest.TestCase):
         self.assertNotIn(2, ids)
 
     def test_source_filter_with_none_and_prefix(self):
-        # Query: source:none,twitter
-        parsed = parse_search_query("source:none,twitter")
+        # Query: source:none,source-a
+        parsed = parse_search_query("source:none,source-a")
         q = apply_search_criteria(self.db.query(Media), parsed, self.db)
         ids = [m.id for m in q.all()]
         self.assertIn(1, ids)
@@ -489,6 +513,130 @@ class TestSearchParserDBIntegration(unittest.TestCase):
         self.assertIn(5, ids_lt)
         self.assertNotIn(2, ids_lt)
         self.assertNotIn(3, ids_lt)
+
+    def test_custom_date_ranges_and_comparisons(self):
+        # Custom dates: m5 (2019-06-15), m3 (2020-01-01), m1 (2021-05-10), m2 (2023-08-20), m4 (2024-12-25)
+
+        # 1. Exact match
+        parsed_eq = parse_search_query("custom_date:2023-08-20")
+        q_eq = apply_search_criteria(self.db.query(Media), parsed_eq, self.db)
+        self.assertEqual([m.id for m in q_eq.all()], [2])
+
+        # 2. Date qualifier does not match custom date
+        parsed_date_eq = parse_search_query("date:2023-08-20")
+        q_date_eq = apply_search_criteria(self.db.query(Media), parsed_date_eq, self.db)
+        self.assertEqual([m.id for m in q_date_eq.all()], [])
+
+        # 3. Greater than or equal
+        parsed_ge = parse_search_query("custom_date:>=2023-01-01")
+        q_ge = apply_search_criteria(self.db.query(Media), parsed_ge, self.db)
+        ids_ge = [m.id for m in q_ge.all()]
+        self.assertIn(2, ids_ge)
+        self.assertIn(4, ids_ge)
+        self.assertNotIn(1, ids_ge)
+        self.assertNotIn(3, ids_ge)
+        self.assertNotIn(5, ids_ge)
+
+        # 4. Less than
+        parsed_lt = parse_search_query("custom_date:<2021-01-01")
+        q_lt = apply_search_criteria(self.db.query(Media), parsed_lt, self.db)
+        ids_lt = [m.id for m in q_lt.all()]
+        self.assertIn(3, ids_lt)
+        self.assertIn(5, ids_lt)
+        self.assertNotIn(1, ids_lt)
+        self.assertNotIn(2, ids_lt)
+        self.assertNotIn(4, ids_lt)
+
+        # 5. Range between 2020-01-01 and 2022-01-01
+        parsed_range = parse_search_query("custom_date:2020-01-01..2022-01-01")
+        q_range = apply_search_criteria(self.db.query(Media), parsed_range, self.db)
+        ids_range = [m.id for m in q_range.all()]
+        self.assertIn(1, ids_range)
+        self.assertIn(3, ids_range)
+        self.assertNotIn(2, ids_range)
+        self.assertNotIn(4, ids_range)
+        self.assertNotIn(5, ids_range)
+
+        # 6. Negated custom date
+        parsed_neg = parse_search_query("-custom_date:>=2023-01-01")
+        q_neg = apply_search_criteria(self.db.query(Media), parsed_neg, self.db)
+        ids_neg = [m.id for m in q_neg.all()]
+        self.assertIn(1, ids_neg)
+        self.assertIn(3, ids_neg)
+        self.assertIn(5, ids_neg)
+        self.assertNotIn(2, ids_neg)
+        self.assertNotIn(4, ids_neg)
+
+    def test_custom_age_ranges_and_comparisons(self):
+        # Upload dates are all <= 20 days old.
+        # Custom dates are:
+        # m4: 2024-12-25 (~2 years ago)
+        # m2: 2023-08-20 (~3 years ago)
+        # m1: 2021-05-10 (~5 years ago)
+        # m3: 2020-01-01 (~6 years ago)
+        # m5: 2019-06-15 (~7 years ago)
+
+        # 1. custom_age:<30d matches nothing, whereas age:<30d matches all
+        parsed_custom_lt30d = parse_search_query("custom_age:<30d")
+        q_custom_lt30d = apply_search_criteria(self.db.query(Media), parsed_custom_lt30d, self.db)
+        self.assertEqual([m.id for m in q_custom_lt30d.all()], [])
+
+        parsed_age_lt30d = parse_search_query("age:<30d")
+        q_age_lt30d = apply_search_criteria(self.db.query(Media), parsed_age_lt30d, self.db)
+        self.assertEqual(len(q_age_lt30d.all()), 5)
+
+        # 2. custom_age:>1y matches all media
+        parsed_custom_gt1y = parse_search_query("custom_age:>1y")
+        q_custom_gt1y = apply_search_criteria(self.db.query(Media), parsed_custom_gt1y, self.db)
+        self.assertEqual(len(q_custom_gt1y.all()), 5)
+
+        # 3. age:>1y matches no media (since all were uploaded within 20 days)
+        parsed_age_gt1y = parse_search_query("age:>1y")
+        q_age_gt1y = apply_search_criteria(self.db.query(Media), parsed_age_gt1y, self.db)
+        self.assertEqual([m.id for m in q_age_gt1y.all()], [])
+
+        # 4. Negated custom age
+        parsed_neg = parse_search_query("-custom_age:>1y")
+        q_neg = apply_search_criteria(self.db.query(Media), parsed_neg, self.db)
+        self.assertEqual([m.id for m in q_neg.all()], [])
+
+    def test_order_by_custom_date(self):
+        # Custom dates: m4 (2024-12-25), m2 (2023-08-20), m1 (2021-05-10), m3 (2020-01-01), m5 (2019-06-15)
+        # Upload dates: m3 (1h ago), m2 (2d ago), m1 (5d ago), m4 (10d ago), m5 (20d ago)
+
+        # Descending custom date
+        parsed_desc = parse_search_query("order:custom_date_desc")
+        q_desc = apply_search_criteria(self.db.query(Media), parsed_desc, self.db)
+        self.assertEqual([m.id for m in q_desc.all()], [4, 2, 1, 3, 5])
+
+        # Default order:custom_date is descending
+        parsed_def = parse_search_query("order:custom_date")
+        q_def = apply_search_criteria(self.db.query(Media), parsed_def, self.db)
+        self.assertEqual([m.id for m in q_def.all()], [4, 2, 1, 3, 5])
+
+        # Ascending custom date
+        parsed_asc = parse_search_query("order:custom_date_asc")
+        q_asc = apply_search_criteria(self.db.query(Media), parsed_asc, self.db)
+        self.assertEqual([m.id for m in q_asc.all()], [5, 3, 1, 2, 4])
+
+        # Ensure order:date_desc strictly sorts by uploaded_at, not custom_date
+        parsed_date_desc = parse_search_query("order:date_desc")
+        q_date_desc = apply_search_criteria(self.db.query(Media), parsed_date_desc, self.db)
+        self.assertEqual([m.id for m in q_date_desc.all()], [3, 2, 1, 4, 5])
+
+        parsed_date_asc = parse_search_query("order:date_asc")
+        q_date_asc = apply_search_criteria(self.db.query(Media), parsed_date_asc, self.db)
+        self.assertEqual([m.id for m in q_date_asc.all()], [5, 4, 1, 2, 3])
+
+    def test_get_media_sort_clauses_custom_date(self):
+        clauses_desc = get_media_sort_clauses("custom_date", "desc")
+        self.assertEqual(clauses_desc[0].element, Media.custom_date)
+
+        clauses_asc = get_media_sort_clauses("custom_date", "asc")
+        self.assertEqual(clauses_asc[0].element, Media.custom_date)
+
+        clauses_date = get_media_sort_clauses("date", "desc")
+        self.assertEqual(clauses_date[0].element, Media.uploaded_at)
 
     def test_parent_and_child_filters(self):
         # m4 has parent_id=1. m1 has children (m4). Others have no parent/children.

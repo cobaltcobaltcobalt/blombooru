@@ -1203,10 +1203,13 @@ TagAutocomplete.QUALIFIERS = {
     duration: ['>30', '<=60', '10..60', '>0', '0'],
     filesize: ['>5mb', '<1mb', '1mb..5mb', '<=10mb', '>500kb'],
     date: ['>=2024-01-01', '2024-01-01', '2024-01-01..2024-12-31', '<2023-01-01'],
+    custom_date: ['>=2024-01-01', '2024-01-01', '2024-01-01..2024-12-31', '<2023-01-01'],
     age: ['<24h', '<7d', '1w..1mo', '>1y'],
+    custom_age: ['<24h', '<7d', '1w..1mo', '>1y'],
     md5: ['<checksum>'],
     order: [
         'id_desc', 'id_asc', 'date_desc', 'date_asc',
+        'custom_date_desc', 'custom_date_asc',
         'filesize_desc', 'filesize_asc', 'width_desc', 'height_desc',
         'mpixels_desc', 'duration_desc', 'duration_asc',
         'landscape', 'portrait', 'rating_asc', 'rating_desc',
