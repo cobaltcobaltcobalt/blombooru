@@ -33,6 +33,15 @@ class CustomSelect {
         };
         this.element.addEventListener('keydown', this._keydownHandler);
 
+        if (this.trigger) {
+            this.trigger.setAttribute('role', 'combobox');
+            this.trigger.setAttribute('aria-haspopup', 'listbox');
+            this.trigger.setAttribute('aria-expanded', 'false');
+        }
+        if (this.dropdown) {
+            this.dropdown.setAttribute('role', 'listbox');
+        }
+
         this.dropdown.addEventListener('wheel', (e) => {
             e.stopPropagation();
         });
@@ -47,7 +56,11 @@ class CustomSelect {
 
             this._bindOptionEvents(newOption);
 
-            if (newOption.classList.contains('selected') || newOption.dataset.value === this.selectedValue) {
+            const isSelected = newOption.classList.contains('selected') || newOption.dataset.value === this.selectedValue;
+            newOption.setAttribute('role', 'option');
+            newOption.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+
+            if (isSelected) {
                 newOption.classList.add('selected');
                 this.selectedValue = newOption.dataset.value;
                 this.element.dataset.value = newOption.dataset.value;
@@ -82,6 +95,9 @@ class CustomSelect {
         });
 
         this.element.classList.add('open');
+        if (this.trigger) {
+            this.trigger.setAttribute('aria-expanded', 'true');
+        }
         this.focusedIndex = -1;
 
         if (this.dropdown) {
@@ -108,6 +124,9 @@ class CustomSelect {
 
     close() {
         this.element.classList.remove('open');
+        if (this.trigger) {
+            this.trigger.setAttribute('aria-expanded', 'false');
+        }
         this.focusedIndex = -1;
         this.clearFocused();
         if (this.dropdown) {
@@ -118,9 +137,13 @@ class CustomSelect {
 
     selectOption(option, triggerEvent = true) {
         const options = this.dropdown.querySelectorAll('.custom-select-option');
-        options.forEach(opt => opt.classList.remove('selected'));
+        options.forEach(opt => {
+            opt.classList.remove('selected');
+            opt.setAttribute('aria-selected', 'false');
+        });
 
         option.classList.add('selected');
+        option.setAttribute('aria-selected', 'true');
         this.selectedValue = option.dataset.value;
         this.element.dataset.value = this.selectedValue;
         this.valueDisplay.textContent = option.dataset.display || option.textContent;

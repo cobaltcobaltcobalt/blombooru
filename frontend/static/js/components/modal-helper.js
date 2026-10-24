@@ -96,13 +96,16 @@ class ModalHelper {
         modal.id = this.options.id;
         modal.className = 'age-verification-overlay';
         modal.style.display = 'none';
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+        modal.setAttribute('aria-labelledby', `${this.options.id}-title`);
 
         const iconHTML = this.options.showIcon ? this.getIconSVG(this.options.type) : '';
 
         modal.innerHTML = `
             <div class="surface border-2 ${this.getBorderClass(this.options.type)} p-4 pb-2 md:p-8 md:pb-4 mx-1 md:mx-0 ${this.options.maxWidth || 'max-w-lg'} w-full text-center">
                 ${iconHTML}
-                <h2 class="text-xl font-bold mb-4 ${this.getTitleClass(this.options.type)}">${this.options.title}</h2>
+                <h2 id="${this.options.id}-title" class="text-xl font-bold mb-4 ${this.getTitleClass(this.options.type)}">${this.options.title}</h2>
                 <div class="text-base mb-6 text">${this.options.message}</div>
                 <div class="flex gap-4 mt-2 md:mt-4 justify-center">
                     <button id="${this.options.confirmId}" class="px-6 py-3 ${this.getConfirmButtonClass(this.options.type)} font-bold text-sm cursor-pointer">
@@ -161,8 +164,14 @@ class ModalHelper {
             this.createModal();
         }
 
+        this._previousActiveElement = document.activeElement;
         this.modalElement.style.display = 'flex';
         this.isVisible = true;
+
+        const confirmBtn = this.modalElement.querySelector(`#${CSS.escape(this.options.confirmId)}`);
+        if (confirmBtn) {
+            confirmBtn.focus();
+        }
 
         // Blur target element if specified
         if (this.options.blurTarget) {
@@ -186,6 +195,13 @@ class ModalHelper {
                 if (target) {
                     target.classList.remove('media-blurred');
                 }
+            }
+
+            if (this._previousActiveElement && typeof this._previousActiveElement.focus === 'function') {
+                try {
+                    this._previousActiveElement.focus();
+                } catch {}
+                this._previousActiveElement = null;
             }
         }
 
