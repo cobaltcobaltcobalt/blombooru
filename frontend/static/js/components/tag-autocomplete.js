@@ -240,12 +240,37 @@ class TagAutocomplete {
         return response.json();
     }
 
-    showSuggestions(suggestions, query) {
-        const hasResults = suggestions.length > 0;
+    // Excluding the tag currently being edited
+    getExistingTags() {
+        const existing = new Set();
+        if (!this.options.multipleValues) return existing;
 
+        const value = this.getInputValue();
+        const cursorPos = this.getCursorPosition();
+        const re = /\S+/g;
+        let m;
+        while ((m = re.exec(value)) !== null) {
+            const start = m.index;
+            const end = start + m[0].length;
+            if (start < cursorPos && cursorPos <= end) continue;
+            const name = m[0].replace(/^[~-]/, '').toLowerCase();
+            if (name) existing.add(name);
+        }
+        return existing;
+    }
+
+    showSuggestions(suggestions, query) {
         const isQualifier = suggestions.some(t => t.is_qualifier);
         const normalizedQuery = query ? query.toLowerCase().replace(/ /g, '_') : '';
         const exactMatchExists = suggestions.some(t => t.name === normalizedQuery || (t.is_alias && t.alias_name === normalizedQuery));
+
+        if (!isQualifier) {
+            const existing = this.getExistingTags();
+            if (existing.size > 0) {
+                suggestions = suggestions.filter(t => !existing.has(String(t.name).toLowerCase()));
+            }
+        }
+        const hasResults = suggestions.length > 0;
         const hasCreate = !isQualifier && this.options.allowCreate && query && query.length > 0 && !exactMatchExists;
 
         if (!hasResults && !hasCreate) {
