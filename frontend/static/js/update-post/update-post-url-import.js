@@ -74,6 +74,11 @@ class UpdatePostUrlImport extends UpdatePostModalBase {
         q('#upm-url-input').addEventListener('paste', () => {
             setTimeout(() => this._fetchBooru(), 100);
         });
+        q('#upm-url-input').addEventListener('input', (e) => {
+            const pasted = ['insertFromPaste', 'insertFromDrop', 'insertReplacementText'].includes(e.inputType)
+                || (e.inputType === 'insertText' && e.data && e.data.length > 1);
+            if (pasted) setTimeout(() => this._fetchBooru(), 100);
+        });
         q('#upm-url-apply').addEventListener('click', () => this._applyFromUrl());
 
         this._registerEscapeHandler(() => this._onBack());

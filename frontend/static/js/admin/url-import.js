@@ -30,6 +30,12 @@ class UrlImporter {
             this.urlInput.addEventListener('paste', () => {
                 setTimeout(() => this.fetchMedia(), 100);
             });
+
+            this.urlInput.addEventListener('input', (e) => {
+                const pasted = ['insertFromPaste', 'insertFromDrop', 'insertReplacementText'].includes(e.inputType)
+                    || (e.inputType === 'insertText' && e.data && e.data.length > 1);
+                if (pasted) setTimeout(() => this.fetchMedia(), 100);
+            });
         }
     }
 
