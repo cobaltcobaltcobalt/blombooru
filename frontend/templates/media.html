@@ -226,6 +226,17 @@ download_icon, share_icon, select_arrow_icon, edit_icon, eye_icon, enlarge_icon,
                                     class="w-full bg px-2 py-1 border text-xs focus:outline-none hover:border-primary transition-colors focus:border-primary"
                                     style="min-height: 1.5rem; white-space: pre-wrap; overflow-wrap: break-word;"></div>
                             </div>
+                            <div class="mb-2 p-2 bg border">
+                                <label class="flex items-center justify-between cursor-pointer select-none">
+                                    <span class="text-xs text font-medium" data-i18n="media.tags.hide_implied_tags">{{ t('media.tags.hide_implied_tags') }}</span>
+                                    <div class="relative">
+                                        <input type="checkbox" id="hide-implied-tags-checkbox" class="sr-only peer">
+                                        <div
+                                            class="w-9 h-5 surface-light transition-colors peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-[var(--primary-text)] after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-[var(--text)] after:border-[var(--surface-light)] after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[var(--primary-color)] peer-checked:after:bg-[var(--primary-text)]">
+                                        </div>
+                                    </div>
+                                </label>
+                            </div>
                             <div id="suggested-tags-section" class="bg p-2 border mb-2" style="display: none;">
                                 <button type="button" id="suggested-tags-toggle"
                                     class="w-full flex justify-between items-center text-left hover:text-primary transition-colors cursor-pointer">

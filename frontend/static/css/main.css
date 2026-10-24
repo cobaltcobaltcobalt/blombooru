@@ -206,6 +206,13 @@ span.checked .filter-check-icon {
     color: var(--success);
 }
 
+#tags-input .implied-tag,
+[contenteditable="true"] .implied-tag {
+    text-decoration: underline dotted var(--info);
+    text-decoration-thickness: 1.5px;
+    text-underline-offset: 3px;
+}
+
 /* Tag suggestion styling */
 .tag-suggestions {
     position: absolute;

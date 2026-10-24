@@ -11,6 +11,9 @@ class MediaViewer extends MediaViewerBase {
         }
         this.tagInputHelper = new TagInputHelper();
         this.originalTags = new Set();
+        this.impliedTagsMap = new Map();
+        this.hiddenImpliedTags = new Set();
+        this.expandedTriggerTags = new Set();
         this.validationTimeout = null;
         this.tooltipHelper = null;
         this.ratingSelect = null;
@@ -78,11 +81,22 @@ class MediaViewer extends MediaViewerBase {
 
             if (this.currentMedia && Array.isArray(this.currentMedia.tags)) {
                 this.originalTags = new Set(this.currentMedia.tags.map(t => (t.name || t).toLowerCase().trim()));
+                this.impliedTagsMap = new Map();
+                this.hiddenImpliedTags = new Set();
+                this.expandedTriggerTags = new Set();
                 for (const tag of this.currentMedia.tags) {
                     const tagName = (tag.name || tag).toLowerCase().trim();
                     if (tagName) {
+                        this.expandedTriggerTags.add(tagName);
+                        if (tag && typeof tag === 'object' && tag.implied) {
+                            this.impliedTagsMap.set(
+                                tagName,
+                                Array.isArray(tag.implied_by) ? tag.implied_by : []
+                            );
+                        }
                         if (this.tagInputHelper) {
                             this.tagInputHelper.tagValidationCache.set(tagName, true);
+                            this.tagInputHelper.tagCategoryCache.set(tagName, tag.category || 'general');
                         }
                         const cat = tag.category || 'general';
                         this.tagCategoryCache.set(tagName, cat);
@@ -90,6 +104,9 @@ class MediaViewer extends MediaViewerBase {
                 }
             } else {
                 this.originalTags = new Set();
+                this.impliedTagsMap = new Map();
+                this.hiddenImpliedTags = new Set();
+                this.expandedTriggerTags = new Set();
             }
             this.renderMedia(this.currentMedia);
             this.renderInfo(this.currentMedia, { isAdmin: app.isAdminMode });
@@ -176,7 +193,44 @@ class MediaViewer extends MediaViewerBase {
                 if (orderA !== orderB) return orderA - orderB;
                 return a.name.localeCompare(b.name);
             });
-            tagsInput.textContent = sortedTags.map(t => t.name).join(' ');
+
+            const hideImpliedCheckbox = this.el('hide-implied-tags-checkbox');
+            const isHideImplied = this.tagInputHelper ? this.tagInputHelper.isHideImpliedEnabled() : false;
+            if (hideImpliedCheckbox) {
+                hideImpliedCheckbox.checked = isHideImplied;
+                hideImpliedCheckbox.onchange = () => {
+                    const checked = hideImpliedCheckbox.checked;
+                    this.tagInputHelper.setHideImpliedEnabled(checked);
+                    this.applyHideImpliedToEditor(checked);
+                };
+            }
+            if (!this._hideImpliedWindowListenerAdded) {
+                this._hideImpliedWindowListenerAdded = true;
+                window.addEventListener('hideImpliedTagsChanged', (e) => {
+                    const enabled = Boolean(e.detail && e.detail.enabled);
+                    const cb = this.el('hide-implied-tags-checkbox');
+                    if (cb && cb.checked !== enabled) {
+                        cb.checked = enabled;
+                    }
+                    this.applyHideImpliedToEditor(enabled);
+                });
+            }
+
+            this.hiddenImpliedTags.clear();
+            if (isHideImplied) {
+                const visibleSorted = [];
+                for (const t of sortedTags) {
+                    const lower = (t.name || '').toLowerCase().trim();
+                    if (this.impliedTagsMap.has(lower)) {
+                        this.hiddenImpliedTags.add(lower);
+                    } else {
+                        visibleSorted.push(t.name);
+                    }
+                }
+                tagsInput.textContent = visibleSorted.join(' ');
+            } else {
+                tagsInput.textContent = sortedTags.map(t => t.name).join(' ');
+            }
             this.validateAndStyleTags();
             this.updateSuggestedTags();
         }
@@ -450,6 +504,59 @@ class MediaViewer extends MediaViewerBase {
         return highlightTags;
     }
 
+    handleImplicationExpanded(impliedByMap, impliedTags) {
+        const hideActive = this.tagInputHelper ? this.tagInputHelper.isHideImpliedEnabled() : false;
+        for (const tagName of (impliedTags || [])) {
+            const lower = tagName.toLowerCase().trim();
+            if (!lower) continue;
+            const groups = (impliedByMap && impliedByMap[lower]) || (impliedByMap && impliedByMap[tagName]) || [];
+            const existingGroups = this.impliedTagsMap.get(lower) || [];
+            const merged = [...existingGroups];
+            for (const g of groups) {
+                if (Array.isArray(g) && !merged.some(eg => JSON.stringify(eg) === JSON.stringify(g))) {
+                    merged.push(g);
+                }
+            }
+            this.impliedTagsMap.set(lower, merged);
+            if (hideActive) {
+                this.hiddenImpliedTags.add(lower);
+            }
+        }
+    }
+
+    async applyHideImpliedToEditor(hide) {
+        const tagsInput = this.el('tags-input');
+        if (!tagsInput || !this.tagInputHelper) return;
+
+        const text = this.tagInputHelper.getPlainTextFromDiv(tagsInput).trim();
+        const visibleTags = text ? text.split(/\s+/).filter(Boolean) : [];
+
+        if (hide) {
+            const remaining = [];
+            for (const t of visibleTags) {
+                const lower = t.toLowerCase().trim();
+                if (this.impliedTagsMap.has(lower)) {
+                    this.hiddenImpliedTags.add(lower);
+                } else {
+                    remaining.push(t);
+                }
+            }
+            tagsInput.textContent = remaining.join(' ');
+        } else {
+            const visibleLower = new Set(visibleTags.map(t => t.toLowerCase().trim()));
+            for (const hiddenLower of this.hiddenImpliedTags) {
+                if (!visibleLower.has(hiddenLower) && this.impliedTagsMap.has(hiddenLower)) {
+                    visibleTags.push(hiddenLower);
+                    visibleLower.add(hiddenLower);
+                }
+            }
+            this.hiddenImpliedTags.clear();
+            tagsInput.textContent = visibleTags.join(' ');
+        }
+
+        await this.validateAndStyleTags();
+    }
+
     setupTagInput() {
         const tagsInput = this.el('tags-input');
         if (!tagsInput) return;
@@ -457,19 +564,29 @@ class MediaViewer extends MediaViewerBase {
         this.tagInputHelper.setupTagInput(tagsInput, 'media-tags-input', {
             onValidate: () => { },
             validationCache: this.tagInputHelper.tagValidationCache,
-            getHighlightTags: (inputElement) => this.getHighlightTags(inputElement)
+            getHighlightTags: (inputElement) => this.getHighlightTags(inputElement),
+            getImpliedTags: () => this.impliedTagsMap,
+            getHiddenImpliedTags: () => this.hiddenImpliedTags,
+            getExpandedTriggers: () => this.expandedTriggerTags,
+            onImplicationExpanded: (impliedByMap, impliedTags) => {
+                this.handleImplicationExpanded(impliedByMap, impliedTags);
+            },
+            isHideImpliedActive: () => this.tagInputHelper.isHideImpliedEnabled()
         });
     }
 
     async validateAndStyleTags() {
         const tagsInput = this.el('tags-input');
-        if (!tagsInput) return;
+        if (!tagsInput || !this.tagInputHelper) return;
+
+        this.tagInputHelper.pruneImpliedTags(tagsInput, this.impliedTagsMap, this.hiddenImpliedTags);
 
         const highlightTags = this.getHighlightTags(tagsInput);
 
         await this.tagInputHelper.validateAndStyleTags(tagsInput, {
             validationCache: this.tagInputHelper.tagValidationCache,
-            highlightTags: highlightTags
+            highlightTags: highlightTags,
+            impliedTags: this.impliedTagsMap
         });
     }
 
@@ -721,13 +838,25 @@ class MediaViewer extends MediaViewerBase {
 
         const currentText = this.tagInputHelper.getPlainTextFromDiv(tagsInput).trim();
         const currentTags = currentText ? currentText.split(/\s+/) : [];
-        const existingTagsSet = new Set(currentTags.map(t => t.toLowerCase()));
+        const existingTagsSet = new Set([
+            ...currentTags.map(t => t.toLowerCase()),
+            ...Array.from(this.hiddenImpliedTags || [])
+        ]);
 
         if (!existingTagsSet.has(tagName.toLowerCase())) {
             currentTags.push(tagName);
             tagsInput.textContent = currentTags.join(' ');
             if (this.tagInputHelper) {
                 this.tagInputHelper.tagValidationCache.set(tagName.toLowerCase().trim(), true);
+                await this.tagInputHelper.expandImplications(tagsInput, {
+                    extraTags: Array.from(this.hiddenImpliedTags || []),
+                    expandedTriggers: this.expandedTriggerTags,
+                    impliedTags: this.impliedTagsMap,
+                    onImplicationExpanded: (impliedByMap, impliedTags) => {
+                        this.handleImplicationExpanded(impliedByMap, impliedTags);
+                    },
+                    hideImplied: this.tagInputHelper.isHideImpliedEnabled()
+                });
             }
             await this.validateAndStyleTags();
             this.updateSuggestedTags();
@@ -1525,12 +1654,43 @@ class MediaViewer extends MediaViewerBase {
 
     async saveTags() {
         const tagsInput = this.el('tags-input');
+        if (tagsInput && this.tagInputHelper) {
+            this.tagInputHelper.pruneImpliedTags(tagsInput, this.impliedTagsMap, this.hiddenImpliedTags);
+            await this.tagInputHelper.expandImplications(tagsInput, {
+                extraTags: Array.from(this.hiddenImpliedTags || []),
+                expandedTriggers: this.expandedTriggerTags,
+                impliedTags: this.impliedTagsMap,
+                onImplicationExpanded: (impliedByMap, impliedTags) => {
+                    this.handleImplicationExpanded(impliedByMap, impliedTags);
+                },
+                hideImplied: this.isHideImpliedEnabled()
+            });
+        }
         const validTags = this.tagInputHelper.getValidTagsFromInput(tagsInput);
+        const seenLower = new Set(validTags.map(t => t.toLowerCase().trim()));
+        const finalTags = [...validTags];
+        for (const hiddenLower of (this.hiddenImpliedTags || [])) {
+            if (!seenLower.has(hiddenLower)) {
+                seenLower.add(hiddenLower);
+                finalTags.push(hiddenLower);
+            }
+        }
+
+        const impliedTagsPayload = {};
+        for (const tag of finalTags) {
+            const lower = tag.toLowerCase().trim();
+            if (this.impliedTagsMap && this.impliedTagsMap.has(lower)) {
+                impliedTagsPayload[lower] = this.impliedTagsMap.get(lower) || [];
+            }
+        }
 
         try {
             await app.apiCall(`/api/media/${this.mediaId}`, {
                 method: 'PATCH',
-                body: JSON.stringify({ tags: validTags })
+                body: JSON.stringify({
+                    tags: finalTags,
+                    implied_tags: impliedTagsPayload
+                })
             });
             location.reload();
         } catch (e) {
