@@ -215,16 +215,13 @@ span.checked .filter-check-icon {
 
 /* Tag suggestion styling */
 .tag-suggestions {
-    position: absolute;
-    z-index: 1000;
+    position: fixed;
+    z-index: 100000 !important;
     background: var(--surface);
     border: 1px solid var(--border);
     border-top: none;
     max-height: 200px;
     overflow-y: auto;
-    top: 100%;
-    left: 0;
-    width: 100%;
 }
 
 .bulk-tag-item:focus-within,

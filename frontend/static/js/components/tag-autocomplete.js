@@ -50,6 +50,10 @@ class TagAutocomplete {
         this.input.addEventListener('keydown', this.onKeydownBound);
         document.addEventListener('click', this.onDocumentClickBound);
 
+        this.onReposition = () => this.positionSuggestions();
+        window.addEventListener('scroll', this.onReposition, true);
+        window.addEventListener('resize', this.onReposition);
+
         if (this.options.enableQualifiers) {
             this._prefetchQualifierExamples();
         }
@@ -307,6 +311,7 @@ class TagAutocomplete {
 
         this.suggestionsEl.innerHTML = html;
         this.suggestionsEl.classList.remove('hidden');
+        this.positionSuggestions();
 
         // Add click handlers
         this.suggestionsEl.querySelectorAll('.tag-suggestion').forEach(el => {
@@ -324,6 +329,29 @@ class TagAutocomplete {
                 }
             });
         });
+    }
+
+    positionSuggestions() {
+        const el = this.suggestionsEl;
+        if (!el || el.classList.contains('hidden')) return;
+
+        const rect = this.input.getBoundingClientRect();
+        const margin = 8;
+        const maxHeight = 200;
+        const spaceBelow = window.innerHeight - rect.bottom - margin;
+        const spaceAbove = rect.top - margin;
+        const openUp = spaceBelow < Math.min(maxHeight, el.scrollHeight) && spaceAbove > spaceBelow;
+
+        el.style.left = `${rect.left}px`;
+        el.style.width = `${rect.width}px`;
+        el.style.maxHeight = `${Math.max(80, Math.min(maxHeight, openUp ? spaceAbove : spaceBelow))}px`;
+        if (openUp) {
+            el.style.top = 'auto';
+            el.style.bottom = `${window.innerHeight - rect.top}px`;
+        } else {
+            el.style.bottom = 'auto';
+            el.style.top = `${rect.bottom}px`;
+        }
     }
 
     hideSuggestions() {
@@ -1173,6 +1201,10 @@ class TagAutocomplete {
         }
         if (this.onDocumentClickBound) {
             document.removeEventListener('click', this.onDocumentClickBound);
+        }
+        if (this.onReposition) {
+            window.removeEventListener('scroll', this.onReposition, true);
+            window.removeEventListener('resize', this.onReposition);
         }
 
         if (this.suggestionsEl && this.suggestionsEl.parentNode) {
