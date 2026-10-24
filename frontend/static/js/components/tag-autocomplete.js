@@ -230,6 +230,56 @@ class TagAutocomplete {
     }
 
     async fetchSuggestions(query) {
+        if (!this.options.enableQualifiers) {
+            return this._fetchPlainSuggestions(query);
+        }
+
+        let rest = query;
+        let negation = false;
+        if (rest.startsWith('-')) {
+            negation = true;
+            rest = rest.slice(1);
+        }
+
+        const isPattern = /[*?]/.test(rest);
+        if (!negation && !isPattern) {
+            return this._fetchPlainSuggestions(query);
+        }
+
+        const results = [];
+        const seen = new Set();
+        const push = (item) => {
+            if (seen.has(item.name)) return;
+            seen.add(item.name);
+            results.push(item);
+        };
+
+        // Tags that literally start with "-" (only when no wildcard follows)
+        if (negation && !isPattern) {
+            try {
+                (await this._fetchPlainSuggestions(query)).forEach(push);
+            } catch (e) {
+                // fall through to the base term suggestions
+            }
+        }
+
+        if (rest.length > 0) {
+            const base = await this._fetchPlainSuggestions(rest);
+            for (const tag of base) {
+                if (!negation) {
+                    push(tag);
+                    continue;
+                }
+                const decorated = { ...tag, name: '-' + tag.name, negated: true };
+                if (tag.alias_name) decorated.alias_name = '-' + tag.alias_name;
+                push(decorated);
+            }
+        }
+
+        return results;
+    }
+
+    async _fetchPlainSuggestions(query) {
         let url = `/api/tags/autocomplete?q=${encodeURIComponent(query)}`;
         const rating = this.getRatingFilter();
         if (rating) {
@@ -255,8 +305,15 @@ class TagAutocomplete {
             if (start < cursorPos && cursorPos <= end) continue;
             const name = m[0].replace(/^[~-]/, '').toLowerCase();
             if (name) existing.add(name);
+            existing.add(m[0].toLowerCase());
         }
         return existing;
+    }
+
+    // Render a name, highlighting a leading "-" in bold danger color when it is the negation operator
+    _negatedNameHtml(name, negated) {
+        if (!negated || !name.startsWith('-')) return escapeHtml(name);
+        return `<span class="text-danger font-bold">-</span>${escapeHtml(name.slice(1))}`;
     }
 
     showSuggestions(suggestions, query) {
@@ -286,9 +343,9 @@ class TagAutocomplete {
                     return `
                     <div class="tag-suggestion tag-alias-info" data-index="${index}" data-name="${escapeHtml(tag.name)}" data-tag-rating="${escapeHtml(tag.rating || 'none')}">
                         <span style="display: flex; align-items: center; gap: 0.5rem;">
-                            <span class="text-secondary italic">${escapeHtml(tag.alias_name)}</span>
+                            <span class="text-secondary italic">${this._negatedNameHtml(tag.alias_name, tag.negated)}</span>
                             <span class="text-secondary">&#8594;</span>
-                            <span class="tag-name">${escapeHtml(tag.name)}</span>
+                            <span class="tag-name">${tag.negated ? escapeHtml(tag.name.slice(1)) : escapeHtml(tag.name)}</span>
                         </span>
                         ${tag.count !== undefined && tag.count !== null && tag.count !== '' ? `<span class="tag-count">${escapeHtml(String(tag.count))}</span>` : ''}
                     </div>
@@ -309,7 +366,7 @@ class TagAutocomplete {
                 <div class="tag-suggestion" data-index="${index}" data-name="${escapeHtml(tag.name)}" data-tag-rating="${escapeHtml(tag.rating || 'none')}">
                     <span>
                         <span class="tag-category"><span class="tag-text ${escapeHtml(tag.category)}">${escapeHtml(tag.category)}</span></span>
-                        <span class="tag-name">${escapeHtml(tag.name)}</span>
+                        <span class="tag-name">${this._negatedNameHtml(tag.name, tag.negated)}</span>
                     </span>
                     ${tag.count !== undefined && tag.count !== null && tag.count !== '' ? `<span class="tag-count">${escapeHtml(String(tag.count))}</span>` : ''}
                 </div>

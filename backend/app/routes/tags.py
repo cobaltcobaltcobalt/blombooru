@@ -410,6 +410,35 @@ async def autocomplete_tags(
     from ..database import get_shared_db, is_shared_db_available
     from ..models import TagAlias
     from ..services.shared_tags import SharedTagService
+    from ..utils.search_parser import wildcard_to_regex
+
+    if '*' in q or '?' in q:
+        pattern = q.strip().lower()
+        if not pattern.strip('*?'):
+            return []
+        full_regex = wildcard_to_regex(pattern)
+        prefix_regex = full_regex[:-1] if full_regex.endswith('$') else full_regex
+        pattern_query = db.query(Tag).filter(Tag.name.op('~*')(prefix_regex))
+        pattern_query = apply_tag_rating_filter(pattern_query, rating)
+        full_priority = case(
+            (Tag.name.op('~*')(full_regex), 1),
+            else_=2
+        )
+        pattern_tags = pattern_query.order_by(
+            full_priority,
+            desc(Tag.post_count),
+            func.length(Tag.name),
+            Tag.name
+        ).limit(50).all()
+        return [
+            {
+                "name": tag.name,
+                "category": tag.category,
+                "count": tag.post_count,
+                "rating": tag.rating.value if tag.rating else "none"
+            }
+            for tag in pattern_tags
+        ]
 
     # If shared tags enabled, use merged autocomplete
     if is_shared_db_available():
