@@ -195,6 +195,7 @@ def check_and_migrate_schema(engine):
         migrate_add_manual_sort_positions,
         migrate_add_tag_rating,
         migrate_add_custom_date,
+        migrate_add_media_tags_implication_columns,
     ]
     
     for migration in migrations:
@@ -571,4 +572,28 @@ def migrate_add_custom_date(engine, inspector):
         if is_postgres:
             conn.execute(text("ALTER TABLE blombooru_media ALTER COLUMN custom_date SET NOT NULL"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_blombooru_media_custom_date ON blombooru_media (custom_date)"))
+        conn.commit()
+
+def migrate_add_media_tags_implication_columns(engine, inspector):
+    """Add implied and implied_by columns to blombooru_media_tags table."""
+    from sqlalchemy import text
+
+    tables = inspector.get_table_names()
+    if 'blombooru_media_tags' not in tables:
+        return
+
+    columns = [c['name'] for c in inspector.get_columns('blombooru_media_tags')]
+    is_sqlite = engine.dialect.name == 'sqlite'
+
+    with engine.connect() as conn:
+        if 'implied' not in columns:
+            logger.info("Adding implied column to blombooru_media_tags...")
+            col_type = "BOOLEAN DEFAULT 0 NOT NULL" if is_sqlite else "BOOLEAN DEFAULT FALSE NOT NULL"
+            conn.execute(text(f"ALTER TABLE blombooru_media_tags ADD COLUMN implied {col_type}"))
+
+        if 'implied_by' not in columns:
+            logger.info("Adding implied_by column to blombooru_media_tags...")
+            col_type = "TEXT" if is_sqlite else "JSONB"
+            conn.execute(text(f"ALTER TABLE blombooru_media_tags ADD COLUMN implied_by {col_type}"))
+
         conn.commit()

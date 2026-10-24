@@ -14,8 +14,13 @@ blombooru_media_tags = Table(
     'blombooru_media_tags',
     Base.metadata,
     Column('media_id', Integer, ForeignKey('blombooru_media.id', ondelete='CASCADE'), primary_key=True),
-    Column('tag_id', Integer, ForeignKey('blombooru_tags.id', ondelete='CASCADE'), primary_key=True)
+    Column('tag_id', Integer, ForeignKey('blombooru_tags.id', ondelete='CASCADE'), primary_key=True),
+    Column('implied', Boolean, default=False, nullable=False, server_default='0'),
+    Column('implied_by', JSON().with_variant(JSONB(), 'postgresql'), nullable=True, default=None),
 )
+
+class MediaTag(Base):
+    __table__ = blombooru_media_tags
 
 class User(Base):
     __tablename__ = 'blombooru_users'
@@ -59,6 +64,7 @@ class Media(Base):
     parent_id = Column(Integer, ForeignKey('blombooru_media.id', ondelete='SET NULL'), nullable=True, index=True)
     
     tags = relationship('Tag', secondary=blombooru_media_tags, back_populates='media')
+    media_tag_links = relationship('MediaTag', viewonly=True, lazy='select')
     parent = relationship('Media', remote_side=[id], backref='children')
 
     @property
