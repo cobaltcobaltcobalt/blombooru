@@ -655,7 +655,6 @@ class AdminSystem {
             const response = await fetch('/api/admin/settings');
 
             if (!response.ok) {
-                console.log('Not authenticated or settings not available');
                 return;
             }
 
@@ -1477,7 +1476,7 @@ class AdminSystem {
                 if (configMessage) configMessage.textContent = msg;
                 if (configLinks) {
                     configLinks.innerHTML = Object.entries(status.asset_urls || {}).map(([name, url]) =>
-                        `<a href="${escapeHtml(url)}" target="_blank" class="btn-dark px-3 py-1 text-[10px] cursor-pointer">${escapeHtml(name)}</a>`
+                        `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="btn-dark px-3 py-1 text-[10px] cursor-pointer">${escapeHtml(name)}</a>`
                     ).join('');
                 }
             } else if (configNotice) {
@@ -1583,7 +1582,7 @@ class AdminSystem {
                 changesHtml += `
                 <div class="bg p-2 border-b last:border-0 text-left">
                     <div class="mb-2">
-                        <a href="${escapeHtml(rel.url)}" target="_blank" class="font-mono text-xs bg-primary primary-text px-1 hover:bg-primary transition-colors">${escapeHtml(rel.tag)}</a>
+                        <a href="${escapeHtml(rel.url)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="font-mono text-xs bg-primary primary-text px-1 hover:bg-primary transition-colors">${escapeHtml(rel.tag)}</a>
                     </div>
                     ${parseMarkdownList(changes)}
                 </div>`;
@@ -1625,7 +1624,7 @@ class AdminSystem {
                 <div id="tab-changes" ${!hasChanges ? 'style="display:none"' : ''}>${changesHtml || `<div class="text-xs text-secondary">${escapeHtml(noReleasesMsg)}</div>`}</div>
                 <div id="tab-commits" style="display:${hasChanges ? 'none' : 'block'}">${commitsHtml || `<div class="text-xs text-secondary">${escapeHtml(noCommitsMsg)}</div>`}</div>
             </div>
-            ${compare_url ? `<div class="mt-3 pt-2 border-t text-center"><a href="${escapeHtml(compare_url)}" target="_blank" class="text-xs text-primary hover:text-primary transition-colors">${escapeHtml(fullChangelogMsg)}</a></div>` : ''}
+            ${compare_url ? `<div class="mt-3 pt-2 border-t text-center"><a href="${escapeHtml(compare_url)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="text-xs text-primary hover:text-primary transition-colors">${escapeHtml(fullChangelogMsg)}</a></div>` : ''}
         </div>`;
 
         const modal = new ModalHelper({

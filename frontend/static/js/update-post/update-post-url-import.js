@@ -243,7 +243,7 @@ class UpdatePostUrlImport extends UpdatePostModalBase {
                         <span class="text-secondary shrink-0 mr-1">${window.i18n.t('media.info.source')}</span>
                         ${post.source
                     ? `<strong class="truncate min-w-0 flex-1 font-normal text-right">
-                                <a href="${escapeHtml(post.source)}" target="_blank" class="text-primary hover:underline block truncate" title="${escapeHtml(post.source)}">
+                                <a href="${escapeHtml(post.source)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="text-primary hover:underline block truncate" title="${escapeHtml(post.source)}">
                                     ${escapeHtml(post.source)}
                                 </a>
                                </strong>`
