@@ -102,13 +102,16 @@ class BulkAITagsModal extends BulkTagModalBase {
             if (!res) continue;
 
             if (res.added_tags && res.added_tags.length > 0) {
-                this.itemsData.push({
+                const itemObj = {
                     mediaId,
                     currentTags: res.current_tags || [],
                     newTags: res.new_tags || [],
                     prefilledTags: res.added_tags || [],
                     filename: mediaData.filename || window.i18n.t('bulk_modal.ai_tags.default_media_name', { id: mediaId })
-                });
+                };
+                this.itemsData.push(
+                    this.initItemImplicationState(itemObj, mediaData.tags || [], res.implied_by || {})
+                );
             }
         }
 
@@ -157,6 +160,8 @@ class BulkAITagsModal extends BulkTagModalBase {
                     currentTags: res.current_tags || [],
                     newTags: res.new_tags || [],
                     prefilledTags: res.added_tags || [],
+                    impliedBy: res.implied_by || {},
+                    existingTagObjects: mediaData.tags || [],
                     filename: mediaData.filename || window.i18n.t('bulk_modal.ai_tags.default_media_name', { id: mediaId })
                 };
             }
@@ -179,17 +184,12 @@ class BulkAITagsModal extends BulkTagModalBase {
                 item.currentTags = result.currentTags;
                 item.newTags = result.newTags;
                 item.prefilledTags = result.prefilledTags;
+                item.impliedTagsMap = new Map();
+                item.hiddenImpliedTags = new Set();
+                item.expandedTriggers = new Set();
+                this.initItemImplicationState(item, result.existingTagObjects || [], result.impliedBy || {});
 
-                const prefilledSet = new Set(item.prefilledTags.map(t => t.toLowerCase()));
-                const renderedContent = item.newTags.map(tag => {
-                    const escaped = escapeHtml(tag);
-                    if (prefilledSet.has(tag.toLowerCase())) {
-                        return `<span class="new-tag">${escaped}</span>`;
-                    }
-                    return escaped;
-                }).join(' ');
-
-                inputElement.innerHTML = renderedContent;
+                inputElement.textContent = (item.newTags || []).join(' ');
                 this.triggerValidation(inputElement);
                 this.flashButton(index, 'var(--success)');
             } else {

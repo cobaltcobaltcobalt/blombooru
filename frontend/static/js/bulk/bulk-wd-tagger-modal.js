@@ -47,7 +47,10 @@ class BulkWDTaggerModal extends BulkTagModalBase {
         return `
             <div class="${prefix}-content flex-1 flex flex-col min-h-0" style="display: none;">
                 <div class="${prefix}-top-bar flex flex-col gap-2 mb-3 pb-2.5 border-b border-color shrink-0">
-                    <p class="text-secondary text-xs sm:text-sm shrink-0">${window.i18n.t('bulk_modal.messages.review_tags')}</p>
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 shrink-0">
+                        <p class="text-secondary text-xs sm:text-sm">${window.i18n.t('bulk_modal.messages.review_tags')}</p>
+                        ${this.getHideImpliedCheckboxHTML()}
+                    </div>
                     <div class="${prefix}-top-counter flex items-center flex-wrap gap-x-3 gap-y-1 text-xs sm:text-sm" style="display: none;">
                         <span class="${prefix}-top-status-wrapper flex items-center gap-1.5 text-secondary">
                             <span class="spinner ${prefix}-top-spinner" style="width: 14px; height: 14px; border-width: 2px; margin: 0; display: none;"></span>
@@ -463,14 +466,14 @@ class BulkWDTaggerModal extends BulkTagModalBase {
         const res = resolvedResults[mediaId] || resolvedResults[String(mediaId)];
         if (!res || !res.added_tags || res.added_tags.length === 0) return;
 
-        const item = {
+        const item = this.initItemImplicationState({
             mediaId,
             currentTags: res.current_tags || [],
             predictedTags,
             newTags: res.new_tags || [],
             prefilledTags: res.added_tags || [],
             filename: mediaData?.filename || window.i18n.t('bulk_modal.ai_tags.default_media_name', { id: mediaId })
-        };
+        }, mediaData?.tags || [], res.implied_by || {});
 
         const prefix = this.options.classPrefix;
         const itemsContainer = this.modalElement.querySelector(`.${prefix}-items`);
@@ -638,17 +641,12 @@ class BulkWDTaggerModal extends BulkTagModalBase {
                 item.currentTags = res.current_tags || [];
                 item.newTags = res.new_tags || [];
                 item.prefilledTags = res.added_tags || [];
+                item.impliedTagsMap = new Map();
+                item.hiddenImpliedTags = new Set();
+                item.expandedTriggers = new Set();
+                this.initItemImplicationState(item, mediaData?.tags || [], res.implied_by || {});
 
-                const prefilledSet = new Set(item.prefilledTags.map(t => t.toLowerCase()));
-                const renderedContent = item.newTags.map(tag => {
-                    const escaped = escapeHtml(tag);
-                    if (prefilledSet.has(tag.toLowerCase())) {
-                        return `<span class="new-tag">${escaped}</span>`;
-                    }
-                    return escaped;
-                }).join(' ');
-
-                inputElement.innerHTML = renderedContent;
+                inputElement.textContent = (item.newTags || []).join(' ');
                 this.triggerValidation(inputElement);
                 this.flashButton(index, 'var(--success)');
             } else {
