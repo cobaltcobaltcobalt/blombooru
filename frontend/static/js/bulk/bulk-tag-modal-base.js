@@ -1193,7 +1193,22 @@ class BulkTagModalBase {
         }).join(' ');
 
         return `
-            <div class="${prefix}-item surface-light p-3 border mb-3" data-index="${index}" style="content-visibility: auto; contain-intrinsic-size: auto 120px;">
+            <div class="${prefix}-item relative surface-light p-3 border mb-3" data-index="${index}" style="content-visibility: auto; contain-intrinsic-size: auto 120px;">
+                <!-- Action buttons -->
+                <div class="${prefix}-actions absolute top-3 right-3 flex flex-col sm:flex-row gap-1 sm:gap-1.5 flex-shrink-0 transition-all z-10">
+                    <button type="button" 
+                            class="${prefix}-refresh w-7 h-7 surface hover:surface-light text-secondary hover:text flex items-center justify-center transition-colors cursor-pointer"
+                            data-index="${index}"
+                            title="${window.i18n.t('bulk_modal.buttons.refresh_tags')}">
+                        ${window.Icons.reset({ size: 14, class: 'w-3.5 h-3.5' })}
+                    </button>
+                    <button type="button" 
+                            class="${prefix}-clear w-7 h-7 bg-danger hover:bg-danger tag-text flex items-center justify-center transition-colors cursor-pointer"
+                            data-index="${index}"
+                            title="${window.i18n.t('bulk_modal.buttons.clear_tags')}">
+                        ${window.Icons.trash({ size: 14, class: 'w-3.5 h-3.5' })}
+                    </button>
+                </div>
                 <!-- Mobile: Stacked layout, Desktop: Side-by-side -->
                 <div class="flex flex-col sm:flex-row gap-3">
                     <!-- Thumbnail -->
@@ -1204,7 +1219,7 @@ class BulkTagModalBase {
                              onerror="this.src='/static/images/no-thumbnail.png'">
                         
                         <!-- Mobile: Info next to thumbnail -->
-                        <div class="flex-1 sm:hidden min-w-0">
+                        <div class="flex-1 sm:hidden min-w-0 pr-8">
                             <p class="text-sm font-medium truncate mb-1" title="${item.filename}">${item.filename}</p>
                             <p class="text-xs text-secondary line-clamp-2">${window.i18n.t('bulk_modal.messages.current')}${currentTagsDisplay}</p>
                         </div>
@@ -1213,7 +1228,7 @@ class BulkTagModalBase {
                     <!-- Content -->
                     <div class="flex-1 min-w-0">
                         <!-- Desktop: Info above input -->
-                        <div class="hidden sm:block">
+                        <div class="hidden sm:block pr-18">
                             <p class="text-sm font-medium truncate mb-1" title="${item.filename}">${item.filename}</p>
                             <p class="text-xs text-secondary mb-2">${window.i18n.t('bulk_modal.messages.current')}${currentTagsDisplay}</p>
                         </div>
@@ -1225,22 +1240,6 @@ class BulkTagModalBase {
                                      contenteditable="true"
                                      data-index="${index}"
                                      style="white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;">${renderedContent}</div>
-                            </div>
-                            
-                            <!-- Action buttons -->
-                            <div class="${prefix}-actions flex gap-1.5 flex-shrink-0 transition-all">
-                                <button type="button" 
-                                        class="${prefix}-refresh w-11 h-11 sm:w-9 sm:h-9 surface hover:surface-light text-secondary hover:text flex items-center justify-center transition-colors cursor-pointer"
-                                        data-index="${index}"
-                                        title="${window.i18n.t('bulk_modal.buttons.refresh_tags')}">
-                                    ${window.Icons.reset({ size: 20, class: 'w-5 h-5 sm:w-4 sm:h-4' })}
-                                </button>
-                                <button type="button" 
-                                        class="${prefix}-clear w-11 h-11 sm:w-9 sm:h-9 bg-danger hover:bg-danger tag-text flex items-center justify-center transition-colors cursor-pointer"
-                                        data-index="${index}"
-                                        title="${window.i18n.t('bulk_modal.buttons.clear_tags')}">
-                                    ${window.Icons.trash({ size: 20, class: 'w-5 h-5 sm:w-4 sm:h-4' })}
-                                </button>
                             </div>
                         </div>
                     </div>
