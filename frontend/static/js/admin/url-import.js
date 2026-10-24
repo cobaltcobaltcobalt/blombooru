@@ -52,7 +52,11 @@ class UrlImporter {
     showStatus(message, type = 'info') {
         if (!this.statusArea) return;
         const colorClass = type === 'error' ? 'text-danger' : type === 'success' ? 'text-success' : 'text-secondary';
-        this.statusArea.innerHTML = `<p class="text-xs ${colorClass}">${message}</p>`;
+        const p = document.createElement('p');
+        p.className = `text-xs ${colorClass}`;
+        p.textContent = message;
+        this.statusArea.innerHTML = '';
+        this.statusArea.appendChild(p);
         this.statusArea.style.display = 'block';
     }
 
@@ -185,12 +189,10 @@ class UrlImporter {
             }
 
             if (failedCount > 0) {
-                if (window.app && window.app.showNotification) {
-                    window.app.showNotification(
-                        window.i18n.t('admin.media_management.url_import.batch_failed', { count: failedCount }),
-                        'error'
-                    );
-                }
+                window.app.showNotification(
+                    window.i18n.t('admin.media_management.url_import.batch_failed', { count: failedCount }),
+                    'error'
+                );
             }
         } catch (e) {
             if (e.name === 'AbortError' || signal.aborted || this.uploader?.isAborted?.()) {
@@ -198,12 +200,10 @@ class UrlImporter {
                 return;
             }
             console.error('Error processing batch URL file:', e);
-            if (window.app && window.app.showNotification) {
-                window.app.showNotification(
-                    window.i18n.t('admin.media_management.url_import.batch_failed', { count: 1 }),
-                    'error'
-                );
-            }
+            window.app.showNotification(
+                window.i18n.t('admin.media_management.url_import.batch_failed', { count: 1 }),
+                'error'
+            );
         } finally {
             this.isFetching = false;
             if (this.fetchBtn) this.fetchBtn.disabled = false;
@@ -275,10 +275,15 @@ if (document.getElementById('url-import-section')) {
     if (window.uploaderInstance) {
         initUrlImporter();
     } else {
+        let attempts = 0;
+        const maxAttempts = 100;
         const checkInterval = setInterval(() => {
+            attempts++;
             if (window.uploaderInstance) {
                 clearInterval(checkInterval);
                 initUrlImporter();
+            } else if (attempts >= maxAttempts) {
+                clearInterval(checkInterval);
             }
         }, 50);
     }

@@ -517,9 +517,9 @@ class AdminContent {
                 skipped: result.skipped,
                 failed: result.failed,
             });
-            resultDiv.innerHTML = `<div class="bg-success p-3 tag-text"><strong>${msg}</strong></div>`;
+            resultDiv.innerHTML = `<div class="bg-success p-3 tag-text"><strong>${escapeHtml(msg)}</strong></div>`;
         } catch (error) {
-            resultDiv.innerHTML = `<div class="bg-danger p-3 tag-text"><strong>${window.i18n.t('common.error')}:</strong> ${error.message}</div>`;
+            resultDiv.innerHTML = `<div class="bg-danger p-3 tag-text"><strong>${escapeHtml(window.i18n.t('common.error'))}:</strong> ${escapeHtml(error.message)}</div>`;
         } finally {
             btn.disabled = false;
             allBtn.disabled = false;
@@ -557,9 +557,9 @@ class AdminContent {
                         generated: result.generated,
                         failed: result.failed,
                     });
-                    resultDiv.innerHTML = `<div class="bg-success p-3 tag-text"><strong>${msg}</strong></div>`;
+                    resultDiv.innerHTML = `<div class="bg-success p-3 tag-text"><strong>${escapeHtml(msg)}</strong></div>`;
                 } catch (error) {
-                    resultDiv.innerHTML = `<div class="bg-danger p-3 tag-text"><strong>${window.i18n.t('common.error')}:</strong> ${error.message}</div>`;
+                    resultDiv.innerHTML = `<div class="bg-danger p-3 tag-text"><strong>${escapeHtml(window.i18n.t('common.error'))}:</strong> ${escapeHtml(error.message)}</div>`;
                 } finally {
                     btn.disabled = false;
                     missingBtn.disabled = false;
@@ -652,7 +652,7 @@ class AdminContent {
                 transcoded: status.transcoded,
                 skipped: status.skipped + status.already_transcoded,
             });
-            resultDiv.innerHTML = `<div class="bg-primary primary-text p-3"><strong>${text}</strong></div>`;
+            resultDiv.innerHTML = `<div class="bg-primary primary-text p-3"><strong>${escapeHtml(text)}</strong></div>`;
         };
 
         try {
@@ -678,7 +678,7 @@ class AdminContent {
                 failed: finalStatus.failed
             });
             if (resultDiv) {
-                resultDiv.innerHTML = `<div class="bg-success p-3 tag-text"><strong>${msg}</strong></div>`;
+                resultDiv.innerHTML = `<div class="bg-success p-3 tag-text"><strong>${escapeHtml(msg)}</strong></div>`;
             }
             app.showNotification(msg, 'success');
             await this.loadMediaStats();
