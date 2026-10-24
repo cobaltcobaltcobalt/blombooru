@@ -486,9 +486,52 @@ def import_media_logical(db: Session, zf: zipfile.ZipFile, media_list: List[dict
             parent_links.append((new_media.id, parent_hash))
 
         tag_names = media_data.get('tags', [])
+        raw_implied_tags = media_data.get('implied_tags')
+        if not isinstance(raw_implied_tags, dict):
+            raw_implied_tags = {}
+
         tag_ids_to_link = []
-        for tname in tag_names:
+        implied_by_tid: Dict[int, list] = {}
+        def _resolve_groups_to_ids(raw_groups: list) -> list[list[int]]:
+            if not isinstance(raw_groups, list):
+                return []
+            id_groups: list[list[int]] = []
+            for grp in raw_groups:
+                if not isinstance(grp, list):
+                    continue
+                ids: list[int] = []
+                for item in grp:
+                    tid_val = None
+                    if isinstance(item, int) and not isinstance(item, bool):
+                        tid_val = item
+                    elif isinstance(item, str):
+                        norm = item.strip().lower()
+                        if norm:
+                            tid_val = all_tags.get(norm) or all_aliases.get(norm)
+                            if tid_val is None and norm.isdigit():
+                                tid_val = int(norm)
+                    if tid_val is not None and tid_val not in ids:
+                        ids.append(tid_val)
+                if ids:
+                    ids.sort()
+                    if ids not in id_groups:
+                        id_groups.append(ids)
+            return id_groups
+
+        for t_entry in tag_names:
+            if isinstance(t_entry, dict):
+                tname = str(t_entry.get('name', ''))
+                entry_implied = bool(t_entry.get('implied', False))
+                entry_implied_by = t_entry.get('implied_by') if isinstance(t_entry.get('implied_by'), list) else []
+            else:
+                tname = str(t_entry)
+                entry_implied = False
+                entry_implied_by = []
+
             normalized_name = tname.strip().lower()
+            if not normalized_name:
+                continue
+
             if normalized_name in all_tags:
                 tid = all_tags[normalized_name]
                 tag_ids_to_link.append(tid)
@@ -503,13 +546,31 @@ def import_media_logical(db: Session, zf: zipfile.ZipFile, media_list: List[dict
                 db.add(new_tag)
                 db.flush()
                 all_tags[normalized_name] = new_tag.id
-                tag_ids_to_link.append(new_tag.id)
-                affected_tag_ids.add(new_tag.id)
+                tid = new_tag.id
+                tag_ids_to_link.append(tid)
+                affected_tag_ids.add(tid)
+
+            if entry_implied:
+                implied_by_tid[tid] = _resolve_groups_to_ids(entry_implied_by)
+
+        for imp_name, imp_groups in raw_implied_tags.items():
+            norm_imp = str(imp_name).strip().lower()
+            if not norm_imp:
+                continue
+            tid = all_tags.get(norm_imp) or all_aliases.get(norm_imp)
+            if tid:
+                implied_by_tid[tid] = _resolve_groups_to_ids(imp_groups if isinstance(imp_groups, list) else [])
 
         unique_tag_ids = list(dict.fromkeys(tag_ids_to_link))
         if unique_tag_ids:
             stmt = blombooru_media_tags.insert().values([
-                {'media_id': new_media.id, 'tag_id': tid} for tid in unique_tag_ids
+                {
+                    'media_id': new_media.id,
+                    'tag_id': tid,
+                    'implied': tid in implied_by_tid,
+                    'implied_by': implied_by_tid.get(tid) if tid in implied_by_tid else None,
+                }
+                for tid in unique_tag_ids
             ])
             db.execute(stmt)
             

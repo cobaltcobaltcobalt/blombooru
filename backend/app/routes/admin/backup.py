@@ -12,7 +12,7 @@ from ...auth import require_admin_mode
 from ...config import APP_VERSION, SCHEMA_VERSION, settings
 from ...custom_themes import custom_theme_manager
 from ...database import get_db
-from ...models import (Album, BooruConfig, Media, TagImplication, User,
+from ...models import (Album, BooruConfig, Media, Tag, TagImplication, User,
                       blombooru_album_hierarchy, blombooru_album_media)
 from ...utils.backup import (generate_tags_csv_stream,
                              get_custom_theme_files_generator,
@@ -120,9 +120,10 @@ async def backup_full_db(
     
     # 2. Media export
     media_list = []
+    all_tag_names_by_id = dict(db.query(Tag.id, Tag.name).all())
     media_query = (
         db.query(Media)
-        .options(selectinload(Media.parent), selectinload(Media.tags))
+        .options(selectinload(Media.parent), selectinload(Media.tags), selectinload(Media.media_tag_links))
         .all()
     )
     
@@ -142,6 +143,35 @@ async def backup_full_db(
         
         file_type_val = m.file_type.value if hasattr(m.file_type, 'value') else str(m.file_type)
         rating_val = m.rating.value if hasattr(m.rating, 'value') else (str(m.rating) if m.rating else 'safe')
+        id_to_tag_name = {t.id: t.name for t in m.tags}
+        implied_tags_meta = {}
+        for link in (getattr(m, "media_tag_links", None) or []):
+            if link.implied and link.tag_id in id_to_tag_name:
+                tname = id_to_tag_name[link.tag_id]
+                resolved_grps = []
+                if isinstance(link.implied_by, list):
+                    for grp in link.implied_by:
+                        if not isinstance(grp, list):
+                            continue
+                        names_grp = []
+                        for item in grp:
+                            name_val = None
+                            if isinstance(item, int) and not isinstance(item, bool):
+                                name_val = id_to_tag_name.get(item) or all_tag_names_by_id.get(item)
+                            elif isinstance(item, str):
+                                s = item.strip()
+                                if s.isdigit():
+                                    tid_int = int(s)
+                                    name_val = id_to_tag_name.get(tid_int) or all_tag_names_by_id.get(tid_int)
+                                elif s:
+                                    name_val = s.lower()
+                            if name_val and name_val not in names_grp:
+                                names_grp.append(name_val)
+                        if names_grp:
+                            names_grp.sort()
+                            if names_grp not in resolved_grps:
+                                resolved_grps.append(names_grp)
+                implied_tags_meta[tname] = resolved_grps
         
         media_list.append({
             "filename": m.filename,
@@ -164,6 +194,7 @@ async def backup_full_db(
             "share_language": m.share_language,
             "transcoded_path": m.transcoded_path,
             "tags": [t.name for t in m.tags],
+            "implied_tags": implied_tags_meta,
             "archive_path": archive_path,
             "parent_hash": m.parent.hash if m.parent else None
         })

@@ -167,7 +167,8 @@ class TestBackupFullRoundtrip(BackupTestBase):
                         "share_uuid": "share-uuid-1",
                         "share_ai_metadata": True,
                         "share_language": "en",
-                        "tags": ["super_artist", "kitsune"],
+                        "tags": ["super_artist", "kitsune", "fox_ears"],
+                        "implied_tags": {"fox_ears": [["kitsune"]]},
                         "archive_path": "media/sample1.jpg",
                         "parent_hash": None
                     },
@@ -266,7 +267,13 @@ class TestBackupFullRoundtrip(BackupTestBase):
         self.assertEqual(restored_m1.source, "https://example.com/art1")
         self.assertTrue(restored_m1.is_shared)
         self.assertEqual(restored_m1.share_uuid, "share-uuid-1")
-        self.assertEqual(len(restored_m1.tags), 2)
+        self.assertEqual(len(restored_m1.tags), 3)
+        links_by_tag_id = {link.tag_id: link for link in restored_m1.media_tag_links}
+        fox_ears_tag = next(t for t in restored_m1.tags if t.name == "fox_ears")
+        kitsune_tag = next(t for t in restored_m1.tags if t.name == "kitsune")
+        self.assertTrue(links_by_tag_id[fox_ears_tag.id].implied)
+        self.assertEqual(links_by_tag_id[fox_ears_tag.id].implied_by, [[kitsune_tag.id]])
+        self.assertFalse(links_by_tag_id[kitsune_tag.id].implied)
 
         restored_m2 = self.db.query(Media).filter(Media.hash == "hash222").first()
         self.assertIsNotNone(restored_m2)
