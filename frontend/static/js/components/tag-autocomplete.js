@@ -414,6 +414,11 @@ class TagAutocomplete {
             // Trigger input event for validation
             const event = new Event('input', { bubbles: true });
             this.input.dispatchEvent(event);
+
+            // Run validation and implication expansion
+            if (this.isContentEditable && shouldAppendSpace) {
+                this.input.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', code: 'Space', bubbles: true }));
+            }
         }
 
         this.hideSuggestions();
