@@ -101,6 +101,10 @@ def _render_blockquote(renderer: TailwindHTMLRenderer, node, ctx) -> str:
         return f'<blockquote class="border-l-2 border-primary surface p-2 pl-3 text-secondary mb-3">{renderer.render_children(node.children, ctx)}</blockquote>\n'
     return f'<blockquote class="border-l-2 border-primary pl-3 text-secondary mb-3">{renderer.render_children(node.children, ctx)}</blockquote>\n'
 
+@TailwindHTMLRenderer.register("thematicBreak")
+def _render_thematic_break(renderer: TailwindHTMLRenderer, node, ctx) -> str:
+    return '<hr class="text-tertiary my-2" />\n'
+
 @lru_cache(maxsize=8)
 def _get_renderer(heading_color: str, soft_breaks: bool, is_description: bool) -> Wenmode:
     return Wenmode(

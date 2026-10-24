@@ -515,19 +515,21 @@ def validate_and_resolve_implied_by_ids(
 
 def dtext_to_plain(text: str) -> str:
     """
-    Convert Danbooru DText markup to plain readable text.
+    Convert Danbooru DText markup to Markdown.
 
     Handles the subset of DText used in artist commentaries:
-    - [b]...[/b]             - bold; kept as plain text
-    - "label":[url]          - named link; rendered as "label (url)"
-    - <url>                  - bare URL angle-bracket link; rendered as the URL
-    - [i]...[/i]             - italic; kept as plain text
-    - [s]...[/s]             - strikethrough; kept as plain text
-    - [u]...[/u]             - underline; kept as plain text
+    - [b]...[/b]             - bold; rendered as **...**
+    - [i]...[/i]             - italic; rendered as *...*
+    - [s]...[/s]             - strikethrough; rendered as ~~...~~
+    - [u]...[/u]             - underline; no Markdown equivalent, kept as plain text
+    - "label":[url]          - named link; rendered as [label](url)
+    - "label":url            - named link with bare URL; rendered as [label](url)
+    - <url>                  - bare URL angle-bracket link; kept as an autolink
     - [tn]...[/tn]           - translator's note; kept as plain text
     - [spoiler]...[/spoiler] - kept as plain text
     - [[wiki_link]]          - double-bracket wiki links; kept as plain text
     - [expand]...[/expand]   - kept as plain text
+    - [quote]...[/quote]     - rendered as a blockquote
     """
     import html
     import re
@@ -535,31 +537,94 @@ def dtext_to_plain(text: str) -> str:
     if not text:
         return ""
 
-    # Named links: "label":[url]  ->  label (url)
+    text = text.replace('\r\n', '\n').replace('\r', '\n')
+
+    # Headings: h1. ... -> # ...
     text = re.sub(
-        r'"([^"]+?)":\[([^\]]+?)\]',
-        lambda m: f'{m.group(1)} ({m.group(2)})',
+        r'^(h[1-6])\.\s*(.+)$',
+        lambda m: '#' * int(m.group(1)[1]) + ' ' + m.group(2),
         text,
+        flags=re.MULTILINE,
     )
+
+    # Code blocks: [code]...[/code] -> ```...```
+    text = re.sub(r'\[code\](.*?)\[/code\]', r'```\n\1\n```', text, flags=re.IGNORECASE | re.DOTALL)
+
+    def md_url(url: str) -> str:
+        url = html.unescape(url.strip())
+        if re.search(r'[\s()<>]', url):
+            return '<' + url.replace('<', '%3C').replace('>', '%3E').replace(' ', '%20') + '>'
+        return url
+
+    def md_label(label: str) -> str:
+        # Keep the label from terminating the link text early
+        return label.replace('[', '\\[').replace(']', '\\]')
+
+    def named_link(m):
+        return f'[{md_label(m.group(1))}]({md_url(m.group(2))})'
+
+    def bare_named_link(m):
+        url = m.group(2)
+        trailing = ''
+        while url and url[-1] in '.,;:!?)\'"':
+            if url[-1] == ')' and url.count('(') >= url.count(')'):
+                break
+            trailing = url[-1] + trailing
+            url = url[:-1]
+        return f'[{md_label(m.group(1))}]({md_url(url)}){trailing}'
+
+    # Named links: "label":[url]  ->  [label](url)
+    text = re.sub(r'"([^"\n]+?)":\[(https?://[^\]\s]+?)\]', named_link, text)
     # Named links with plain URL (no brackets): "label":https://...
-    text = re.sub(
-        r'"([^"]+?)":(https?://\S+)',
-        lambda m: f'{m.group(1)} ({m.group(2)})',
-        text,
-    )
-    # Bare angle-bracket URLs: <https://...>  ->  https://...
-    text = re.sub(r'<(https?://[^>]+)>', r'\1', text)
+    text = re.sub(r'"([^"\n]+?)":(https?://\S+)', bare_named_link, text)
+
+    # Inline formatting. Whitespace is moved outside the markers, as Markdown
+    # does not treat markers adjacent to whitespace as emphasis.
+    def wrap(marker):
+        def repl(m):
+            inner = m.group(1)
+            stripped = inner.strip()
+            if not stripped:
+                return inner
+            lead = inner[:len(inner) - len(inner.lstrip())]
+            trail = inner[len(inner.rstrip()):]
+            return f'{lead}{marker}{stripped}{marker}{trail}'
+        return repl
+
+    for tag, marker in (('b', '**'), ('i', '*'), ('s', '~~')):
+        pattern = re.compile(rf'\[{tag}\](.*?)\[/{tag}\]', re.IGNORECASE | re.DOTALL)
+        prev = None
+        while prev != text:
+            prev = text
+            text = pattern.sub(wrap(marker), text)
+
+    # Quotes -> blockquote
+    def quote(m):
+        body = m.group(1).strip('\n')
+        return '\n\n' + '\n'.join('> ' + line for line in body.split('\n')) + '\n\n'
+    text = re.sub(r'\[quote\](.*?)\[/quote\]', quote, text, flags=re.IGNORECASE | re.DOTALL)
+
     # Strip block/section tags (keep content between them)
     text = re.sub(r'\[section(?:=[^\]]+)?\]|\[/section\]', '', text, flags=re.IGNORECASE)
-    # Strip inline formatting tags (keep content)
+    # Strip remaining tags with no Markdown equivalent (keep content)
     text = re.sub(r'\[/?(?:b|i|u|s|tn|spoiler|expand|quote)\]', '', text, flags=re.IGNORECASE)
     # Wiki double-bracket links: [[page_name]] or [[page_name|display]]
     text = re.sub(r'\[\[(?:[^|\]]+\|)?([^\]]+)\]\]', r'\1', text)
     # Decode HTML entities
     text = html.unescape(text)
-    # Normalize Windows-style line endings
-    text = text.replace('\r\n', '\n').replace('\r', '\n')
     return text.strip()
+
+def build_artist_commentary(title, translated, original) -> str | None:
+    """Build a Markdown artist commentary from DText parts."""
+    title_md = dtext_to_plain(f"[b]{title}[/b]") if title and str(title).strip() else ""
+    translated_md = dtext_to_plain(str(translated)) if translated else ""
+    original_md = dtext_to_plain(str(original)) if original else ""
+    if original_md == translated_md:
+        original_md = ""
+
+    body = "\n\n---\n\n".join(p for p in (translated_md, original_md) if p)
+    result = "\n\n".join(p for p in (title_md, body) if p)
+    return result or None
 
 def enrich_and_resolve_tags(
     db: Session,
