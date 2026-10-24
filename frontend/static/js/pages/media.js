@@ -1663,7 +1663,7 @@ class MediaViewer extends MediaViewerBase {
                 onImplicationExpanded: (impliedByMap, impliedTags) => {
                     this.handleImplicationExpanded(impliedByMap, impliedTags);
                 },
-                hideImplied: this.isHideImpliedEnabled()
+                hideImplied: this.tagInputHelper.isHideImpliedEnabled()
             });
         }
         const validTags = this.tagInputHelper.getValidTagsFromInput(tagsInput);
