@@ -600,8 +600,10 @@ class ManualReorder {
         const appInstance = window.app || (typeof app !== 'undefined' ? app : null);
         if (appInstance && typeof appInstance.showNotification === 'function') {
             appInstance.showNotification(message, type, title);
+        } else if (type === 'error') {
+            console.error(message);
         } else {
-            console.log(`[Notification ${type}]`, message);
+            console.warn(message);
         }
     }
 

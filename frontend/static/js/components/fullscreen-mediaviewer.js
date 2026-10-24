@@ -218,7 +218,7 @@ class FullscreenMediaViewer {
             this.image.src = ''; // Clear image source
 
             // Auto play video
-            this.video.play().catch(e => console.log('Auto-play failed:', e));
+            this.video.play().catch(() => {});
         } else {
             if (this.video) {
                 this.video.style.display = 'none';

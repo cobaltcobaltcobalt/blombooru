@@ -2174,7 +2174,7 @@ class MediaViewer extends MediaViewerBase {
                                     targetUrl = refUrl.pathname + refUrl.search;
                                 }
                             }
-                        } catch (e) {}
+                        } catch (e) { }
                     }
                     window.location.href = targetUrl;
                 } catch (e) {
