@@ -597,7 +597,6 @@
             "title": "批量追加 AI 标签"
         },
         "buttons": {
-            "clear_tags": "清空标签",
             "refresh_tags": "刷新标签"
         },
         "defaults": {

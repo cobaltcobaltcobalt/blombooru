@@ -597,7 +597,6 @@
             "title": "Массово добавить AI-теги"
         },
         "buttons": {
-            "clear_tags": "Очистить теги",
             "refresh_tags": "Обновить теги"
         },
         "defaults": {

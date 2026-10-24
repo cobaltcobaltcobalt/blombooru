@@ -649,7 +649,7 @@ class BulkTagModalBase {
                 this.syncInputState(input, index);
             });
 
-            // Action buttons (Clear & Refresh)
+            // Action buttons
             container.addEventListener('click', (e) => {
                 const btn = e.target.closest('button');
                 if (!btn) return;
@@ -658,28 +658,6 @@ class BulkTagModalBase {
                 if (isNaN(index)) return;
 
                 const input = container.querySelector(`.${prefix}-input[data-index="${index}"]`);
-
-                if (btn.classList.contains(`${prefix}-clear`)) {
-                    if (this.itemsData[index]) {
-                        this.itemsData[index].newTags = [];
-                        if (this.itemsData[index].hiddenImpliedTags instanceof Set) {
-                            this.itemsData[index].hiddenImpliedTags.clear();
-                        }
-                        if (this.itemsData[index].impliedTagsMap instanceof Map) {
-                            this.itemsData[index].impliedTagsMap.clear();
-                        }
-                        if (this.itemsData[index].expandedTriggers instanceof Set) {
-                            this.itemsData[index].expandedTriggers.clear();
-                        }
-                        if (Array.isArray(this.itemsData[index].prefilledTags)) {
-                            this.itemsData[index].prefilledTags = [];
-                        }
-                    }
-                    if (input) {
-                        input.textContent = '';
-                        this.triggerValidation(input);
-                    }
-                }
 
                 if (btn.classList.contains(`${prefix}-refresh`)) {
                     if (input) {
@@ -1194,19 +1172,13 @@ class BulkTagModalBase {
 
         return `
             <div class="${prefix}-item relative surface-light p-3 border mb-3" data-index="${index}" style="content-visibility: auto; contain-intrinsic-size: auto 120px;">
-                <!-- Action buttons -->
+                <!-- Action button(s) -->
                 <div class="${prefix}-actions absolute top-3 right-3 flex flex-col sm:flex-row gap-1 sm:gap-1.5 flex-shrink-0 transition-all z-10">
                     <button type="button" 
                             class="${prefix}-refresh w-7 h-7 surface hover:surface-light text-secondary hover:text flex items-center justify-center transition-colors cursor-pointer"
                             data-index="${index}"
                             title="${window.i18n.t('bulk_modal.buttons.refresh_tags')}">
                         ${window.Icons.reset({ size: 14, class: 'w-3.5 h-3.5' })}
-                    </button>
-                    <button type="button" 
-                            class="${prefix}-clear w-7 h-7 bg-danger hover:bg-danger tag-text flex items-center justify-center transition-colors cursor-pointer"
-                            data-index="${index}"
-                            title="${window.i18n.t('bulk_modal.buttons.clear_tags')}">
-                        ${window.Icons.trash({ size: 14, class: 'w-3.5 h-3.5' })}
                     </button>
                 </div>
                 <!-- Mobile: Stacked layout, Desktop: Side-by-side -->
@@ -1228,12 +1200,12 @@ class BulkTagModalBase {
                     <!-- Content -->
                     <div class="flex-1 min-w-0">
                         <!-- Desktop: Info above input -->
-                        <div class="hidden sm:block pr-18">
+                        <div class="hidden sm:block pr-8">
                             <p class="text-sm font-medium truncate mb-1" title="${item.filename}">${item.filename}</p>
                             <p class="text-xs text-secondary mb-2">${window.i18n.t('bulk_modal.messages.current')}${currentTagsDisplay}</p>
                         </div>
                         
-                        <!-- Input and buttons -->
+                        <!-- Input -->
                         <div class="flex gap-2 items-start">
                             <div class="relative flex-1 min-w-0">
                                 <div class="${prefix}-input w-full bg px-3 py-2.5 sm:py-2 border text-sm focus:outline-none focus:border-primary hover:border-primary transition-colors min-h-[44px] sm:min-h-[36px]" 

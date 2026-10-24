@@ -597,7 +597,6 @@
             "title": "Bulk Append AI Tags"
         },
         "buttons": {
-            "clear_tags": "Clear tags",
             "refresh_tags": "Refresh tags"
         },
         "defaults": {

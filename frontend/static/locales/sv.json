@@ -597,8 +597,7 @@
             "title": "Masslägg till AI-taggar"
         },
         "buttons": {
-            "clear_tags": "Rensa taggar",
-            "refresh_tags": "Uppdatera taggar"
+            "refresh_tags": "Återställ taggar"
         },
         "defaults": {
             "empty_message": "Inga taggar hittades för de valda objekten.",
