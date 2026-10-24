@@ -324,7 +324,7 @@ class TagAutocomplete {
         if (!isQualifier) {
             const existing = this.getExistingTags();
             if (existing.size > 0) {
-                suggestions = suggestions.filter(t => !existing.has(String(t.name).toLowerCase()));
+                suggestions = suggestions.filter(t => !existing.has(String(t.name).toLowerCase()) && (!t.alias_name || !existing.has(String(t.alias_name).toLowerCase())));
             }
         }
         const hasResults = suggestions.length > 0;

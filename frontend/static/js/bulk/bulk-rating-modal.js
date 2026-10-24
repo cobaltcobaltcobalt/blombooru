@@ -4,7 +4,7 @@ class BulkRatingModal extends BulkTagModalBase {
             id: 'bulk-rating-modal',
             title: window.i18n.t('modal.bulk_rating.title'),
             classPrefix: 'bulk-rating',
-            emptyMessage: window.i18n.t('bulk_modal.rating.empty_message'),
+            emptyMessage: window.i18n.t('bulk_modal.manual.empty_message'),
             closeOnOutsideClick: false,
             ...options
         });
@@ -16,7 +16,6 @@ class BulkRatingModal extends BulkTagModalBase {
     getContentHTML() {
         const prefix = this.options.classPrefix;
         const reviewText = window.i18n.t('bulk_modal.rating.review_ratings');
-        const ratingLabel = window.i18n.t('media.info.rating');
         const applyText = window.i18n.t('bulk_modal.rating.quick_apply');
 
         return `

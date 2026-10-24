@@ -697,7 +697,7 @@ class Blombooru {
             }
         } catch (error) {
             console.error('Random search error:', error);
-            this.showNotification(window.i18n.t('gallery.errors.loading_random_media'), 'error');
+            this.showNotification(`${window.i18n.t('gallery.error_label')} ${error.message}`, 'error');
         }
     }
 

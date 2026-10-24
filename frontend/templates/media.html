@@ -24,9 +24,7 @@ download_icon, share_icon, select_arrow_icon, edit_icon, eye_icon, enlarge_icon,
             <div id="hierarchy-media-section" class="surface border" style="display: none;">
                 <button type="button" id="hierarchy-media-toggle"
                     class="w-full p-4 flex justify-between items-center text-left cursor-pointer hover:surface-light transition-colors">
-                    <h2 id="hierarchy-media-title" class="text-base font-bold">
-                        {{ t('media.hierarchy.title') }}
-                    </h2>
+                    <h2 id="hierarchy-media-title" class="text-base font-bold"></h2>
                     {{ chevron_down_icon(size=16, id="hierarchy-media-chevron", class="transition-transform
                     duration-200") }}
                 </button>
@@ -228,7 +226,8 @@ download_icon, share_icon, select_arrow_icon, edit_icon, eye_icon, enlarge_icon,
                             </div>
                             <div class="mb-2 p-2 bg border">
                                 <label class="flex items-center justify-between cursor-pointer select-none">
-                                    <span class="text-xs text font-medium" data-i18n="media.tags.hide_implied_tags">{{ t('media.tags.hide_implied_tags') }}</span>
+                                    <span class="text-xs text font-medium" data-i18n="media.tags.hide_implied_tags">{{
+                                        t('media.tags.hide_implied_tags') }}</span>
                                     <div class="relative">
                                         <input type="checkbox" id="hide-implied-tags-checkbox" class="sr-only peer">
                                         <div

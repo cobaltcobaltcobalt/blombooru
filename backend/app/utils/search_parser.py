@@ -963,11 +963,13 @@ def build_search_criteria_conditions(parsed_query: Dict[str, Any], db: Session) 
 
     for wildcard_type, pattern in tags.get('wildcards', []):
         regex_pattern = wildcard_to_regex(pattern)
+        is_sqlite = bool(db.bind and db.bind.dialect.name == "sqlite")
+        regex_op = 'REGEXP' if is_sqlite else '~*'
         subquery = exists().where(
             and_(
                 blombooru_media_tags.c.media_id == Media.id,
                 blombooru_media_tags.c.tag_id == Tag.id,
-                Tag.name.op('~*')(regex_pattern)
+                Tag.name.op(regex_op)(regex_pattern)
             )
         )
         if wildcard_type == 'include':

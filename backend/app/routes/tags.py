@@ -418,10 +418,12 @@ async def autocomplete_tags(
             return []
         full_regex = wildcard_to_regex(pattern)
         prefix_regex = full_regex[:-1] if full_regex.endswith('$') else full_regex
-        pattern_query = db.query(Tag).filter(Tag.name.op('~*')(prefix_regex))
+        is_sqlite = bool(db.bind and db.bind.dialect.name == "sqlite")
+        regex_op = 'REGEXP' if is_sqlite else '~*'
+        pattern_query = db.query(Tag).filter(Tag.name.op(regex_op)(prefix_regex))
         pattern_query = apply_tag_rating_filter(pattern_query, rating)
         full_priority = case(
-            (Tag.name.op('~*')(full_regex), 1),
+            (Tag.name.op(regex_op)(full_regex), 1),
             else_=2
         )
         pattern_tags = pattern_query.order_by(

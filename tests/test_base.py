@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from PIL import Image
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from backend.app.config import settings
@@ -35,6 +35,12 @@ class BlombooruTestSandboxMixin:
 
         db_file = self.tmp_path / "test.db"
         self.engine = create_engine(f"sqlite:///{db_file}")
+
+        @event.listens_for(self.engine, "connect")
+        def sqlite_regex(dbapi_con, con_record):
+            import re
+            dbapi_con.create_function("REGEXP", 2, lambda expr, item: bool(re.search(expr, item or "", re.IGNORECASE)))
+
         Base.metadata.create_all(bind=self.engine)
         self.TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
         self.SessionLocal = self.TestingSessionLocal

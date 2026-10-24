@@ -495,3 +495,27 @@ class TestTagsList(BackupTestBase):
         self.assertIn("catxears", names_none)
         self.assertNotIn("cat_ears", names_none)
         self.assertNotIn("cat_tail", names_none)
+
+    def test_autocomplete_tags_wildcard_patterns(self):
+        from starlette.requests import Request
+        from backend.app.routes.tags import autocomplete_tags
+
+        mock_req = Request({"type": "http", "method": "GET", "url": "http://testserver/api/tags/autocomplete", "headers": []})
+
+        # Wildcard prefix matching "cat*"
+        res = asyncio.run(autocomplete_tags(request=mock_req, q="cat*", db=self.db))
+        names = [r["name"] for r in res]
+        self.assertIn("cat_ears", names)
+        self.assertIn("cat_tail", names)
+        self.assertIn("catxears", names)
+        self.assertNotIn("original", names)
+
+        # Single character wildcard "?at_ears"
+        res_single = asyncio.run(autocomplete_tags(request=mock_req, q="?at_ears", db=self.db))
+        names_single = [r["name"] for r in res_single]
+        self.assertIn("cat_ears", names_single)
+        self.assertNotIn("cat_tail", names_single)
+
+        # Empty wildcard query should return empty list
+        res_empty = asyncio.run(autocomplete_tags(request=mock_req, q="***", db=self.db))
+        self.assertEqual(res_empty, [])

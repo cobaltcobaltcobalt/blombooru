@@ -106,10 +106,10 @@ class AlbumPicker {
         const selectedAlbums = this.tree.albums.filter(a => selectedIds.includes(a.id));
 
         this.options.onConfirm(selectedIds, selectedAlbums);
-        this.hide();
+        this.hide(false);
     }
 
-    hide() {
+    hide(triggerCancel = true) {
         if (this._escapeHandler) {
             document.removeEventListener('keydown', this._escapeHandler);
             this._escapeHandler = null;
@@ -118,7 +118,9 @@ class AlbumPicker {
             this.modal.remove();
             this.modal = null;
         }
-        this.options.onCancel();
+        if (triggerCancel && typeof this.options.onCancel === 'function') {
+            this.options.onCancel();
+        }
     }
 
     // Static helper method to show picker with promise
