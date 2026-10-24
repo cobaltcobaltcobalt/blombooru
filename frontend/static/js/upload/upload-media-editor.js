@@ -626,9 +626,7 @@ class UploadMediaEditor {
             const source = sourceInput?.value.trim();
             if (source !== undefined && itemIds.length > 0) {
                 await this.session.bulkUpdate(itemIds, { source });
-                if (window.app && window.app.showNotification) {
-                    window.app.showNotification(window.i18n.t('upload.bulk.source_applied'), 'success');
-                }
+                window.app.showNotification(window.i18n.t('upload.bulk.source_applied'), 'success');
                 if (this.options.onItemChanged) this.options.onItemChanged();
             }
         };
@@ -649,9 +647,7 @@ class UploadMediaEditor {
             const isoStr = parseLocalInputDateTime(bulkDateInput?.value);
             if (itemIds.length > 0) {
                 await this.session.bulkUpdate(itemIds, { custom_date: isoStr });
-                if (window.app && window.app.showNotification) {
-                    window.app.showNotification(window.i18n.t('upload.bulk.date_applied'), 'success');
-                }
+                window.app.showNotification(window.i18n.t('upload.bulk.date_applied'), 'success');
                 if (this.options.onItemChanged) this.options.onItemChanged();
             }
         };
@@ -670,9 +666,7 @@ class UploadMediaEditor {
             const description = descInput?.value.trim();
             if (description !== undefined && itemIds.length > 0) {
                 await this.session.bulkUpdate(itemIds, { description });
-                if (window.app && window.app.showNotification) {
-                    window.app.showNotification(window.i18n.t('upload.bulk.description_applied'), 'success');
-                }
+                window.app.showNotification(window.i18n.t('upload.bulk.description_applied'), 'success');
                 if (this.options.onItemChanged) this.options.onItemChanged();
             }
         };
@@ -707,9 +701,7 @@ class UploadMediaEditor {
                 if (aid && itemIds.length > 0) {
                     await this.session.bulkUpdate(itemIds, { add_album_ids: [aid] });
                     this.refreshBulkAlbumBadges();
-                    if (window.app && window.app.showNotification) {
-                        window.app.showNotification(window.i18n.t('upload.bulk.album_added'), 'success');
-                    }
+                    window.app.showNotification(window.i18n.t('upload.bulk.album_added'), 'success');
                     if (this.options.onItemChanged) this.options.onItemChanged();
                 }
             });
