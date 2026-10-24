@@ -38,11 +38,36 @@ class TestMetadataParsers(BackupTestBase):
             '[section=Details]Hidden content[/section]'
         )
         plain = dtext_to_plain(raw_dtext)
-        self.assertIn("Important Note: Check Source Link (https://example.com/art) and https://example.com/direct.", plain)
-        self.assertIn("Artist notes: Very nice scratch that secret Custom Label.", plain)
+        self.assertIn("**Important Note**: Check [Source Link](https://example.com/art) and <https://example.com/direct>.", plain)
+        self.assertIn("Artist notes: *Very nice* ~~scratch that~~ secret Custom Label.", plain)
         self.assertIn("Hidden content", plain)
+        self.assertIn("[#zzzero](https://x.com/hashtag/zzzero)", dtext_to_plain('"#zzzero":[https://x.com/hashtag/zzzero]'))
+        self.assertEqual(dtext_to_plain("h1. Heading 1\nh3. Heading 3"), "# Heading 1\n### Heading 3")
         self.assertNotIn("[b]", plain)
         self.assertNotIn("[section", plain)
+
+    def test_danbooru_artist_commentary_title_bolded(self):
+        """Test Danbooru artist commentary title is bolded like on the booru site."""
+        from unittest.mock import MagicMock
+        from backend.app.services.booru.danbooru import DanbooruClient
+
+        client = DanbooruClient("https://safebooru.example.com")
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "id": 10150284,
+            "post_id": 12440922,
+            "original_title": "Closure",
+            "original_description": "<https://x.com/ichika087/status/2113827824532635751?s=20>",
+            "translated_title": "",
+            "translated_description": "",
+        }
+        client.session.get = MagicMock(return_value=mock_resp)
+        commentary = client._fetch_artist_commentary(12440922)
+        self.assertEqual(
+            commentary,
+            "**Closure**\n\n<https://x.com/ichika087/status/2113827824532635751?s=20>",
+        )
 
     def test_enrich_and_resolve_tags_with_aliases_and_implications(self):
         """Test tag enrichment pipeline preserves categories for new tags and resolves DB tags/aliases/implications."""
@@ -127,7 +152,7 @@ class TestMetadataParsers(BackupTestBase):
         parsed = parser.parse(media_path, [media_path, sidecar_path])
         self.assertEqual(parsed.rating, "questionable")
         self.assertEqual(parsed.source, "https://example.com/artist/post/123")
-        self.assertEqual(parsed.description, "Drawing of Character (https://example.com) in summer.")
+        self.assertEqual(parsed.description, "Drawing of [Character](https://example.com) in **summer**.")
         self.assertEqual(parsed.pool_names, ["Test Collection 2026"])
         self.assertEqual(parsed.parent_source_id, "9999")
 
@@ -161,9 +186,35 @@ class TestMetadataParsers(BackupTestBase):
         self.assertTrue(parser.can_handle(media_path, [media_path, sidecar_path]))
 
         parsed = parser.parse(media_path, [media_path, sidecar_path])
-        self.assertIn("Translated Title", parsed.description)
-        self.assertIn("Translated description text.", parsed.description)
-        self.assertIn("Original description text.", parsed.description)
+        self.assertIn("**Translated Title**", parsed.description)
+        self.assertEqual(
+            parsed.description,
+            "**Translated Title**\n\nTranslated description text.\n\n---\n\nOriginal description text.",
+        )
+
+    def test_artist_commentary_separator_layout(self):
+        """Translated text goes first, original below a `---` separator; empty parts skip the separator."""
+        from backend.app.utils.tag_utils import build_artist_commentary
+        self.assertEqual(
+            build_artist_commentary("Title", "Translated", "Original"),
+            "**Title**\n\nTranslated\n\n---\n\nOriginal",
+        )
+        self.assertEqual(build_artist_commentary("Title", "", "Original"), "**Title**\n\nOriginal")
+        self.assertEqual(build_artist_commentary("Title", "  \n", "Original"), "**Title**\n\nOriginal")
+        self.assertEqual(build_artist_commentary("Title", "Translated", None), "**Title**\n\nTranslated")
+        self.assertEqual(build_artist_commentary("", "Same", "Same"), "Same")
+        self.assertIsNone(build_artist_commentary("", " ", None))
+
+    def test_description_markdown_renders_hr_classes(self):
+        from backend.app.utils.markdown import render_description_markdown
+        html_out = render_description_markdown("a\n\n---\n\nb")
+        self.assertIn('<hr class="text-tertiary my-2" />', html_out)
+
+    def test_gallery_dl_non_dtext_category_not_converted(self):
+        """Text from non-Danbooru sites (e.g. pixiv) must not be treated as DText."""
+        parser = GalleryDlParser()
+        desc = parser._parse_description({"category": "pixiv", "caption": "h1. keep [b]this[/b] &amp; that"})
+        self.assertEqual(desc, "h1. keep [b]this[/b] & that")
 
     def test_gallery_dl_parser_gelbooru_flat(self):
         """Test GalleryDlParser parsing Gelbooru-style flat tags and source reconstruction."""

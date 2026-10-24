@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from ..booru.types import BooruTag
 from ...utils.logger import logger
-from ...utils.tag_utils import dtext_to_plain
+from ...utils.tag_utils import build_artist_commentary, dtext_to_plain
 from .base import MetadataParser
 from .types import ParsedMetadata
 
@@ -207,30 +207,32 @@ class GalleryDlParser(MetadataParser):
 
         return None
 
+    @staticmethod
+    def _is_danbooru_style(data: Dict[str, Any]) -> bool:
+        """Danbooru-style sidecars carry DText markup; detect them by their structure."""
+        return (
+            isinstance(data.get("artist_commentary"), dict)
+            or "tag_string" in data
+            or any(k in data for k in DANBOORU_CATEGORY_FIELDS)
+        )
+
     def _parse_description(self, data: Dict[str, Any]) -> Optional[str]:
+        # Other sites (pixiv, twitter, ...) provide plain text or HTML, which must not be treated as DText
+        convert = dtext_to_plain if self._is_danbooru_style(data) else (lambda s: html.unescape(s).strip())
+
         # 1. Check artist_commentary dict (Danbooru API structure)
         commentary = data.get("artist_commentary")
         if isinstance(commentary, dict):
-            parts = []
-            title = commentary.get("translated_title") or commentary.get("original_title")
-            trans_desc = commentary.get("translated_description")
-            orig_desc = commentary.get("original_description")
-
-            if title and str(title).strip():
-                parts.append(str(title).strip())
-            if trans_desc and str(trans_desc).strip():
-                parts.append(str(trans_desc).strip())
-            if orig_desc and str(orig_desc).strip() and orig_desc != trans_desc:
-                if trans_desc:
-                    parts.append(f"Original:\n{str(orig_desc).strip()}")
-                else:
-                    parts.append(str(orig_desc).strip())
-
-            if parts:
-                return dtext_to_plain("\n\n".join(parts))
+            result = build_artist_commentary(
+                commentary.get("translated_title") or commentary.get("original_title"),
+                commentary.get("translated_description"),
+                commentary.get("original_description"),
+            )
+            if result:
+                return result
 
         elif isinstance(commentary, str) and commentary.strip():
-            return dtext_to_plain(commentary.strip())
+            return convert(commentary.strip())
 
         # 2. Check general description / notes / commentary fields
         desc = data.get("description") or data.get("notes") or data.get("commentary") or data.get("caption")
@@ -238,7 +240,7 @@ class GalleryDlParser(MetadataParser):
             return None
 
         # Convert DText or decode entities
-        return dtext_to_plain(desc.strip())
+        return convert(desc.strip())
 
     def _parse_pools(self, data: Dict[str, Any]) -> List[str]:
         pools: List[str] = []
