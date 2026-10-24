@@ -26,7 +26,11 @@ from ..utils.thumbnail_generator import generate_thumbnail, THUMBNAIL_EXT
 from ..utils.url_fetch import UrlFetchError, safe_request
 from ..utils.url_security import UrlValidationError, validate_url_not_ssrf
 from ..utils.tag_utils import get_escalated_rating
-from .media import get_or_create_tags, update_tag_counts
+from .media import (
+    apply_media_tag_implications,
+    get_or_create_tags_with_implications,
+    update_tag_counts,
+)
 
 router = APIRouter(prefix="/api/booru-import", tags=["booru-import"])
 
@@ -264,6 +268,7 @@ async def download_and_import(
 
         # Handle tags
         tag_ids_to_update = []
+        implied_by_tag_id = {}
         if final_tags:
             category_hints = None
             if req.auto_create_tags:
@@ -273,13 +278,18 @@ async def download_and_import(
                         category_hints[t.name.lower()] = t.category
 
             tag_list = [t.strip() for t in final_tags if t.strip()]
-            media.tags = get_or_create_tags(db, tag_list, category_hints=category_hints)
+            media.tags, implied_by_tag_id = get_or_create_tags_with_implications(
+                db, tag_list, category_hints=category_hints, expand=True
+            )
             tag_ids_to_update = [tag.id for tag in media.tags]
             escalated = get_escalated_rating(media.rating, media.tags)
             if escalated and escalated != media.rating:
                 media.rating = escalated
 
         db.add(media)
+        db.flush()
+        if implied_by_tag_id:
+            apply_media_tag_implications(db, media, implied_by_tag_id)
         db.commit()
         db.refresh(media)
 

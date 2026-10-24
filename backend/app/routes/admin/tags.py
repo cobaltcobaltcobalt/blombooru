@@ -15,7 +15,7 @@ from ...database import get_db
 from ...enums import RatingEnum, TagCategoryEnum
 from ...models import Media, Tag, TagAlias, TagImplication, User
 from ...schemas import BulkRatingUpdateRequest, TagResponse
-from ...utils.cache import invalidate_tag_cache
+from ...utils.cache import invalidate_media_cache, invalidate_tag_cache
 from ...utils.logger import logger
 from ...utils.album_utils import handle_media_rating_changed
 from ...utils.tag_utils import get_escalated_rating, normalize_tag_rating
@@ -763,12 +763,69 @@ async def merge_tag(
     # 4. Add source tag name as an alias for target tag
     db.add(TagAlias(alias_name=source_tag.name, target_tag_id=target_tag.id))
     
-    # 5. Update media items
-    media_with_source = db.query(Media).filter(Media.tags.any(id=source_tag.id)).all()
+    # 5. Update media items and implication rules
+    from sqlalchemy import and_
+    from ...models import TagImplication, blombooru_media_tags
+
+    source_id = source_tag.id
+    source_name = source_tag.name
+    target_id = target_tag.id
+
+    # Replace source_tag with target_tag in any TagImplication rules
+    implications_with_source = (
+        db.query(TagImplication)
+        .filter(
+            (TagImplication.target_tags.any(Tag.id == source_id))
+            | (TagImplication.implied_tags.any(Tag.id == source_id))
+        )
+        .all()
+    )
+    for imp in implications_with_source:
+        if source_tag in imp.target_tags:
+            imp.target_tags.remove(source_tag)
+            if target_tag not in imp.target_tags and target_tag not in imp.implied_tags:
+                imp.target_tags.append(target_tag)
+        if source_tag in imp.implied_tags:
+            imp.implied_tags.remove(source_tag)
+            if target_tag not in imp.implied_tags and target_tag not in imp.target_tags:
+                imp.implied_tags.append(target_tag)
+        if not imp.target_tags and not imp.target_tag_patterns:
+            db.delete(imp)
+        elif not imp.implied_tags:
+            db.delete(imp)
+
+    source_implied_rows = db.query(
+        blombooru_media_tags.c.media_id,
+        blombooru_media_tags.c.implied,
+        blombooru_media_tags.c.implied_by,
+    ).filter(
+        blombooru_media_tags.c.tag_id == source_id,
+        blombooru_media_tags.c.implied.is_(True),
+    ).all()
+    source_implied_by_media = {
+        m_id: (imp_by if isinstance(imp_by, list) else [])
+        for m_id, _, imp_by in source_implied_rows
+    }
+
+    target_existing_rows = db.query(
+        blombooru_media_tags.c.media_id,
+        blombooru_media_tags.c.implied,
+        blombooru_media_tags.c.implied_by,
+    ).filter(
+        blombooru_media_tags.c.tag_id == target_id,
+    ).all()
+    target_existing_by_media = {
+        m_id: (bool(is_imp), imp_by if isinstance(imp_by, list) else [])
+        for m_id, is_imp, imp_by in target_existing_rows
+    }
+
+    media_with_source = db.query(Media).filter(Media.tags.any(id=source_id)).all()
     rating_changed_media = []
+    newly_linked_target_media_ids = []
     for media in media_with_source:
         if target_tag not in media.tags:
             media.tags.append(target_tag)
+            newly_linked_target_media_ids.append(media.id)
             # The target tag is newly added to this media, so it may escalate its rating.
             escalated = get_escalated_rating(media.rating, [target_tag])
             if escalated and escalated != media.rating:
@@ -776,9 +833,104 @@ async def merge_tag(
                 rating_changed_media.append((media.id, escalated.value))
             
     # 6. Delete source tag
-    source_name = source_tag.name
     db.delete(source_tag)
     db.flush()
+
+    def _replace_source_in_groups(raw_groups: list, row_tag_id: int) -> list[list[int]]:
+        cleaned: list[list[int]] = []
+        for grp in raw_groups:
+            if not isinstance(grp, list):
+                continue
+            new_grp: list[int] = []
+            for item in grp:
+                tid_val = None
+                if isinstance(item, int) and not isinstance(item, bool):
+                    tid_val = target_id if item == source_id else item
+                elif isinstance(item, str):
+                    s = item.strip().lower()
+                    if s.isdigit():
+                        val = int(s)
+                        tid_val = target_id if val == source_id else val
+                    elif s == source_name:
+                        tid_val = target_id
+                if tid_val is not None and tid_val != row_tag_id and tid_val not in new_grp:
+                    new_grp.append(tid_val)
+            if new_grp:
+                new_grp.sort()
+                if new_grp not in cleaned:
+                    cleaned.append(new_grp)
+        return cleaned
+
+    for m_id in newly_linked_target_media_ids:
+        if m_id in source_implied_by_media:
+            updated_groups = _replace_source_in_groups(source_implied_by_media[m_id], target_id)
+            db.execute(
+                blombooru_media_tags.update()
+                .where(
+                    and_(
+                        blombooru_media_tags.c.media_id == m_id,
+                        blombooru_media_tags.c.tag_id == target_id,
+                    )
+                )
+                .values(implied=True, implied_by=updated_groups)
+            )
+
+    for m_id, src_groups in source_implied_by_media.items():
+        if m_id in newly_linked_target_media_ids:
+            continue
+        if m_id in target_existing_by_media:
+            tgt_is_imp, tgt_groups = target_existing_by_media[m_id]
+            if tgt_is_imp:
+                merged_raw = list(tgt_groups) + list(src_groups)
+                updated_groups = _replace_source_in_groups(merged_raw, target_id)
+                db.execute(
+                    blombooru_media_tags.update()
+                    .where(
+                        and_(
+                            blombooru_media_tags.c.media_id == m_id,
+                            blombooru_media_tags.c.tag_id == target_id,
+                        )
+                    )
+                    .values(implied=True, implied_by=updated_groups)
+                )
+
+    # Replace source_id with target_id inside implied_by across all media tag links
+    all_implied_rows = db.query(
+        blombooru_media_tags.c.media_id,
+        blombooru_media_tags.c.tag_id,
+        blombooru_media_tags.c.implied_by,
+    ).filter(
+        blombooru_media_tags.c.implied.is_(True),
+        blombooru_media_tags.c.implied_by.isnot(None),
+    ).all()
+
+    for m_id, t_id, imp_by in all_implied_rows:
+        if not isinstance(imp_by, list):
+            continue
+        has_source_ref = False
+        for grp in imp_by:
+            if isinstance(grp, list):
+                for item in grp:
+                    if item == source_id or (isinstance(item, str) and item.strip().lower() in (str(source_id), source_name)):
+                        has_source_ref = True
+                        break
+            if has_source_ref:
+                break
+        if has_source_ref:
+            new_imp_by = _replace_source_in_groups(imp_by, t_id)
+            db.execute(
+                blombooru_media_tags.update()
+                .where(
+                    and_(
+                        blombooru_media_tags.c.media_id == m_id,
+                        blombooru_media_tags.c.tag_id == t_id,
+                    )
+                )
+                .values(implied_by=new_imp_by)
+            )
+
+    for media in media_with_source:
+        db.expire(media, ["media_tag_links", "tags"])
 
     # 7. Update target tag post counts
     from ..media import update_tag_counts
@@ -793,6 +945,7 @@ async def merge_tag(
     for m_id, new_rating in rating_changed_media:
         handle_media_rating_changed(db, m_id, new_rating)
 
+    invalidate_media_cache()
     invalidate_tag_cache()
 
     return {

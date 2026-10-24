@@ -14,8 +14,11 @@ from ..database import get_db
 from ..enums import RatingEnum, TagCategoryEnum
 from ..models import blombooru_implication_implied, blombooru_implication_targets, Tag, TagImplication, User 
 from ..schemas import TagRatingValue
-from ..utils.cache import invalidate_tag_cache
-from ..utils.tag_utils import resolve_implications
+from ..utils.cache import invalidate_media_cache, invalidate_tag_cache
+from ..utils.tag_utils import (
+    _build_rule_trigger_groups,
+    resolve_implications_with_sources,
+)
 
 router = APIRouter(prefix="/api/tag-implications", tags=["tag-implications"])
 
@@ -309,6 +312,7 @@ async def delete_implication(
 
 class ExpandImplicationsRequest(BaseModel):
     tags: List[str]
+    new_tags: Optional[List[str]] = None
 
 @router.post("/expand")
 async def expand_tag_implications(
@@ -319,10 +323,130 @@ async def expand_tag_implications(
     """Return additional tags implied by the active implication rules that are not already present in the input set."""
     input_names = [t.strip().lower() for t in data.tags if t.strip()]
     if not input_names:
-        return {"implied_tags": []}
+        return {"implied_tags": [], "implied_by": {}}
 
-    implied = resolve_implications(db, input_names)
-    return {"implied_tags": sorted(implied)}
+    seed_names = None
+    if data.new_tags is not None:
+        seed_names = [t.strip().lower() for t in data.new_tags if t.strip()]
+        if not seed_names:
+            return {"implied_tags": [], "implied_by": {}}
+
+    implied, implied_by = resolve_implications_with_sources(db, input_names, seed_tags=seed_names)
+    return {"implied_tags": sorted(implied), "implied_by": implied_by}
+
+def _load_implication_rule_structures(db: Session):
+    """Load tag lookup maps and compiled implication rule structures for batch operations."""
+    from collections import defaultdict
+    from ..models import (
+        blombooru_implication_implied,
+        blombooru_implication_targets,
+        Tag,
+        TagImplication,
+    )
+
+    has_implications = db.execute(select(TagImplication.id).limit(1)).scalar_one_or_none()
+    if not has_implications:
+        return None
+
+    tag_rows = db.execute(select(Tag.id, Tag.name)).all()
+    if not tag_rows:
+        return None
+    id_to_name = {tid: name for tid, name in tag_rows}
+
+    target_rows = db.execute(
+        select(blombooru_implication_targets.c.implication_id, blombooru_implication_targets.c.tag_id)
+    ).all()
+
+    implied_rows = db.execute(
+        select(blombooru_implication_implied.c.implication_id, blombooru_implication_implied.c.tag_id)
+    ).all()
+
+    pattern_rows = db.execute(
+        select(TagImplication.id, TagImplication.target_tag_patterns)
+        .where(TagImplication.target_tag_patterns.is_not(None))
+    ).all()
+
+    imp_to_targets = defaultdict(set)
+    for imp_id, tag_id in target_rows:
+        imp_to_targets[imp_id].add(tag_id)
+
+    imp_to_implied = defaultdict(set)
+    for imp_id, tag_id in implied_rows:
+        imp_to_implied[imp_id].add(tag_id)
+
+    imp_to_patterns = {}
+    unique_patterns = set()
+    for imp_id, patterns in pattern_rows:
+        if patterns:
+            imp_to_patterns[imp_id] = patterns
+            unique_patterns.update(patterns)
+
+    pat_matching_tids = {}
+    for pat in unique_patterns:
+        pat_matching_tids[pat] = {
+            tid for tid, name in tag_rows if fnmatch.fnmatch(name, pat)
+        }
+
+    implied_to_rules = defaultdict(list)
+    for imp_id, imp_tids in imp_to_implied.items():
+        req_tids = imp_to_targets.get(imp_id, set())
+        req_pats = imp_to_patterns.get(imp_id, [])
+        if not req_tids and not req_pats:
+            continue
+        for imp_tid in imp_tids:
+            implied_to_rules[imp_tid].append((req_tids, req_pats))
+
+    name_to_id = {name: tid for tid, name in tag_rows}
+
+    def compute_groups_for_tag(tid: int, post_tag_ids: set[int]) -> list[list[str]]:
+        rules = implied_to_rules.get(tid)
+        if not rules:
+            return []
+        other_tag_ids = post_tag_ids - {tid}
+        if not other_tag_ids:
+            return []
+        groups: list[list[str]] = []
+        for req_tids, req_pats in rules:
+            if tid in req_tids or not req_tids.issubset(other_tag_ids):
+                continue
+            base_names = [id_to_name[t] for t in req_tids if t in id_to_name]
+            if not req_pats:
+                grp = sorted(set(base_names))
+                if grp and grp not in groups:
+                    groups.append(grp)
+            else:
+                if not all(bool(other_tag_ids & pat_matching_tids.get(pat, set())) for pat in req_pats):
+                    continue
+                active_other_names = {id_to_name[t] for t in other_tag_ids if t in id_to_name}
+                for grp in _build_rule_trigger_groups(base_names, req_pats, active_other_names):
+                    if grp and grp not in groups:
+                        groups.append(grp)
+        return groups
+
+    def compute_id_groups_for_tag(tid: int, post_tag_ids: set[int]) -> list[list[int]]:
+        name_groups = compute_groups_for_tag(tid, post_tag_ids)
+        id_groups: list[list[int]] = []
+        for grp in name_groups:
+            ids = sorted({name_to_id[n] for n in grp if n in name_to_id})
+            if ids and ids not in id_groups:
+                id_groups.append(ids)
+        return id_groups
+
+    return {
+        "tag_rows": tag_rows,
+        "id_to_name": id_to_name,
+        "name_to_id": name_to_id,
+        "target_rows": target_rows,
+        "implied_rows": implied_rows,
+        "pattern_rows": pattern_rows,
+        "imp_to_targets": imp_to_targets,
+        "imp_to_implied": imp_to_implied,
+        "imp_to_patterns": imp_to_patterns,
+        "pat_matching_tids": pat_matching_tids,
+        "implied_to_rules": implied_to_rules,
+        "compute_groups_for_tag": compute_groups_for_tag,
+        "compute_id_groups_for_tag": compute_id_groups_for_tag,
+    }
 
 @router.post("/simulate-apply-all")
 async def simulate_apply_all_implications(
@@ -338,47 +462,21 @@ async def simulate_apply_all_implications(
     loop = asyncio.get_running_loop()
 
     def do_simulate_apply_all():
-        import fnmatch
         from collections import defaultdict, deque
-        from ..models import (
-            blombooru_implication_implied,
-            blombooru_implication_targets,
-            blombooru_media_tags,
-            Tag,
-            TagImplication,
-        )
+        from ..models import blombooru_media_tags
 
         db = SessionLocal()
         try:
-            # 1. Quick check if any implications exist
-            has_implications = db.execute(select(TagImplication.id).limit(1)).scalar_one_or_none()
-            if not has_implications:
+            structures = _load_implication_rule_structures(db)
+            if not structures:
                 return []
 
-            # 2. Bulk load tag id -> name mapping
-            tag_rows = db.execute(select(Tag.id, Tag.name)).all()
-            if not tag_rows:
-                return []
-            id_to_name = {tid: name for tid, name in tag_rows}
-
-            # 3. Bulk load implication relationships from association tables
-            target_rows = db.execute(
-                select(blombooru_implication_targets.c.implication_id, blombooru_implication_targets.c.tag_id)
-            ).all()
-
-            implied_rows = db.execute(
-                select(blombooru_implication_implied.c.implication_id, blombooru_implication_implied.c.tag_id)
-            ).all()
-
-            pattern_rows = db.execute(
-                select(TagImplication.id, TagImplication.target_tag_patterns)
-                .where(TagImplication.target_tag_patterns.is_not(None))
-            ).all()
-
-            # Map implication_id -> set of implied tag_ids
-            imp_to_implied = defaultdict(set)
-            for imp_id, tag_id in implied_rows:
-                imp_to_implied[imp_id].add(tag_id)
+            tag_rows = structures["tag_rows"]
+            id_to_name = structures["id_to_name"]
+            target_rows = structures["target_rows"]
+            pattern_rows = structures["pattern_rows"]
+            imp_to_implied = structures["imp_to_implied"]
+            compute_groups_for_tag = structures["compute_groups_for_tag"]
 
             # Build trigger graph: trigger_tag_id -> set of implied tag_ids
             direct_graph = defaultdict(set)
@@ -399,7 +497,7 @@ async def simulate_apply_all_implications(
             if not direct_graph:
                 return []
 
-            # 4. Compute transitive closure for each tag with outgoing edges using BFS
+            # Compute transitive closure for each tag with outgoing edges using BFS
             closure = {}
             for start_tag in direct_graph:
                 visited = set()
@@ -416,7 +514,7 @@ async def simulate_apply_all_implications(
             if not closure:
                 return []
 
-            # 5. Bulk load media tags directly from association table
+            # Bulk load media tags directly from association table
             media_tag_rows = db.execute(
                 select(blombooru_media_tags.c.media_id, blombooru_media_tags.c.tag_id)
                 .order_by(blombooru_media_tags.c.media_id)
@@ -430,7 +528,7 @@ async def simulate_apply_all_implications(
             for m_id, t_id in media_tag_rows:
                 media_to_tags[m_id].add(t_id)
 
-            # 6. For each media item, compute newly implied tags from the closure
+            # For each media item, compute newly implied tags from the closure
             affected_media = []
             for m_id, current_tag_ids in media_to_tags.items():
                 implied_ids = set()
@@ -440,11 +538,21 @@ async def simulate_apply_all_implications(
 
                 new_tag_ids = implied_ids - current_tag_ids
                 if new_tag_ids:
+                    all_post_tids = current_tag_ids | new_tag_ids
                     added_tags = sorted(id_to_name[tid] for tid in new_tag_ids if tid in id_to_name)
                     if added_tags:
+                        item_implied_by = {}
+                        for tid in new_tag_ids:
+                            t_name = id_to_name.get(tid)
+                            if not t_name:
+                                continue
+                            groups = compute_groups_for_tag(tid, all_post_tids)
+                            if groups:
+                                item_implied_by[t_name] = groups
                         affected_media.append({
                             "media_id": m_id,
-                            "added_tags": added_tags
+                            "added_tags": added_tags,
+                            "implied_by": item_implied_by,
                         })
 
             return affected_media
@@ -453,3 +561,122 @@ async def simulate_apply_all_implications(
 
     affected_media = await loop.run_in_executor(None, do_simulate_apply_all)
     return {"affected_media": affected_media}
+
+@router.post("/backfill-implied-tags")
+async def backfill_implied_tags(
+    current_user: User = Depends(require_admin_mode),
+):
+    """
+    Backfill implied=True and implied_by on existing blombooru_media_tags rows
+    where both trigger tag(s) and implied tag are present on a media item.
+    """
+    from ..database import SessionLocal
+
+    loop = asyncio.get_running_loop()
+
+    def do_backfill():
+        from collections import defaultdict
+        from sqlalchemy import and_
+        from ..models import blombooru_media_tags
+
+        db = SessionLocal()
+        try:
+            structures = _load_implication_rule_structures(db)
+            if not structures:
+                return {"updated_media_count": 0, "updated_tags_count": 0}
+
+            implied_to_rules = structures["implied_to_rules"]
+            name_to_id = structures["name_to_id"]
+            compute_id_groups_for_tag = structures["compute_id_groups_for_tag"]
+            if not implied_to_rules:
+                return {"updated_media_count": 0, "updated_tags_count": 0}
+
+            rows = db.execute(
+                select(
+                    blombooru_media_tags.c.media_id,
+                    blombooru_media_tags.c.tag_id,
+                    blombooru_media_tags.c.implied,
+                    blombooru_media_tags.c.implied_by,
+                ).order_by(blombooru_media_tags.c.media_id)
+            ).all()
+
+            if not rows:
+                return {"updated_media_count": 0, "updated_tags_count": 0}
+
+            def _normalize_id_groups(raw_grps) -> list[list[int]]:
+                if not isinstance(raw_grps, list):
+                    return []
+                norm: list[list[int]] = []
+                for g in raw_grps:
+                    if not isinstance(g, list):
+                        continue
+                    ids: list[int] = []
+                    for x in g:
+                        tid_val = None
+                        if isinstance(x, int) and not isinstance(x, bool):
+                            tid_val = x
+                        elif isinstance(x, str):
+                            s = x.strip().lower()
+                            if s.isdigit():
+                                tid_val = int(s)
+                            else:
+                                tid_val = name_to_id.get(s)
+                        if tid_val is not None and tid_val not in ids:
+                            ids.append(tid_val)
+                    if ids:
+                        ids.sort()
+                        if ids not in norm:
+                            norm.append(ids)
+                return norm
+
+            media_to_tags = defaultdict(set)
+            existing_meta = {}
+            for m_id, t_id, is_imp, imp_by in rows:
+                media_to_tags[m_id].add(t_id)
+                existing_meta[(m_id, t_id)] = (bool(is_imp), _normalize_id_groups(imp_by), imp_by)
+
+            candidate_implied_tids = set(implied_to_rules.keys())
+            updates_to_apply = []
+            affected_media_ids = set()
+
+            for m_id, post_tag_ids in media_to_tags.items():
+                possible_tids = post_tag_ids & candidate_implied_tids
+                if not possible_tids:
+                    continue
+                for tid in possible_tids:
+                    groups = compute_id_groups_for_tag(tid, post_tag_ids)
+                    if not groups:
+                        continue
+                    old_imp, old_groups, raw_old = existing_meta.get((m_id, tid), (False, [], None))
+                    merged_groups = list(old_groups)
+                    for grp in groups:
+                        if grp not in merged_groups:
+                            merged_groups.append(grp)
+                    if not old_imp or merged_groups != raw_old:
+                        updates_to_apply.append((m_id, tid, merged_groups))
+                        affected_media_ids.add(m_id)
+
+            if updates_to_apply:
+                for m_id, tid, merged_groups in updates_to_apply:
+                    db.execute(
+                        blombooru_media_tags.update()
+                        .where(
+                            and_(
+                                blombooru_media_tags.c.media_id == m_id,
+                                blombooru_media_tags.c.tag_id == tid,
+                            )
+                        )
+                        .values(implied=True, implied_by=merged_groups)
+                    )
+                db.commit()
+                invalidate_media_cache()
+
+            return {
+                "updated_media_count": len(affected_media_ids),
+                "updated_tags_count": len(updates_to_apply),
+            }
+        finally:
+            db.close()
+
+    res = await loop.run_in_executor(None, do_backfill)
+    return {"status": "success", **res}

@@ -76,7 +76,7 @@ async def batch_resolve_combined_tags(
     db: Session = Depends(get_db)
 ):
     """Resolve aliases and expand implications on the combined set of current + new tags for each item."""
-    from ..utils.tag_utils import resolve_aliases, resolve_implications
+    from ..utils.tag_utils import resolve_aliases, resolve_implications_with_sources
 
     if not payload.items:
         return {"results": {}, "alias_resolutions": {}}
@@ -185,7 +185,7 @@ async def batch_resolve_combined_tags(
 
         # Combined tag list for implication expansion (only real tags!)
         combined_for_implications = resolved_current + resolved_new
-        implied_names = resolve_implications(db, combined_for_implications)
+        implied_names, raw_implied_by = resolve_implications_with_sources(db, combined_for_implications)
 
         # Query database casing for any implied tags not yet in map
         missing_implied = [imp.lower() for imp in implied_names if imp.lower() not in existing_tags_by_name]
@@ -195,6 +195,7 @@ async def batch_resolve_combined_tags(
 
         # Process implied tags (must exist in database)
         resolved_implied = []
+        item_implied_by = {}
         seen_all_lower = set(seen_current_lower | seen_new_lower)
         for imp in implied_names:
             clean = imp.strip().replace(" ", "_")
@@ -216,6 +217,9 @@ async def batch_resolve_combined_tags(
             if canonical_norm not in seen_all_lower:
                 seen_all_lower.add(canonical_norm)
                 resolved_implied.append(canonical)
+                groups = raw_implied_by.get(canonical) or raw_implied_by.get(imp) or raw_implied_by.get(canonical_norm) or []
+                if groups:
+                    item_implied_by[canonical] = groups
 
         final_tags = resolved_current + resolved_new + resolved_implied
 
@@ -228,7 +232,8 @@ async def batch_resolve_combined_tags(
         results[item_key] = {
             "current_tags": resolved_current,
             "new_tags": final_tags,
-            "added_tags": added_tags
+            "added_tags": added_tags,
+            "implied_by": item_implied_by,
         }
 
     alias_resolutions = {k: v[0] for k, v in alias_map.items()}

@@ -424,7 +424,7 @@ async def get_album_contents(
         Media.id == blombooru_album_media.c.media_id
     ).filter(
         blombooru_album_media.c.album_id == album_id
-    ).options(selectinload(Media.tags))
+    ).options(selectinload(Media.tags), selectinload(Media.media_tag_links))
     
     parsed_q = parse_search_query(q) if (q and isinstance(q, str) and q.strip()) else None
     media_query = apply_media_filters(

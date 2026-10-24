@@ -97,7 +97,7 @@ async def search_media(
         limit = settings.get_items_per_page()
     if not isinstance(q, str):
         q = ""
-    query = db.query(Media).options(selectinload(Media.tags))
+    query = db.query(Media).options(selectinload(Media.tags), selectinload(Media.media_tag_links))
     parsed = parse_search_query(q)
     
     if rating and 'rating' not in parsed['meta']:

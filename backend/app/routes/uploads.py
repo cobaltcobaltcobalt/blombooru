@@ -37,7 +37,12 @@ from ..utils.request_helpers import safe_error_detail
 from ..utils.thumbnail_generator import generate_thumbnail, THUMBNAIL_EXT, thumbnail_mime_type
 from ..utils.transcoder import transcode_media_if_needed
 from ..services.metadata_parsers import get_parser_for_file
-from .media import preview_or_create_tags, update_tag_counts
+from .media import (
+    apply_media_tag_implications,
+    get_or_create_tags_with_implications,
+    preview_or_create_tags,
+    update_tag_counts,
+)
 from ..utils.tag_utils import get_escalated_rating, get_newly_added_tags, normalize_tag_rating
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
@@ -685,6 +690,11 @@ async def analyze_staged_item(
 
         # Re-evaluate current tags with DB
         current_tag_names = [t["name"] for t in item.get("tags", []) if t.get("name")]
+        pre_implied_map = {
+            t["name"].strip().lower(): (t.get("implied_by") or [])
+            for t in item.get("tags", [])
+            if t.get("name") and t.get("implied")
+        }
         parsed_hints = None
         if category_hints:
             try:
@@ -698,6 +708,7 @@ async def analyze_staged_item(
             category_hints=parsed_hints,
             expand=True,
             dry_run=True,
+            pre_implied_map=pre_implied_map,
         )
         item["tags"] = [t.model_dump() if hasattr(t, "model_dump") else dict(t) for t in proposed_tags]
 
@@ -772,6 +783,27 @@ async def update_staged_item(
         other_items = {k: v for k, v in meta.get("items", {}).items() if k != item_id}
         session_pending_map = _get_session_pending_tags_map(other_items)
 
+        pre_implied_map: Dict[str, List[List[str]]] = {
+            t["name"].strip().lower(): (t.get("implied_by") or [])
+            for t in previous_staged_tags
+            if t.get("name") and t.get("implied")
+        }
+        for t in update.tags:
+            if getattr(t, "implied", False):
+                t_lower = t.name.strip().lower()
+                existing_grps = pre_implied_map.setdefault(t_lower, [])
+                for grp in (getattr(t, "implied_by", None) or []):
+                    if grp not in existing_grps:
+                        existing_grps.append(grp)
+
+        prev_tag_names = {t["name"].strip().lower() for t in previous_staged_tags if t.get("name")}
+        newly_added_names = {
+            t.name.strip().lower()
+            for t in update.tags
+            if t.name and t.name.strip().lower() not in prev_tag_names
+        }
+        seed_triggers = None if not prev_tag_names else newly_added_names
+
         # Build category hints from user assigned tag categories
         hints = {t.name.lower(): t.category.value for t in update.tags}
         names = [t.name for t in update.tags]
@@ -781,6 +813,8 @@ async def update_staged_item(
             category_hints=hints,
             expand=True,
             dry_run=True,
+            pre_implied_map=pre_implied_map,
+            seed_trigger_names=seed_triggers,
         )
         # Preserve user_assigned flag if explicitly passed
         user_assigned_set = {t.name.lower() for t in update.tags if getattr(t, "user_assigned", False)}
@@ -800,6 +834,7 @@ async def update_staged_item(
                     dump["user_assigned"] = True
             result_tags.append(dump)
         item["tags"] = result_tags
+        item["tags_reviewed"] = True
         # Only tags added by this update escalate, and never over a rating the
         # same request explicitly set.
         if update.rating is None:
@@ -925,6 +960,15 @@ async def bulk_update_staged_items(
             hints = {k: v["category"] for k, v in current_tags_dict.items() if v.get("category")}
             hints.update(user_assigned_map)
 
+            pre_implied_map: Dict[str, List[List[str]]] = {
+                k: (v.get("implied_by") or [])
+                for k, v in current_tags_dict.items()
+                if v.get("implied")
+            }
+            prev_tag_names = {t["name"].strip().lower() for t in previous_staged_tags if t.get("name")}
+            newly_added_names = {k for k in names if k not in prev_tag_names}
+            seed_triggers = None if not prev_tag_names else newly_added_names
+
             other_items = {k: v for k, v in items.items() if k != item_id}
             session_pending_map = _get_session_pending_tags_map(other_items)
 
@@ -934,6 +978,8 @@ async def bulk_update_staged_items(
                 category_hints=hints,
                 expand=True,
                 dry_run=True,
+                pre_implied_map=pre_implied_map,
+                seed_trigger_names=seed_triggers,
             )
             resolved_tags = []
             for pt in proposed:
@@ -952,6 +998,8 @@ async def bulk_update_staged_items(
                 resolved_tags.append(pt_dict)
 
             item["tags"] = resolved_tags
+            if req.add_tags or req.remove_tag_names:
+                item["tags_reviewed"] = True
             # Only tags added by this update escalate, and never over a rating the
             # same request explicitly set.
             if req.rating is None:
@@ -1094,6 +1142,27 @@ async def update_pending_tag(
                     new_tags.append(t)
 
             if modified:
+                replacement_name = None
+                if update.merge_into:
+                    replacement_name = update.merge_into.strip().lower()
+                elif update.new_name:
+                    replacement_name = update.new_name.strip().lower()
+
+                if replacement_name:
+                    for t in new_tags:
+                        if t.get("implied") and isinstance(t.get("implied_by"), list):
+                            updated_grps = []
+                            for grp in t["implied_by"]:
+                                if isinstance(grp, list):
+                                    new_grp = sorted({
+                                        replacement_name if str(x).strip().lower() == target_name else str(x).strip().lower()
+                                        for x in grp
+                                        if x and str(x).strip()
+                                    })
+                                    if new_grp and new_grp not in updated_grps:
+                                        updated_grps.append(new_grp)
+                            t["implied_by"] = updated_grps
+
                 # Deduplicate item's tags by name
                 seen = set()
                 deduped = []
@@ -1450,8 +1519,19 @@ async def commit_upload_session(
 
                 # Link tags
                 item_tag_names = [t.get("name", "").strip().lower() for t in item.get("tags", []) if t.get("name")]
+                implied_by_tag_id = {}
                 if item_tag_names:
-                    media.tags = preview_or_create_tags(db, item_tag_names, expand=True, dry_run=False)
+                    pre_implied_map = {
+                        t.get("name", "").strip().lower(): (t.get("implied_by") or [])
+                        for t in item.get("tags", [])
+                        if t.get("name") and t.get("implied")
+                    }
+                    media.tags, implied_by_tag_id = get_or_create_tags_with_implications(
+                        db,
+                        item_tag_names,
+                        expand=not bool(item.get("tags_reviewed")),
+                        pre_implied_map=pre_implied_map,
+                    )
                     for t in media.tags:
                         all_tag_ids_to_update.add(t.id)
                     # The staged rating already reflects the staged tags (and any deliberate
@@ -1472,6 +1552,8 @@ async def commit_upload_session(
 
                 db.add(media)
                 db.flush()
+                if implied_by_tag_id:
+                    apply_media_tag_implications(db, media, implied_by_tag_id)
 
                 total_created += 1
                 results.append(UploadSessionCommitItemResult(
