@@ -1,7 +1,7 @@
 ## Admin: Backup & Import
 
 > [!NOTE]
-> Last updated: `September 8, 2026`
+> Last updated: `October 24, 2026`
 
 **Base path:** `/api/admin`
 
@@ -71,7 +71,10 @@ The `backup.json` contains:
       "share_ai_metadata": false,
       "share_language": null,
       "transcoded_path": "media/transcoded/img.webp",
-      "tags": ["fox", "landscape"],
+      "tags": ["fox", "canine", "landscape"],
+      "implied_tags": {
+        "canine": [["fox"]]
+      },
       "archive_path": "media/img.jpg",
       "parent_hash": null
     }

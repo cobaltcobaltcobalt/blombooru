@@ -1,7 +1,7 @@
 ## Media
 
 > [!NOTE]
-> Last updated: `October 23, 2026`
+> Last updated: `October 24, 2026`
 
 **Base path:** `/api/media`
 
@@ -59,9 +59,32 @@ Every endpoint returning media records outputs a `MediaResponse`:
   "share_language": null,
   "parent_id": null,
   "has_children": false,
-  "tags": [ /* TagResponse[] */ ]
+  "tags": [
+    {
+      "id": 10,
+      "name": "corgi",
+      "category": "general",
+      "post_count": 42,
+      "created_at": "2026-08-14T10:00:00+00:00",
+      "implied": false,
+      "implied_by": []
+    },
+    {
+      "id": 5,
+      "name": "dog",
+      "category": "general",
+      "post_count": 120,
+      "created_at": "2026-08-14T10:00:00+00:00",
+      "implied": true,
+      "implied_by": [["corgi"]]
+    }
+  ]
 }
 ```
+
+Each tag entry in `MediaResponse.tags` is a `MediaTagResponse` extending `TagResponse` with:
+- `implied` (`bool`): `true` if the tag was added to this media item by a tag implication rule, `false` if added explicitly.
+- `implied_by` (`string[][]`): List of trigger tag name groups (one group per matching rule) that caused the tag to be implied on this media item. Dynamically resolved from stored trigger tag IDs so tag renames and merges are reflected automatically.
 
 ### Get media item by ID
 
@@ -207,7 +230,8 @@ Content-Type: application/json
       "filename": "image.webp",
       "file_type": "image",
       "tags": [
-        { "name": "fox", "category": "general" }
+        { "name": "fox", "category": "general", "implied": false, "implied_by": [] },
+        { "name": "canine", "category": "general", "implied": true, "implied_by": [["fox"]] }
       ]
     }
   ]
@@ -226,7 +250,7 @@ Includes extracted metadata alongside the slim item shape:
       "filename": "image.webp",
       "file_type": "image",
       "tags": [
-        { "name": "fox", "category": "general" }
+        { "name": "fox", "category": "general", "implied": false, "implied_by": [] }
       ],
       "metadata": { /* EXIF or AI generation metadata, or null */ }
     }
@@ -304,7 +328,10 @@ Content-Type: application/json
 
 {
   "rating": "safe",
-  "tags": ["tag1", "tag2"],
+  "tags": ["corgi", "dog"],
+  "implied_tags": {
+    "dog": [["corgi"]]
+  },
   "source": "https://...",
   "description": "...",
   "description_enlarged": false,
@@ -313,9 +340,35 @@ Content-Type: application/json
 }
 ```
 
-All fields are optional. Supplying `tags` replaces the tag list entirely. Setting `parent_id` to `null` clears the parent relationship. Setting `custom_date` to `null` resets the custom date to `uploaded_at`.
+All fields are optional. Supplying `tags` replaces the tag list entirely without auto-expanding tag implications server-side. Existing `implied` and `implied_by` metadata is preserved for tags that remain on the item. When `implied_tags` (`Record<string, string[][]>`) is provided, each entry is validated against active tag implication rules and persisted for matching implied tags in `tags`. Setting `parent_id` to `null` clears the parent relationship. Setting `custom_date` to `null` resets the custom date to `uploaded_at`.
 
 **Response:** Updated `MediaResponse`.
+
+### Bulk update media tags
+
+Requires `require_admin_mode`. Updates tags across multiple media items in a single request.
+
+```
+POST /api/media/bulk-update-tags
+Content-Type: application/json
+
+{
+  "updates": [
+    {
+      "media_id": 1,
+      "tags": ["corgi", "dog"],
+      "implied_tags": {
+        "dog": [["corgi"]]
+      }
+    }
+  ]
+}
+```
+
+- When `implied_tags` is omitted (`null`), all tags on the media item are evaluated against active implication rules and any implied tags are added and marked with `implied: true` and `implied_by`.
+- When `implied_tags` is provided, client-supplied implication groups are validated against active rules, existing implied tags on the item are preserved unless removed, and only newly added explicit tags are expanded server-side.
+
+**Response:** `{ "updated": 1, "errors": [] }`
 
 ### Update post from source
 
