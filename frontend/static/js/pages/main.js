@@ -348,6 +348,26 @@ class AutoScrollEngine {
     }
 }
 
+window.getCookie = function (name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) {
+        const raw = parts.pop().split(';').shift();
+        try {
+            return decodeURIComponent(raw);
+        } catch {
+            return raw;
+        }
+    }
+    return null;
+};
+
+window.setCookie = function (name, value, days = 365) {
+    const expires = new Date();
+    expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000);
+    document.cookie = `${name}=${encodeURIComponent(value)};expires=${expires.toUTCString()};path=/;SameSite=Lax`;
+};
+
 window.AutoScrollEngine = AutoScrollEngine;
 window.autoScroll = new AutoScrollEngine();
 
@@ -355,8 +375,8 @@ window.autoScroll = new AutoScrollEngine();
 class Blombooru {
     constructor() {
         this.autoScroll = window.autoScroll;
-        this.isAdminMode = this.getCookie('admin_mode') === 'true';
-        this.isAuthenticated = !!this.getCookie('admin_token');
+        this.isAdminMode = window.getCookie('admin_mode') === 'true';
+        this.isAuthenticated = !!window.getCookie('admin_token');
         this.currentPage = 1;
         this.isLoading = false;
         this.hasMore = true;
@@ -371,11 +391,11 @@ class Blombooru {
         this.updateUI();
 
         // Load settings from localStorage or cookie
-        const savedRating = localStorage.getItem('selectedRating') || this.getCookie('rating_filter');
+        const savedRating = localStorage.getItem('selectedRating') || window.getCookie('rating_filter');
         if (savedRating) {
             this.setRatingFilter(savedRating);
             localStorage.setItem('selectedRating', savedRating);
-            this.setCookie('rating_filter', savedRating, 365);
+            window.setCookie('rating_filter', savedRating, 365);
         }
 
         // Check albums visibility
@@ -576,6 +596,9 @@ class Blombooru {
         messageEl.className = 'text-sm opacity-90';
         messageEl.textContent = message;
 
+        notification.setAttribute('role', type === 'error' ? 'alert' : 'status');
+        notification.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
+
         notification.appendChild(titleEl);
         notification.appendChild(messageEl);
 
@@ -701,31 +724,37 @@ class Blombooru {
         }
     }
 
-    getCookie(name) {
-        const value = `; ${document.cookie}`;
-        const parts = value.split(`; ${name}=`);
-        if (parts.length === 2) return parts.pop().split(';').shift();
-        return null;
-    }
-
-    setCookie(name, value, days) {
-        const expires = new Date();
-        expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000);
-        document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/;SameSite=Lax`;
-    }
-
     async apiCall(endpoint, options = {}) {
-        const defaultOptions = {
-            headers: {
-                'Content-Type': 'application/json'
-            }
+        const headers = { ...options.headers };
+        const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+        if (!isFormData && !headers['Content-Type'] && !headers['content-type']) {
+            headers['Content-Type'] = 'application/json';
+        }
+
+        const fetchOptions = {
+            ...options,
+            headers
         };
 
-        const response = await fetch(endpoint, { ...defaultOptions, ...options });
+        const response = await fetch(endpoint, fetchOptions);
 
         if (!response.ok) {
-            const error = await response.json();
-            let errorMessage = error.detail || 'API call failed';
+            if (response.status === 401 && window.location.pathname.startsWith('/admin')) {
+                window.location.href = `/login?return=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+                // Never resolve so callers do not run with undefined while the page unloads
+                return new Promise(() => { });
+            }
+
+            let errorData = null;
+            try {
+                errorData = await response.json();
+            } catch {
+                // Non-JSON response
+            }
+
+            let errorMessage = (errorData && errorData.detail)
+                ? (typeof errorData.detail === 'string' ? errorData.detail : JSON.stringify(errorData.detail))
+                : `HTTP ${response.status}: ${response.statusText || 'API call failed'}`;
 
             // Check if error detail is an i18n key (starts with error_, exists in notifications.admin, or is a direct key)
             if (typeof errorMessage === 'string') {
@@ -743,7 +772,17 @@ class Blombooru {
             throw new Error(errorMessage);
         }
 
-        return response.json();
+        if (response.status === 204 || response.headers.get('content-length') === '0') {
+            return null;
+        }
+
+        const text = await response.text();
+        if (!text) return null;
+        try {
+            return JSON.parse(text);
+        } catch {
+            throw new Error(`Invalid JSON response (HTTP ${response.status})`);
+        }
     }
 
     async showSearchSyntaxGuide() {

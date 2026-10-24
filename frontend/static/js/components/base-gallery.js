@@ -46,12 +46,7 @@ class BaseGallery {
         };
 
         // Current state
-        const cookieRating = (function (name) {
-            const value = `; ${document.cookie}`;
-            const parts = value.split(`; ${name}=`);
-            if (parts.length === 2) return parts.pop().split(';').shift();
-            return null;
-        })('rating_filter');
+        const cookieRating = window.getCookie('rating_filter');
 
         const sidebarMode = document.body.dataset.sidebarMode || window.SIDEBAR_FILTER_MODE || 'rating';
         this.sidebarMode = sidebarMode;
@@ -204,7 +199,7 @@ class BaseGallery {
                 this.currentRating = ratingStr;
                 this.updateRatingFilterLabels();
                 localStorage.setItem('selectedRating', ratingStr);
-                document.cookie = "rating_filter=" + ratingStr + "; path=/; max-age=31536000";
+                window.setCookie('rating_filter', ratingStr, 365);
                 this.onRatingChange();
             });
         });
@@ -212,10 +207,7 @@ class BaseGallery {
         // Set initial state
         const ratingStr = Array.from(this.selectedRatings).join(',');
         this.currentRating = ratingStr;
-        localStorage.setItem('selectedRating', ratingStr);
-        document.cookie = "rating_filter=" + ratingStr + "; path=/; max-age=31536000";
         this.updateRatingFilterLabels();
-
         this.setupCustomFilterButtons();
     }
 
@@ -248,7 +240,6 @@ class BaseGallery {
         }
         const filterArray = Array.from(this.selectedCustomFilters);
         this.currentCustomFilter = filterArray.join(' ');
-        localStorage.setItem('selectedCustomFilter', JSON.stringify(filterArray));
         this.updateCustomFilterLabels();
     }
 

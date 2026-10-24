@@ -198,8 +198,7 @@ class TagAutocomplete {
             raw = null;
         }
         if (!raw) {
-            const match = document.cookie.match(/(?:^|;\s*)rating_filter=([^;]*)/);
-            raw = match ? decodeURIComponent(match[1]) : null;
+            raw = window.getCookie('rating_filter');
         }
 
         const ratings = (raw || '')
