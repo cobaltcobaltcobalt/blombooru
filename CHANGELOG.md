@@ -1,14 +1,30 @@
-## v1.41.0
+## v2.0.0
 
-This is a big release, the biggest one yet actually (again)! The first big headline feature here is the new tag gallery page, where you can search, sort, view, and manage your tags. It's like the tag search in the Admin Panel but on steroids! Perfect for both you as the admin, and for any visitors (in case you host a public instance).  
-The second headline feature is actually three features! The first one being tag merging (which you can find in the tag management modal), where you can merge a tag into another, making the merged tag an alias of the other in the process. The second being tag alias management (also in the tag management modal), where you can now finally edit the aliases of your tags! The third and final one being bulk apply buttons for the tag aliases and tag implications, where you can bring your existing media collection up to speed by retroactively applying all of your tag aliases and implications!
+This is a big release, the biggest one yet actually (again), so big I decided to call it v2 instead of v1.41, but worry not! Upgrading to this version is still as frictionless as always! There are literally too many new big features that I can't pick a single "headline" feature... so you get five instead (in no specific order)!
 
-Other *very* notable features include the new post navigation buttons (with nice little previews of the media you are about to view), all the new keyboard shortcuts (with a new keybinding editor!), the new algorithm (TF-IDF, for those curious) for finding related posts that is significantly more accurate while also being faster (and is also customizable!!), direct web fetching as a new media upload method, and finally, the AI tag predictor now has support for hardware acceleration (only supporting CUDA for now, though)!
+**The first big headline feature** here is the new tags gallery page, where you can search, sort, view, and manage your tags. It's like the tag search in the Admin Panel but on steroids! Perfect for both you as the admin, and for any visitors (in case you host a public instance).  
+**The second headline feature** is that the uploader got a *massive* upgrade; folders can now map to albums, info saved inside or next to your media files is now read and used, the booru importer is more tightly integrated, you can fetch media from other sites (by pasting the direct URL to it), and much more!  
+**The third headline feature** is actually a pair of media-related improvements! First, media descriptions can now display Markdown as well as be enlarged in case you have a lot of content in it. Second, you can now set a custom date for media, so you can finally sort by when the art was *made*, not just by when it was *uploaded*!  
+**The fourth headline feature** is a huge suite of tag management upgrades!
 
-Aside from those new features, two new sorting options have now been added (random and by tag count), and the sorting UI is now more compact than ever! I also went and added a "Back to Album" button for when you are viewing media in an album, so you don't need to use the browser's back button anymore. Building on the album changes, I also made the related media and media hierarchy sections more album-friendly!
+- **Tag Ratings:** Tags can now have their own ratings, which automatically escalate a post's rating when a higher-rated tag is added. Tags with ratings outside your current filter also get hidden from autocomplete and suggestions, just like media!
+- **Tracked Implied Tags:** Tags added to posts through an implication rule are now tracked and can be hidden if need be!
+- **Tag Merging & Alias Management:** You can now merge tags into another tag (turning the merged tag(s) into an alias in the process) as well as being able to edit your tag aliases, both directly inside the tag management modal and the new tags gallery!
 
-As for all the bug fixes and such, there were a lot... The most important two being the completely revamped backup system since it didn't work at all last release (I am really sorry about that..), and "full backup"s were actually NOT full backups. But now they are! You might want to update to this version before making any more backups.  
-Some of the smaller fixes include fewer network requests when using the AI tag predictor, fixed downloads for large media, the usual fixed styling inconsistencies and stray hardcoded strings, and many more that are not worth mentioning here.
+**The fifth and final headline feature** is that you can now manually reorder both albums and album contents!
+
+Other *very* notable features include big improvements to tag suggestions and autocomplete, and media thumbnails now being smaller in file size while supporting transparency AND being higher quality (hovering a GIF's thumbnail will now play the GIF too!). There are also new post navigation buttons (with nice little previews of the media you are about to view), a bunch of new keyboard shortcuts (with a new keybinding editor in the Account tab in the Admin Panel!), a new light theme, and the option to blur explicit thumbnails.
+
+Under the hood, there is a brand-new algorithm (TF-IDF, for those curious) for finding related posts that is significantly more accurate while also being faster (and is also customizable!!). The AI tag predictor also got a big upgrade with better management, a new best model (PixAI), and support for hardware acceleration (only supporting CUDA for now, though)! The booru importer now supports importing from Shimmie, Szurubooru, Philomena, and even Blombooru itself. You can even configure a proxy (HTTP or SOCKS) for the direct web fetcher and booru importer in case your instance is hosted somewhere that blocks such sites!
+
+Aside from those features, you can now set explicit permission levels for API keys, so you no longer need to give e.g., external booru viewer applications full admin-level access. Three new sorting options have also been added (custom date, random, and tag count), and the sorting UI is now more compact than ever! I also went and added a "Back to Album" button for when you are viewing media in an album, so you don't need to use the browser's back button anymore. Building on the album changes, I also made the related media and media hierarchy sections more album-friendly!
+
+**You can easily migrate your old thumbnails and previously web-incompatible media to the new thumbnail and web-compatible formats directly in the Admin Panel!** The same goes for the tag implication and alias additions, all can be migrated with a few clicks :)
+
+As for all the bug fixes, security hardening and such, there was a lot. A *lot* of invisible work too, since basically the whole codebase was refactored... The most important two fixes being a completely revamped backup system since it didn't work at all last release (I am really sorry about that..), and that "full backup"s were actually NOT full backups. But now they are! You might want to update to this version before making any more backups. There have been a lot of important security fixes, so I recommend updating just for that.  
+Some of the smaller fixes include fewer network requests in nearly all parts of Blombooru, fixed downloads for large media, the usual fixed styling inconsistencies and stray hardcoded strings, and *many* more that are not worth mentioning here.
+
+Oops this went on for way too long... Anyway, I hope you enjoy Blombooru v2.0.0!
 
 ## v1.40.1
 
