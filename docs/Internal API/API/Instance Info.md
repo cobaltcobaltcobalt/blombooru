@@ -1,7 +1,7 @@
 ## Instance Info
 
 > [!NOTE]
-> Last updated: `September 8, 2026`
+> Last updated: `October 25, 2026`
 
 **Base path:** `/api`
 
@@ -20,6 +20,7 @@ GET /api/instance-info
   "app_name": "Blombooru",
   "app_version": "1.40.0",
   "auth_required": false,
+  "access_level": "read",
   "theme": {
     "id": "ctp_mocha",
     "name": "Catppuccin Mocha",
@@ -92,6 +93,19 @@ GET /api/instance-info
   }
 }
 ```
+
+### Access Level
+
+`access_level` describes what the credentials on the current request can do. Credentials are optional; the endpoint always returns 200.
+
+| Value | Meaning |
+|---|---|
+| `none` | No valid credentials and `auth_required` is `true` |
+| `read` | No valid credentials and `auth_required` is `false`, or an API key with `read` permission |
+| `write` | API key with `write` permission |
+| `admin` | Valid admin session (cookie or JWT) or API key with `admin` permission |
+
+An invalid or revoked credential is treated as no credential. If an API key and a session are both present, the API key wins. The `admin_mode` UI cookie has no effect on this value.
 
 ### Supported Format Entry Fields
 

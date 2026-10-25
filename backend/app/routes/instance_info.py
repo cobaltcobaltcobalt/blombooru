@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from ..config import APP_VERSION, settings
 from ..themes import theme_registry
@@ -7,8 +7,9 @@ from ..utils.format_registry import format_registry
 router = APIRouter(prefix="/api", tags=["instance-info"])
 
 @router.get("/instance-info")
-async def get_instance_info():
+async def get_instance_info(request: Request):
     """Return harmless instance metadata (public, no auth required)."""
+    from ..auth import resolve_access_level
     from ..translations import language_registry
     from ..custom_themes import get_backup_theme_for
     
@@ -26,6 +27,7 @@ async def get_instance_info():
         "app_name": settings.APP_NAME,
         "app_version": APP_VERSION,
         "auth_required": settings.REQUIRE_AUTH,
+        "access_level": resolve_access_level(request),
         "theme": theme_dict,
         "language": {
             "id": lang_id,

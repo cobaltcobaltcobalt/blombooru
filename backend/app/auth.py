@@ -182,6 +182,41 @@ def get_current_user(
     user = db.query(User).filter(User.username == username).first()
     return user
 
+def _resolve_access_level_with_db(request: Request, db: Session) -> str:
+    api_key = get_api_key_from_request(request, db)
+    if api_key:
+        permission = getattr(api_key, "permission", None)
+        return permission if permission in ("read", "write", "admin") else "read"
+
+    auth_header = request.headers.get("Authorization", "")
+    bearer = auth_header[7:] if auth_header.startswith("Bearer ") else None
+    cookie_token = request.cookies.get("admin_token")
+    user = get_current_user(token=bearer, admin_token=cookie_token, db=db)
+    if user:
+        return "admin"
+
+    return "read" if not settings.REQUIRE_AUTH else "none"
+
+def resolve_access_level(request: Request, db: Optional[Session] = None) -> str:
+    """Return the caller's access level: 'none', 'read', 'write' or 'admin'."""
+    own_session = None
+    try:
+        if db is None:
+            from . import database
+            if database.SessionLocal is None:
+                database.init_engine()
+            if database.SessionLocal is None:
+                return "none"
+            own_session = database.SessionLocal()
+            db = own_session
+        return _resolve_access_level_with_db(request, db)
+    except Exception as e:
+        logger.error(f"Access level resolution failed: {e}")
+        return "none"
+    finally:
+        if own_session is not None:
+            own_session.close()
+
 def _enforce_api_key_permission(request: Request, api_key_user: User) -> User:
     """Enforce permission tier for API key authentication (fail-closed to 'read')."""
     api_key = getattr(request.state, "current_api_key", None)
