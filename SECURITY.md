@@ -1,5 +1,10 @@
 # Security
 
+> [!IMPORTANT]
+> **I do not accept AI-generated security reports and I don't have the time to review slop.**  
+> If you used AI assistance (e.g. for translation or proofreading), you **must disclose** it using the checkbox in the advisory form, and **every claim and proof of concept must have been verified by hand by you**.  
+> Reports or follow-up replies that appear unverified, padded, or machine-generated without disclosure **may be closed without further response**. If the issue turns out to be valid, I may still fix it, but **you may not be credited**.
+
 Keeping your personal media collection safe and private is important! Blombooru is designed primarily as a **single-user, self-hosted** application. While it includes robust authentication and access controls, it is not hardened for public internet exposure in the same way a large multi-tenant SaaS product would be.
 
 Before you expose your instance to the wild web (e.g., via a reverse proxy), please read through these security considerations to ensure your data stays protected.
