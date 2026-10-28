@@ -1172,6 +1172,15 @@ video:focus-visible {
     }
 }
 
+#bulk-actions {
+    top: -1px;
+    transition: top 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+body:has(#main-header.-translate-y-full) #bulk-actions {
+    top: calc(var(--header-height, 0px) * -1 - 1px);
+}
+
 /* Manual Reorder */
 body.is-dragging #main-header,
 body.is-dragging .manual-reorder-bar {

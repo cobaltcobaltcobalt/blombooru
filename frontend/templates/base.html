@@ -369,12 +369,17 @@
                 if (!header || !mainScroll) return;
 
                 const adjustPadding = () => {
-                    const height = header.offsetHeight;
+                    const height = header.getBoundingClientRect().height;
                     mainScroll.style.paddingTop = `${height}px`;
+                    // For sticky elements
+                    document.documentElement.style.setProperty('--header-height', `${height}px`);
                 };
 
                 adjustPadding();
                 window.addEventListener('resize', adjustPadding);
+                if (window.ResizeObserver) {
+                    new ResizeObserver(adjustPadding).observe(header);
+                }
 
                 let lastScrollTop = 0;
                 let wasHeaderVisibleBeforeDrag = false;

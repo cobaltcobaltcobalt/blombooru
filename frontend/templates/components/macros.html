@@ -253,7 +253,7 @@ location='desktop', is_admin=false) %}
 
 {# Bulk Actions Component #}
 {% macro bulk_actions(buttons=['select_all', 'deselect_all', 'delete']) %}
-<div id="bulk-actions" style="display: none;" class="surface p-3 mb-4 border">
+<div id="bulk-actions" style="display: none;" class="surface p-3 mb-4 border sticky z-20">
     <p class="mb-2">{{ t('common.items_selected', count='<span id="selected-count">0</span>') | safe }}</p>
     <div class="flex gap-2 flex-wrap">
         {% if 'select_all' in buttons %}
