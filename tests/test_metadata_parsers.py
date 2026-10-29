@@ -1092,3 +1092,103 @@ class TestMetadataParsers(BackupTestBase):
         }), encoding="utf-8")
         parsed = parser.parse(dummy_media, [sidecar_future])
         self.assertIsNone(parsed.date)
+
+    def test_exif_xmp_can_handle_no_false_positives_for_dates(self):
+        """Test can_handle does not trigger false positives on date strings in ImageMagick chunks or EXIF Software."""
+        # 1. ImageMagick PNG with date:create / date:modify
+        img = Image.new("RGB", (10, 10), color="red")
+        png_info = PngImagePlugin.PngInfo()
+        png_info.add_text("date:create", "2024-05-18T10:14:22+00:00")
+        png_info.add_text("date:modify", "2024-05-18T10:14:22+00:00")
+        im_png = Path(self.temp_dir) / "imagemagick.png"
+        img.save(im_png, pnginfo=png_info)
+
+        parser = ExifXmpParser()
+        self.assertFalse(parser.can_handle(im_png, [im_png]))
+
+        # 2. JPEG with EXIF Software "Photo Updater 1.0"
+        updater_jpg = Path(self.temp_dir) / "updater.jpg"
+        exif = Image.Exif()
+        exif[0x0131] = "Photo Updater 1.0"
+        img.save(updater_jpg, "JPEG", exif=exif)
+        self.assertFalse(parser.can_handle(updater_jpg, [updater_jpg]))
+
+        # 3. PNG with date-only JSON payload in non-standard chunk triggers can_handle
+        gdl_png = Path(self.temp_dir) / "gdl_date_only.png"
+        png_info2 = PngImagePlugin.PngInfo()
+        png_info2.add_text("gallery-dl", json.dumps({"date": "2024-05-18 10:14:22"}))
+        img.save(gdl_png, pnginfo=png_info2)
+        self.assertTrue(parser.can_handle(gdl_png, [gdl_png]))
+        meta = parser.parse(gdl_png, [gdl_png])
+        self.assertEqual(meta.date, "2024-05-18T10:14:22+00:00")
+
+    def test_xmp_sidecar_modify_date_does_not_override_exif_date(self):
+        """Test Lightroom-style sidecar with only ModifyDate/MetadataDate does not override EXIF date."""
+        from backend.app.utils.date_extractor import resolve_custom_date
+
+        img = Image.new("RGB", (10, 10), color="blue")
+        photo_jpg = Path(self.temp_dir) / "photo.jpg"
+        photo_exif = Image.Exif()
+        exif_ifd = photo_exif.get_ifd(0x8769)
+        exif_ifd[0x9003] = "2015:06:07 12:00:00"
+        img.save(photo_jpg, "JPEG", exif=photo_exif)
+
+        # Sidecar with only MetadataDate and ModifyDate
+        photo_xmp = Path(self.temp_dir) / "photo.xmp"
+        photo_xmp.write_text(
+            '<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns/" xmlns:xmp="http://ns.adobe.com/xap/1.0/">'
+            '<rdf:RDF>'
+            '<rdf:Description rdf:about="" xmp:MetadataDate="2024-02-02T15:30:00" xmp:ModifyDate="2024-02-02T15:30:00"/>'
+            '</rdf:RDF>'
+            '</x:xmpmeta>'
+        )
+
+        parser = ExifXmpParser()
+        meta = parser.parse(photo_jpg, [photo_xmp])
+        self.assertIsNone(meta.date)
+
+        resolved_dt, origin = resolve_custom_date(file_path=photo_jpg, sidecar_date=meta.date)
+        self.assertEqual(origin, "exif")
+        self.assertEqual(resolved_dt.year, 2015)
+        self.assertEqual(resolved_dt.month, 6)
+        self.assertEqual(resolved_dt.day, 7)
+
+        # Sidecar with CreateDate correctly resolves with sidecar origin
+        create_xmp = Path(self.temp_dir) / "photo.xmp"
+        create_xmp.write_text(
+            '<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns/" xmlns:xmp="http://ns.adobe.com/xap/1.0/">'
+            '<rdf:RDF>'
+            '<rdf:Description rdf:about="" xmp:CreateDate="2020-01-01T10:00:00" xmp:MetadataDate="2024-02-02T15:30:00"/>'
+            '</rdf:RDF>'
+            '</x:xmpmeta>'
+        )
+        meta2 = parser.parse(photo_jpg, [create_xmp])
+        self.assertEqual(meta2.date, "2020-01-01T10:00:00+00:00")
+        resolved_dt2, origin2 = resolve_custom_date(file_path=photo_jpg, sidecar_date=meta2.date)
+        self.assertEqual(origin2, "sidecar")
+        self.assertEqual(resolved_dt2.year, 2020)
+
+    def test_metadata_parsers_date_keys_work_without_config_entry(self):
+        """Test ExifXmpParser date keys work when saved config lacks 'date' category, and custom keys are honored."""
+        saved_parsers = {
+            "enabled": ["GalleryDlParser", "ExifXmpParser"],
+            "priority": ["ExifXmpParser"],
+            "exif_metadata_field_map": {
+                "tags": ["CustomTagKey"],
+                "rating": ["CustomRating"],
+                "source": ["CustomSource"],
+                "description": ["CustomDesc"],
+            }
+        }
+        settings.file_settings["metadata_parsers"] = saved_parsers
+        parser = ExifXmpParser()
+        date_keys = parser._get_date_keys()
+        self.assertIn("date", date_keys)
+        self.assertIn("created_at", date_keys)
+        self.assertIn("postdate", date_keys)
+
+        # Custom date key added by user in settings
+        saved_parsers["exif_metadata_field_map"]["date"] = ["MyCustomTimestamp"]
+        date_keys_custom = parser._get_date_keys()
+        self.assertIn("mycustomtimestamp", date_keys_custom)
+        self.assertIn("date", date_keys_custom)
