@@ -1192,3 +1192,51 @@ class TestMetadataParsers(BackupTestBase):
         date_keys_custom = parser._get_date_keys()
         self.assertIn("mycustomtimestamp", date_keys_custom)
         self.assertIn("date", date_keys_custom)
+
+    def test_integer_date_parsing_yyyymmdd(self):
+        """Test integer dates like 20200101 parse as YYYYMMDD calendar date instead of epoch seconds."""
+        from datetime import datetime, timezone
+        from backend.app.utils.date_extractor import parse_candidate_datetime, parse_explicit_custom_date
+
+        # 8-digit integer YYYYMMDD
+        dt_cand = parse_candidate_datetime(20200101)
+        self.assertIsNotNone(dt_cand)
+        self.assertEqual(dt_cand, datetime(2020, 1, 1, 0, 0, 0, tzinfo=timezone.utc))
+
+        # 14-digit integer YYYYMMDDhhmmss
+        dt_cand14 = parse_candidate_datetime(20200101123000)
+        self.assertIsNotNone(dt_cand14)
+        self.assertEqual(dt_cand14, datetime(2020, 1, 1, 12, 30, 0, tzinfo=timezone.utc))
+
+        # Explicit custom date with 8-digit integer
+        dt_exp = parse_explicit_custom_date(20200101)
+        self.assertIsNotNone(dt_exp)
+        self.assertEqual(dt_exp, datetime(2020, 1, 1, 0, 0, 0, tzinfo=timezone.utc))
+
+        # 10-digit Unix epoch integer still works as epoch seconds
+        dt_epoch = parse_candidate_datetime(1577836800)
+        self.assertIsNotNone(dt_epoch)
+        self.assertEqual(dt_epoch, datetime(2020, 1, 1, 0, 0, 0, tzinfo=timezone.utc))
+
+    def test_compact_digit_string_dates_require_exact_width(self):
+        """Compact digit strings parse only as exactly YYYYMMDD / YYYYMMDDhhmmss; other widths are rejected."""
+        from datetime import datetime, timezone
+        from backend.app.utils.date_extractor import parse_candidate_datetime
+
+        # Exact-width strings parse
+        self.assertEqual(parse_candidate_datetime("20200101"), datetime(2020, 1, 1, 0, 0, 0, tzinfo=timezone.utc))
+        self.assertEqual(parse_candidate_datetime("20200101123000"), datetime(2020, 1, 1, 12, 30, 0, tzinfo=timezone.utc))
+
+        # Wrong-width digit strings must not be leniently parsed by strptime
+        for bad in ("202011", "2020101", "202001011230", "19845455424", "2020010112300", "199028"):
+            with self.subTest(value=bad):
+                self.assertIsNone(parse_candidate_datetime(bad))
+
+        # Exact width but not a real date/time
+        for bad in ("20201399", "20200230", "20200101246000"):
+            with self.subTest(value=bad):
+                self.assertIsNone(parse_candidate_datetime(bad))
+
+        # 10/13-digit strings are still epoch seconds/milliseconds
+        self.assertEqual(parse_candidate_datetime("1577836800"), datetime(2020, 1, 1, 0, 0, 0, tzinfo=timezone.utc))
+        self.assertEqual(parse_candidate_datetime("1577836800000"), datetime(2020, 1, 1, 0, 0, 0, tzinfo=timezone.utc))

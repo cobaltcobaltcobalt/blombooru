@@ -80,6 +80,20 @@ def parse_explicit_custom_date(val: Union[datetime, str, int, float, None]) -> O
         return dt if 1 <= dt.year <= 9999 else None
 
     if isinstance(val, (int, float)):
+        val_str = str(int(val)) if (isinstance(val, int) or (isinstance(val, float) and val.is_integer())) else None
+        if val_str and len(val_str) == 8:
+            try:
+                dt = datetime.strptime(val_str, "%Y%m%d")
+                return dt.replace(tzinfo=timezone.utc)
+            except ValueError:
+                pass
+        elif val_str and len(val_str) == 14:
+            try:
+                dt = datetime.strptime(val_str, "%Y%m%d%H%M%S")
+                return dt.replace(tzinfo=timezone.utc)
+            except ValueError:
+                pass
+
         ts = float(val)
         if ts <= 0:
             return None
@@ -156,15 +170,28 @@ def parse_candidate_datetime(val: Union[datetime, str, int, float, None]) -> Opt
     if isinstance(val, datetime):
         dt = val
     elif isinstance(val, (int, float)):
-        ts = float(val)
-        if ts <= 0:
-            return None
-        if ts > 1e11:
-            ts /= 1000.0
-        try:
-            dt = datetime.fromtimestamp(ts, tz=timezone.utc)
-        except (ValueError, OSError, OverflowError):
-            return None
+        val_str = str(int(val)) if (isinstance(val, int) or (isinstance(val, float) and val.is_integer())) else None
+        if val_str and len(val_str) == 8:
+            try:
+                dt = datetime.strptime(val_str, "%Y%m%d")
+            except ValueError:
+                dt = None
+        elif val_str and len(val_str) == 14:
+            try:
+                dt = datetime.strptime(val_str, "%Y%m%d%H%M%S")
+            except ValueError:
+                dt = None
+
+        if dt is None:
+            ts = float(val)
+            if ts <= 0:
+                return None
+            if ts > 1e11:
+                ts /= 1000.0
+            try:
+                dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+            except (ValueError, OSError, OverflowError):
+                return None
     elif isinstance(val, str):
         clean = val.strip()
         if is_zero_date_string(clean):
@@ -205,6 +232,8 @@ def parse_candidate_datetime(val: Union[datetime, str, int, float, None]) -> Opt
                     "%Y-%m-%dT%H:%M:%S",
                     "%Y-%m-%d",
                 ]
+                if re.fullmatch(r"\d{8}|\d{14}", normalized):
+                    formats.extend(["%Y%m%d%H%M%S", "%Y%m%d"])
                 for fmt in formats:
                     try:
                         dt = datetime.strptime(normalized, fmt)
