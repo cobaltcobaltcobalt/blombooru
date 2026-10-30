@@ -3,15 +3,8 @@ class ChangelogModal {
         this.modalElement = null;
     }
 
-    static getCookie(name) {
-        const value = `; ${document.cookie}`;
-        const parts = value.split(`; ${name}=`);
-        if (parts.length === 2) return parts.pop().split(';').shift();
-        return null;
-    }
-
     static async init() {
-        if (ChangelogModal.getCookie('admin_mode') !== 'true') {
+        if (window.getCookie('admin_mode') !== 'true') {
             return;
         }
 

@@ -4,7 +4,7 @@
 > **Stability notice:** The internal API has no stability guarantees and may change at any time without prior notice. Its intended use case is internal tooling. The docs are also not guaranteed to be up to date with the latest changes in the API.
 
 > [!NOTE]
-> Last updated: `October 10, 2026`  
+> Last updated: `October 25, 2026`  
 > Update date for the docs can be found in the individual doc files.
 
 
@@ -25,6 +25,7 @@ GET /api/instance-info
   "app_name": "Blombooru",
   "app_version": "1.40.0",
   "auth_required": false,
+  "access_level": "read",
   "theme": { /* ThemeMetadata with backup theme */ },
   "language": { "id": "en", "name": "English", "native_name": "English" },
   "keybindings": { /* Action keybinding specifications */ },

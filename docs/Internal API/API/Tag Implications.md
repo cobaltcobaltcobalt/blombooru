@@ -1,7 +1,7 @@
 ## Tag Implications
 
 > [!NOTE]
-> Last updated: `September 8, 2026`
+> Last updated: `October 24, 2026`
 
 **Base path:** `/api/tag-implications`
 
@@ -99,19 +99,29 @@ POST /api/tag-implications/expand
 Content-Type: application/json
 
 {
-  "tags": ["corgi", "forest"]
+  "tags": ["corgi", "forest"],
+  "new_tags": ["corgi"]
 }
 ```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `tags` | string[] | Yes | All tags currently present on the item or input field |
+| `new_tags` | string[] | No | Optional subset of `tags` to seed expansion from. When provided, only implications triggered by `new_tags` (or multi-target rules completed by `new_tags` alongside other tags in `tags`) are expanded. |
 
 **Response:**
 
 ```json
 {
-  "implied_tags": ["canine", "dog"]
+  "implied_tags": ["canine", "dog"],
+  "implied_by": {
+    "dog": [["corgi"]],
+    "canine": [["dog"]]
+  }
 }
 ```
 
-Only newly implied tags that are not already present in the input tag list are returned, sorted alphabetically.
+Only newly implied tags that are not already present in the input `tags` list are returned in `implied_tags` (sorted alphabetically) and `implied_by`.
 
 ### Simulate applying all implications
 
@@ -128,8 +138,30 @@ POST /api/tag-implications/simulate-apply-all
   "affected_media": [
     {
       "media_id": 12,
-      "added_tags": ["canine", "dog"]
+      "added_tags": ["canine", "dog"],
+      "implied_by": {
+        "dog": [["corgi"]],
+        "canine": [["dog"]]
+      }
     }
   ]
+}
+```
+
+### Backfill implied tags metadata
+
+Requires `require_admin_mode`. Evaluates all active implication rules against existing media posts and retroactively marks tags already present on a post as `implied: true` (and populates `implied_by` with the matching trigger tag IDs) when their rule conditions are met on that post. Does not add new tags to posts.
+
+```
+POST /api/tag-implications/backfill-implied-tags
+```
+
+**Response:**
+
+```json
+{
+  "status": "success",
+  "updated_media_count": 5,
+  "updated_tags_count": 12
 }
 ```

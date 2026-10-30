@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 import mimetypes
 import os
 import uuid
@@ -25,6 +26,41 @@ def touch_cache_file(path: Path) -> None:
         os.utime(path, None)
     except OSError:
         pass
+
+def sanitize_metadata_for_json(val: Any) -> Any:
+    """Recursively convert PIL types (like IFDRational), tuples, sets, bytes, etc. into JSON-serializable types."""
+    if val is None or isinstance(val, (str, bool)):
+        return val
+    if isinstance(val, int):
+        return val
+    if isinstance(val, float):
+        if math.isnan(val) or math.isinf(val):
+            return None
+        return val
+    if hasattr(val, "numerator") and hasattr(val, "denominator"):
+        try:
+            if val.denominator == 0:
+                return 0.0
+            f = float(val)
+            if math.isnan(f) or math.isinf(f):
+                return None
+            return f
+        except Exception:
+            return 0.0
+    if isinstance(val, dict):
+        return {str(k): sanitize_metadata_for_json(v) for k, v in val.items()}
+    if isinstance(val, (list, tuple, set)):
+        return [sanitize_metadata_for_json(item) for item in val]
+    if isinstance(val, bytes):
+        try:
+            return val.decode("utf-8", errors="replace").replace("\x00", "").strip()
+        except Exception:
+            return None
+    if isinstance(val, Path):
+        return str(val)
+    if hasattr(val, "value"):
+        return sanitize_metadata_for_json(val.value)
+    return str(val)
 
 def extract_image_metadata(file_path: Path) -> Dict[str, Any]:
     """Extract metadata from media files (EXIF, PNG chunks, XMP, etc.)"""
@@ -97,7 +133,7 @@ def extract_image_metadata(file_path: Path) -> Dict[str, Any]:
                         except Exception:
                             continue
                     else:
-                        parsed_val = value
+                        parsed_val = sanitize_metadata_for_json(value)
 
                     # Quarantine prompt chunk to avoid collisions with the canonical human prompt field
                     if key.lower() == 'prompt':
@@ -289,11 +325,11 @@ def extract_image_metadata(file_path: Path) -> Dict[str, Any]:
         if isinstance(metadata.get('prompt'), (dict, list)):
             metadata.pop('prompt', None)
 
-        return metadata
+        return sanitize_metadata_for_json(metadata)
         
     except Exception as e:
         logger.error(f"Error reading metadata from {file_path}: {e}", exc_info=True)
-        return metadata
+        return sanitize_metadata_for_json(metadata)
 
 def extract_video_metadata(file_path: Path) -> Dict[str, Any]:
     """Extract metadata from video files."""
@@ -330,27 +366,27 @@ def extract_video_metadata(file_path: Path) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error getting video metadata for {file_path}: {e}")
     
-    return metadata
+    return sanitize_metadata_for_json(metadata)
 
 def extract_media_metadata(file_path: Path) -> Dict[str, Any]:
     """Extract metadata from any media file (image or video)."""
+    raw_res = None
     if format_registry.is_video(file_path):
-        return extract_video_metadata(file_path)
-    if format_registry.is_image(file_path):
-        return extract_image_metadata(file_path)
+        raw_res = extract_video_metadata(file_path)
+    elif format_registry.is_image(file_path):
+        raw_res = extract_image_metadata(file_path)
+    else:
+        mime_type, _ = mimetypes.guess_type(str(file_path))
+        if mime_type:
+            if mime_type.startswith('video/'):
+                raw_res = extract_video_metadata(file_path)
+            elif mime_type.startswith('image/'):
+                raw_res = extract_image_metadata(file_path)
+        
+        if not raw_res:
+            raw_res = extract_image_metadata(file_path) or extract_video_metadata(file_path)
 
-    mime_type, _ = mimetypes.guess_type(str(file_path))
-    if mime_type:
-        if mime_type.startswith('video/'):
-            return extract_video_metadata(file_path)
-        elif mime_type.startswith('image/'):
-            return extract_image_metadata(file_path)
-    
-    # Final fallback: try image first, then video
-    res = extract_image_metadata(file_path)
-    if res:
-        return res
-    return extract_video_metadata(file_path)
+    return sanitize_metadata_for_json(raw_res or {})
 
 def get_effective_media_path(media: Any) -> Path:
     """The file that actually backs a media's served/shared content."""

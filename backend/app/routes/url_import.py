@@ -69,6 +69,7 @@ def _do_fetch_media_url(url: str) -> dict:
                     "score": post.score,
                     "booru_url": post.booru_url,
                     "description": post.description,
+                    "uploaded_at": post.uploaded_at,
                 }
             except Exception as e:
                 logger.warning(f"Booru fetch failed for {url}, falling back to direct probe: {e}")
@@ -203,6 +204,7 @@ def _do_import_media_url(req: ImportRequest) -> MediaResponse:
             if booru_post and booru_post.description:
                 description = booru_post.description
 
+            booru_date = booru_post.uploaded_at if booru_post and booru_post.uploaded_at else None
             try:
                 return process_and_save_media(
                     db=db,
@@ -214,6 +216,7 @@ def _do_import_media_url(req: ImportRequest) -> MediaResponse:
                     source=source,
                     category_hints=category_hints_str,
                     description=description,
+                    booru_date=booru_date,
                 )
             except HTTPException:
                 if file_path and file_path.exists():

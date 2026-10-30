@@ -73,9 +73,7 @@ class AlbumTree {
 
         } catch (error) {
             console.error('Error loading albums:', error);
-            if (window.app && window.app.showNotification) {
-                window.app.showNotification(window.i18n.t('notifications.album_picker.failed_to_load_albums'), 'error');
-            }
+            window.app.showNotification(window.i18n.t('notifications.album_picker.failed_to_load_albums'), 'error');
             this.albums = [];
         }
     }
@@ -91,7 +89,7 @@ class AlbumTree {
         const albumsToRender = isFiltered ? filteredAlbums : this.albums;
 
         if (albumsToRender.length === 0) {
-            this.options.container.innerHTML = `<p class="text-secondary text-xs p-4 text-center">${this.options.emptyMessage}</p>`;
+            this.options.container.innerHTML = `<p class="text-secondary text-xs p-4 text-center">${escapeHtml(this.options.emptyMessage)}</p>`;
             return;
         }
 

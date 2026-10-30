@@ -15,7 +15,8 @@ TOKEN_PATTERN = re.compile(r'(-?)(?:([a-zA-Z0-9_]+):)?("[^"]*"|[^\s"]+)')
 COMBINABLE_KEYS: Set[str] = {
     'rating', 'tagcount', 'gentags', 'arttags', 'chartags', 'copytags', 'metatags',
     'id', 'width', 'height', 'duration', 'filesize', 'date', 'age', 'filetype',
-    'source', 'md5', 'album', 'pool', 'album_tree', 'pool_tree', 'parent', 'child'
+    'source', 'md5', 'album', 'pool', 'album_tree', 'pool_tree', 'parent', 'child',
+    'custom_date', 'custom_age'
 }
 
 SINGULAR_KEYS: Set[str] = {'order', 'sort'}
@@ -118,7 +119,7 @@ def _parse_condition_item(raw: str, key: Optional[str] = None) -> Optional[Dict[
     key_lower = key.lower() if key else None
 
     # 1. Date check (YYYY-MM-DD) if key is date or key is None
-    if key_lower in (None, 'date', 'uploaded_at', 'created_at', 'time'):
+    if key_lower in (None, 'date', 'uploaded_at', 'created_at', 'time', 'custom_date'):
         date_match = re.match(r'^(>=|<=|>|<|!=)?(\d{4}-\d{2}-\d{2})$', raw_clean)
         if date_match:
             op = date_match.group(1) or '=='
@@ -142,7 +143,7 @@ def _parse_condition_item(raw: str, key: Optional[str] = None) -> Optional[Dict[
                 pass
 
     # 2. Age check if key is age
-    if key_lower == 'age':
+    if key_lower in ('age', 'custom_age'):
         age_match = re.match(r'^(>=|<=|>|<|!=)?(\d+)\s*([a-zA-Z]+)?$', raw_clean)
         if age_match:
             op = age_match.group(1) or '=='
@@ -833,6 +834,10 @@ def apply_sort_ordering(query: Query, order_val: str, db: Session, parsed_meta: 
         col = Media.uploaded_at
         return query.order_by(col.asc() if ascending else col.desc(), Media.id.asc() if ascending else Media.id.desc())
 
+    if base_sort in ('custom_date',):
+        col = Media.custom_date
+        return query.order_by(col.asc() if ascending else col.desc(), Media.id.asc() if ascending else Media.id.desc())
+
     if base_sort in ('filesize', 'file_size', 'size'):
         col = Media.file_size
         return query.order_by(col.asc() if ascending else col.desc(), Media.id.asc() if ascending else Media.id.desc())
@@ -958,11 +963,13 @@ def build_search_criteria_conditions(parsed_query: Dict[str, Any], db: Session) 
 
     for wildcard_type, pattern in tags.get('wildcards', []):
         regex_pattern = wildcard_to_regex(pattern)
+        is_sqlite = bool(db.bind and db.bind.dialect.name == "sqlite")
+        regex_op = 'REGEXP' if is_sqlite else '~*'
         subquery = exists().where(
             and_(
                 blombooru_media_tags.c.media_id == Media.id,
                 blombooru_media_tags.c.tag_id == Tag.id,
-                Tag.name.op('~*')(regex_pattern)
+                Tag.name.op(regex_op)(regex_pattern)
             )
         )
         if wildcard_type == 'include':
@@ -998,9 +1005,21 @@ def build_search_criteria_conditions(parsed_query: Dict[str, Any], db: Session) 
             if cond is not None:
                 conditions.append(not_(cond) if item['negated'] else cond)
 
+    if 'custom_date' in meta:
+        for item in meta['custom_date']:
+            cond = build_date_condition(Media.custom_date, item['value'])
+            if cond is not None:
+                conditions.append(not_(cond) if item['negated'] else cond)
+
     if 'age' in meta:
         for item in meta['age']:
             cond = build_age_condition(Media.uploaded_at, item['value'])
+            if cond is not None:
+                conditions.append(not_(cond) if item['negated'] else cond)
+
+    if 'custom_age' in meta:
+        for item in meta['custom_age']:
+            cond = build_age_condition(Media.custom_date, item['value'])
             if cond is not None:
                 conditions.append(not_(cond) if item['negated'] else cond)
 

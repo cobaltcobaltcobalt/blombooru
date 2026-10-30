@@ -97,7 +97,7 @@ class TestBackupFullRoundtrip(BackupTestBase):
 
         # Booru config
         booru_cfg = BooruConfig(
-            domain="danbooru.donmai.us",
+            domain="booru.example.com",
             username="test_scraper_user",
             api_key="secret_booru_api_key_123"
         )
@@ -167,7 +167,8 @@ class TestBackupFullRoundtrip(BackupTestBase):
                         "share_uuid": "share-uuid-1",
                         "share_ai_metadata": True,
                         "share_language": "en",
-                        "tags": ["super_artist", "kitsune"],
+                        "tags": ["super_artist", "kitsune", "fox_ears"],
+                        "implied_tags": {"fox_ears": [["kitsune"]]},
                         "archive_path": "media/sample1.jpg",
                         "parent_hash": None
                     },
@@ -215,7 +216,7 @@ class TestBackupFullRoundtrip(BackupTestBase):
                 ],
                 "booru_config": [
                     {
-                        "domain": "danbooru.donmai.us",
+                        "domain": "booru.example.com",
                         "username": "test_scraper_user",
                         "api_key": "secret_booru_api_key_123"
                     }
@@ -266,7 +267,13 @@ class TestBackupFullRoundtrip(BackupTestBase):
         self.assertEqual(restored_m1.source, "https://example.com/art1")
         self.assertTrue(restored_m1.is_shared)
         self.assertEqual(restored_m1.share_uuid, "share-uuid-1")
-        self.assertEqual(len(restored_m1.tags), 2)
+        self.assertEqual(len(restored_m1.tags), 3)
+        links_by_tag_id = {link.tag_id: link for link in restored_m1.media_tag_links}
+        fox_ears_tag = next(t for t in restored_m1.tags if t.name == "fox_ears")
+        kitsune_tag = next(t for t in restored_m1.tags if t.name == "kitsune")
+        self.assertTrue(links_by_tag_id[fox_ears_tag.id].implied)
+        self.assertEqual(links_by_tag_id[fox_ears_tag.id].implied_by, [[kitsune_tag.id]])
+        self.assertFalse(links_by_tag_id[kitsune_tag.id].implied)
 
         restored_m2 = self.db.query(Media).filter(Media.hash == "hash222").first()
         self.assertIsNotNone(restored_m2)
@@ -296,7 +303,7 @@ class TestBackupFullRoundtrip(BackupTestBase):
         self.assertEqual([t.name for t in restored_imp.implied_tags], ["fox_ears"])
 
         # Verify Booru Config
-        restored_booru = self.db.query(BooruConfig).filter(BooruConfig.domain == "danbooru.donmai.us").first()
+        restored_booru = self.db.query(BooruConfig).filter(BooruConfig.domain == "booru.example.com").first()
         self.assertIsNotNone(restored_booru)
         self.assertEqual(restored_booru.username, "test_scraper_user")
         self.assertEqual(restored_booru.api_key, "secret_booru_api_key_123")
@@ -664,6 +671,63 @@ class TestBackupFullRoundtrip(BackupTestBase):
         self.assertEqual(alb.cached_direct_media_count, 1)
         self.assertEqual(alb.cached_media_count, 1)
         self.assertEqual(alb.cached_rating, RatingEnum.explicit)
+
+    def test_backup_custom_date_export_and_restore_roundtrip(self):
+        """Test backup export writes custom_date and import restores custom_date with fallback for legacy backups."""
+        from datetime import datetime, timezone
+        from backend.app.utils.backup import import_full_backup
+
+        orig_upload_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        custom_time = datetime(2015, 8, 20, 9, 30, 0, tzinfo=timezone.utc)
+
+        dummy_jpeg = make_dummy_jpeg()
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w') as zf:
+            zf.writestr("tags.csv", "")
+            meta = {
+                "version": APP_VERSION,
+                "schema_version": SCHEMA_VERSION,
+                "type": "full_backup",
+                "media": [
+                    {
+                        "filename": "cdate_test.jpg",
+                        "hash": "cdate_hash_123",
+                        "file_type": "image",
+                        "mime_type": "image/jpeg",
+                        "file_size": len(dummy_jpeg),
+                        "uploaded_at": orig_upload_time.isoformat(),
+                        "custom_date": custom_time.isoformat(),
+                        "archive_path": "media/cdate_test.jpg",
+                    },
+                    {
+                        "filename": "legacy_cdate.jpg",
+                        "hash": "legacy_cdate_hash_456",
+                        "file_type": "image",
+                        "mime_type": "image/jpeg",
+                        "file_size": len(dummy_jpeg),
+                        "uploaded_at": orig_upload_time.isoformat(),
+                        "archive_path": "media/legacy_cdate.jpg",
+                    }
+                ]
+            }
+            zf.writestr("backup.json", json.dumps(meta))
+            zf.writestr("media/cdate_test.jpg", dummy_jpeg)
+            zf.writestr("media/legacy_cdate.jpg", dummy_jpeg)
+
+        zip_buffer.seek(0)
+        import_full_backup(zip_buffer, self.db)
+
+        # 1. Custom date restored from backup
+        m1 = self.db.query(Media).filter(Media.hash == "cdate_hash_123").first()
+        self.assertIsNotNone(m1)
+        cdate1 = m1.custom_date if m1.custom_date.tzinfo else m1.custom_date.replace(tzinfo=timezone.utc)
+        self.assertEqual(cdate1, custom_time)
+
+        # 2. Legacy backup without custom_date falls back to uploaded_at
+        m2 = self.db.query(Media).filter(Media.hash == "legacy_cdate_hash_456").first()
+        self.assertIsNotNone(m2)
+        cdate2 = m2.custom_date if m2.custom_date.tzinfo else m2.custom_date.replace(tzinfo=timezone.utc)
+        self.assertEqual(cdate2, orig_upload_time)
 
 if __name__ == "__main__":
     unittest.main()

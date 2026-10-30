@@ -2,7 +2,6 @@ import asyncio
 import csv
 import io
 
-from typing import List
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import case, desc, func
@@ -13,11 +12,13 @@ from ...auth import require_admin_mode
 from ...config import settings
 from ...utils.request_helpers import safe_error_detail
 from ...database import get_db
-from ...enums import TagCategoryEnum
-from ...models import Media, Tag, TagAlias, TagImplication, TagRating, User
-from ...schemas import TagResponse
-from ...utils.cache import invalidate_tag_cache
+from ...enums import RatingEnum, TagCategoryEnum
+from ...models import Media, Tag, TagAlias, TagImplication, User
+from ...schemas import BulkRatingUpdateRequest, TagResponse
+from ...utils.cache import invalidate_media_cache, invalidate_tag_cache
 from ...utils.logger import logger
+from ...utils.album_utils import handle_media_rating_changed
+from ...utils.tag_utils import get_escalated_rating, normalize_tag_rating
 
 router = APIRouter()
 
@@ -299,21 +300,7 @@ async def search_tags(
         Tag.name
     ).limit(50).all()
 
-    return_items = []
-    for tag in tags:
-        if tag.rating_entry:
-            returned_rating = tag.rating_entry.rating
-        else:
-            returned_rating = "none"
-        return_items.append(TagResponse(
-            name=tag.name,
-            category=tag.category,
-            id=tag.id,
-            rating=returned_rating,
-            post_count=tag.post_count,
-            created_at=tag.created_at
-        ))
-    return {"tags": return_items}
+    return {"tags": [TagResponse.model_validate(tag) for tag in tags]}
 
 @router.delete("/clear-tags")
 async def clear_all_tags(
@@ -389,15 +376,11 @@ async def get_tag(
     
     aliases = [a.alias_name for a in tag.aliases]
 
-    if tag.rating_entry:
-        tag_rating = tag.rating_entry.rating
-    else:
-        tag_rating = 'none'
     return {
         "id": tag.id,
         "name": tag.name,
         "category": tag.category,
-        "rating": tag_rating,
+        "rating": tag.rating.value if tag.rating else "none",
         "post_count": tag.post_count,
         "aliases": aliases
     }
@@ -410,20 +393,19 @@ async def update_tag(
     db: Session = Depends(get_db)
 ):
     """Rename a tag, change its category, update its aliases, change its rating"""
-    from ...models import TagAlias
-    from ...enums import RatingEnum
-
     try:
         tag = db.query(Tag).filter(Tag.id == tag_id).first()
         if not tag:
             raise HTTPException(status_code=404, detail="error_tag_not_found")
 
-        new_name = (data.get("name") or "").strip().lower()
-        new_category = data.get("category", tag.category)
-        new_rating = data.get("rating").strip().lower()
+        if "name" in data:
+            new_name = (data.get("name") or "").strip().lower()
+            if not new_name:
+                raise HTTPException(status_code=400, detail="error_tag_name_empty")
+        else:
+            new_name = tag.name
 
-        if not new_name:
-            raise HTTPException(status_code=400, detail="error_tag_name_empty")
+        new_category = data.get("category", tag.category)
 
         old_name = tag.name
 
@@ -480,29 +462,15 @@ async def update_tag(
                 if alias not in existing_alias_names:
                     db.add(TagAlias(alias_name=alias, target_tag_id=tag.id))
 
-        if new_rating == "none":
-            if tag.rating_entry:
-                db.delete(tag.rating_entry)
-        elif new_rating in RatingEnum:
-            if tag.rating_entry is None:
-                db.add(TagRating(
-                    tag_id=tag_id,
-                    rating=new_rating
-                ))
-            elif tag.rating_entry.rating is not new_rating:
-                tag.rating_entry.rating = new_rating
-        else:
-            raise HTTPException(status_code=400, detail=f"Invalid Tag Rating: '{new_rating}'. Accepted values: 'none', 'safe', 'questionable', 'explicit'.")
+        if "rating" in data:
+            tag.rating = normalize_tag_rating(data.get("rating"))
 
         db.commit()
         invalidate_tag_cache()
 
         updated_aliases = [a.alias_name for a in db.query(TagAlias).filter(TagAlias.target_tag_id == tag.id).all()]
-        if tag.rating_entry:
-            tag_rating = tag.rating_entry.rating
-        else:
-            tag_rating = "none"
-        return {"old_name": old_name, "tag_name": tag.name, "category": tag.category, "Rating": tag_rating, "aliases": updated_aliases}
+        tag_rating = tag.rating.value if tag.rating else "none"
+        return {"old_name": old_name, "tag_name": tag.name, "category": tag.category, "rating": tag_rating, "aliases": updated_aliases}
 
     except HTTPException:
         raise
@@ -595,6 +563,26 @@ async def bulk_update_tag_category(
     invalidate_tag_cache()
     return {"updated": updated}
 
+@router.post("/tags/bulk-rating")
+async def bulk_update_tag_rating(
+    data: BulkRatingUpdateRequest,
+    current_user: User = Depends(require_admin_mode),
+    db: Session = Depends(get_db)
+):
+    """Bulk update tag rating for selected tags."""
+    if not data.tag_ids:
+        return {"updated": 0}
+
+    rating_enum = normalize_tag_rating(data.rating)
+
+    updated = db.query(Tag).filter(Tag.id.in_(data.tag_ids)).update(
+        {Tag.rating: rating_enum},
+        synchronize_session=False
+    )
+    db.commit()
+    invalidate_tag_cache()
+    return {"updated": updated}
+
 def cleanup_aliased_tags_logic(db: Session):
     """
     Deletes any Tag record in blombooru_tags whose name exists as an alias_name in blombooru_tag_aliases.
@@ -678,6 +666,48 @@ async def simulate_apply_aliases(
     affected_media = await loop.run_in_executor(None, do_simulate)
     return {"affected_media": affected_media}
 
+@router.post("/simulate-apply-tag-ratings")
+async def simulate_apply_tag_ratings(
+    current_user: User = Depends(require_admin_mode),
+):
+    """Simulate retroactively applying/escalating media ratings based on tag ratings."""
+    from ...database import SessionLocal
+
+    loop = asyncio.get_running_loop()
+
+    def do_simulate():
+        local_db = SessionLocal()
+        try:
+            rated_tags_count = local_db.query(Tag.id).filter(Tag.rating.isnot(None)).count()
+            if rated_tags_count == 0:
+                return []
+
+            media_items = (
+                local_db.query(Media)
+                .options(joinedload(Media.tags))
+                .filter(Media.rating != RatingEnum.explicit)
+                .filter(Media.tags.any(Tag.rating.isnot(None)))
+                .all()
+            )
+
+            affected_media = []
+            for media in media_items:
+                escalated = get_escalated_rating(media.rating, media.tags)
+                if escalated and escalated != media.rating:
+                    affected_media.append({
+                        "media_id": media.id,
+                        "current_rating": media.rating.value if hasattr(media.rating, "value") else media.rating,
+                        "new_rating": escalated.value if hasattr(escalated, "value") else escalated,
+                    })
+
+            return affected_media
+        finally:
+            local_db.close()
+
+    affected_media = await loop.run_in_executor(None, do_simulate)
+    return {"affected_media": affected_media}
+
+
 class MergeTagRequest(BaseModel):
     target_tag_name: str
 
@@ -711,6 +741,9 @@ async def merge_tag(
         target_tag = Tag(name=target_name, category=source_tag.category)
         db.add(target_tag)
         db.flush()
+
+    if target_tag.rating is None and source_tag.rating is not None:
+        target_tag.rating = source_tag.rating
         
     # 1. Remove any alias that has target_name as its alias_name (e.g. if target_name was an alias of source_tag or another tag)
     db.query(TagAlias).filter(TagAlias.alias_name == target_name).delete(synchronize_session='fetch')
@@ -730,16 +763,174 @@ async def merge_tag(
     # 4. Add source tag name as an alias for target tag
     db.add(TagAlias(alias_name=source_tag.name, target_tag_id=target_tag.id))
     
-    # 5. Update media items
-    media_with_source = db.query(Media).filter(Media.tags.any(id=source_tag.id)).all()
+    # 5. Update media items and implication rules
+    from sqlalchemy import and_
+    from ...models import TagImplication, blombooru_media_tags
+
+    source_id = source_tag.id
+    source_name = source_tag.name
+    target_id = target_tag.id
+
+    # Replace source_tag with target_tag in any TagImplication rules
+    implications_with_source = (
+        db.query(TagImplication)
+        .filter(
+            (TagImplication.target_tags.any(Tag.id == source_id))
+            | (TagImplication.implied_tags.any(Tag.id == source_id))
+        )
+        .all()
+    )
+    for imp in implications_with_source:
+        if source_tag in imp.target_tags:
+            imp.target_tags.remove(source_tag)
+            if target_tag not in imp.target_tags and target_tag not in imp.implied_tags:
+                imp.target_tags.append(target_tag)
+        if source_tag in imp.implied_tags:
+            imp.implied_tags.remove(source_tag)
+            if target_tag not in imp.implied_tags and target_tag not in imp.target_tags:
+                imp.implied_tags.append(target_tag)
+        if not imp.target_tags and not imp.target_tag_patterns:
+            db.delete(imp)
+        elif not imp.implied_tags:
+            db.delete(imp)
+
+    source_implied_rows = db.query(
+        blombooru_media_tags.c.media_id,
+        blombooru_media_tags.c.implied,
+        blombooru_media_tags.c.implied_by,
+    ).filter(
+        blombooru_media_tags.c.tag_id == source_id,
+        blombooru_media_tags.c.implied.is_(True),
+    ).all()
+    source_implied_by_media = {
+        m_id: (imp_by if isinstance(imp_by, list) else [])
+        for m_id, _, imp_by in source_implied_rows
+    }
+
+    target_existing_rows = db.query(
+        blombooru_media_tags.c.media_id,
+        blombooru_media_tags.c.implied,
+        blombooru_media_tags.c.implied_by,
+    ).filter(
+        blombooru_media_tags.c.tag_id == target_id,
+    ).all()
+    target_existing_by_media = {
+        m_id: (bool(is_imp), imp_by if isinstance(imp_by, list) else [])
+        for m_id, is_imp, imp_by in target_existing_rows
+    }
+
+    media_with_source = db.query(Media).filter(Media.tags.any(id=source_id)).all()
+    rating_changed_media = []
+    newly_linked_target_media_ids = []
     for media in media_with_source:
         if target_tag not in media.tags:
             media.tags.append(target_tag)
+            newly_linked_target_media_ids.append(media.id)
+            # The target tag is newly added to this media, so it may escalate its rating.
+            escalated = get_escalated_rating(media.rating, [target_tag])
+            if escalated and escalated != media.rating:
+                media.rating = escalated
+                rating_changed_media.append((media.id, escalated.value))
             
     # 6. Delete source tag
-    source_name = source_tag.name
     db.delete(source_tag)
     db.flush()
+
+    def _replace_source_in_groups(raw_groups: list, row_tag_id: int) -> list[list[int]]:
+        cleaned: list[list[int]] = []
+        for grp in raw_groups:
+            if not isinstance(grp, list):
+                continue
+            new_grp: list[int] = []
+            for item in grp:
+                tid_val = None
+                if isinstance(item, int) and not isinstance(item, bool):
+                    tid_val = target_id if item == source_id else item
+                elif isinstance(item, str):
+                    s = item.strip().lower()
+                    if s.isdigit():
+                        val = int(s)
+                        tid_val = target_id if val == source_id else val
+                    elif s == source_name:
+                        tid_val = target_id
+                if tid_val is not None and tid_val != row_tag_id and tid_val not in new_grp:
+                    new_grp.append(tid_val)
+            if new_grp:
+                new_grp.sort()
+                if new_grp not in cleaned:
+                    cleaned.append(new_grp)
+        return cleaned
+
+    for m_id in newly_linked_target_media_ids:
+        if m_id in source_implied_by_media:
+            updated_groups = _replace_source_in_groups(source_implied_by_media[m_id], target_id)
+            db.execute(
+                blombooru_media_tags.update()
+                .where(
+                    and_(
+                        blombooru_media_tags.c.media_id == m_id,
+                        blombooru_media_tags.c.tag_id == target_id,
+                    )
+                )
+                .values(implied=True, implied_by=updated_groups)
+            )
+
+    for m_id, src_groups in source_implied_by_media.items():
+        if m_id in newly_linked_target_media_ids:
+            continue
+        if m_id in target_existing_by_media:
+            tgt_is_imp, tgt_groups = target_existing_by_media[m_id]
+            if tgt_is_imp:
+                merged_raw = list(tgt_groups) + list(src_groups)
+                updated_groups = _replace_source_in_groups(merged_raw, target_id)
+                db.execute(
+                    blombooru_media_tags.update()
+                    .where(
+                        and_(
+                            blombooru_media_tags.c.media_id == m_id,
+                            blombooru_media_tags.c.tag_id == target_id,
+                        )
+                    )
+                    .values(implied=True, implied_by=updated_groups)
+                )
+
+    # Replace source_id with target_id inside implied_by across all media tag links
+    all_implied_rows = db.query(
+        blombooru_media_tags.c.media_id,
+        blombooru_media_tags.c.tag_id,
+        blombooru_media_tags.c.implied_by,
+    ).filter(
+        blombooru_media_tags.c.implied.is_(True),
+        blombooru_media_tags.c.implied_by.isnot(None),
+    ).all()
+
+    for m_id, t_id, imp_by in all_implied_rows:
+        if not isinstance(imp_by, list):
+            continue
+        has_source_ref = False
+        for grp in imp_by:
+            if isinstance(grp, list):
+                for item in grp:
+                    if item == source_id or (isinstance(item, str) and item.strip().lower() in (str(source_id), source_name)):
+                        has_source_ref = True
+                        break
+            if has_source_ref:
+                break
+        if has_source_ref:
+            new_imp_by = _replace_source_in_groups(imp_by, t_id)
+            db.execute(
+                blombooru_media_tags.update()
+                .where(
+                    and_(
+                        blombooru_media_tags.c.media_id == m_id,
+                        blombooru_media_tags.c.tag_id == t_id,
+                    )
+                )
+                .values(implied_by=new_imp_by)
+            )
+
+    for media in media_with_source:
+        db.expire(media, ["media_tag_links", "tags"])
 
     # 7. Update target tag post counts
     from ..media import update_tag_counts
@@ -750,7 +941,11 @@ async def merge_tag(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=safe_error_detail("Failed to merge tag", e))
-        
+
+    for m_id, new_rating in rating_changed_media:
+        handle_media_rating_changed(db, m_id, new_rating)
+
+    invalidate_media_cache()
     invalidate_tag_cache()
 
     return {

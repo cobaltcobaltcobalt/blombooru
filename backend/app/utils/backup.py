@@ -80,6 +80,7 @@ def generate_tags_dump(db: Session) -> dict:
         tags_list.append({
             "name": tag.name,
             "category": cat,
+            "rating": tag.rating.value if tag.rating else None,
             "post_count": tag.post_count
         })
 
@@ -290,16 +291,39 @@ def import_tags_logical(db: Session, tags: List[dict], aliases: List[dict]):
     """Imports tags and aliases from JSON format."""
     existing_tags = {t.name: t for t in db.query(Tag).all()}
     tags_to_create = []
+    has_existing_updates = False
 
     for tag_data in tags:
         name = tag_data.get('name', '').strip().lower()
-        if name and name not in existing_tags:
+        if not name:
+            continue
+
+        rating_val = tag_data.get('rating')
+        rating_enum = None
+        has_explicit_rating = rating_val is not None
+        if has_explicit_rating:
+            try:
+                from ..utils.tag_utils import normalize_tag_rating
+                rating_enum = normalize_tag_rating(rating_val)
+            except Exception:
+                has_explicit_rating = False
+
+        if name not in existing_tags:
             cat = tag_data.get('category', 'general')
             tags_to_create.append({
                 'name': name,
                 'category': cat,
+                'rating': rating_enum,
                 'post_count': tag_data.get('post_count', 0)
             })
+        else:
+            existing = existing_tags[name]
+            if has_explicit_rating and existing.rating != rating_enum:
+                existing.rating = rating_enum
+                has_existing_updates = True
+
+    if has_existing_updates:
+        db.commit()
 
     if tags_to_create:
         for i in range(0, len(tags_to_create), DB_BATCH_SIZE):
@@ -420,6 +444,16 @@ def import_media_logical(db: Session, zf: zipfile.ZipFile, media_list: List[dict
         if uploaded_at_val is None:
             uploaded_at_val = datetime.now(timezone.utc)
 
+        # Parse custom_date (falling back to uploaded_at_val for legacy archives)
+        custom_date_val = None
+        if media_data.get('custom_date'):
+            try:
+                custom_date_val = datetime.fromisoformat(media_data['custom_date'])
+            except Exception:
+                custom_date_val = None
+        if custom_date_val is None:
+            custom_date_val = uploaded_at_val
+
         new_media = Media(
             filename=target_path.name,
             path=str(target_path.relative_to(settings.BASE_DIR)),
@@ -437,6 +471,7 @@ def import_media_logical(db: Session, zf: zipfile.ZipFile, media_list: List[dict
             description=media_data.get('description'),
             description_enlarged=bool(media_data.get('description_enlarged', False)),
             uploaded_at=uploaded_at_val,
+            custom_date=custom_date_val,
             is_shared=bool(media_data.get('is_shared', False)),
             share_uuid=media_data.get('share_uuid'),
             share_ai_metadata=bool(media_data.get('share_ai_metadata', False)),
@@ -451,9 +486,52 @@ def import_media_logical(db: Session, zf: zipfile.ZipFile, media_list: List[dict
             parent_links.append((new_media.id, parent_hash))
 
         tag_names = media_data.get('tags', [])
+        raw_implied_tags = media_data.get('implied_tags')
+        if not isinstance(raw_implied_tags, dict):
+            raw_implied_tags = {}
+
         tag_ids_to_link = []
-        for tname in tag_names:
+        implied_by_tid: Dict[int, list] = {}
+        def _resolve_groups_to_ids(raw_groups: list) -> list[list[int]]:
+            if not isinstance(raw_groups, list):
+                return []
+            id_groups: list[list[int]] = []
+            for grp in raw_groups:
+                if not isinstance(grp, list):
+                    continue
+                ids: list[int] = []
+                for item in grp:
+                    tid_val = None
+                    if isinstance(item, int) and not isinstance(item, bool):
+                        tid_val = item
+                    elif isinstance(item, str):
+                        norm = item.strip().lower()
+                        if norm:
+                            tid_val = all_tags.get(norm) or all_aliases.get(norm)
+                            if tid_val is None and norm.isdigit():
+                                tid_val = int(norm)
+                    if tid_val is not None and tid_val not in ids:
+                        ids.append(tid_val)
+                if ids:
+                    ids.sort()
+                    if ids not in id_groups:
+                        id_groups.append(ids)
+            return id_groups
+
+        for t_entry in tag_names:
+            if isinstance(t_entry, dict):
+                tname = str(t_entry.get('name', ''))
+                entry_implied = bool(t_entry.get('implied', False))
+                entry_implied_by = t_entry.get('implied_by') if isinstance(t_entry.get('implied_by'), list) else []
+            else:
+                tname = str(t_entry)
+                entry_implied = False
+                entry_implied_by = []
+
             normalized_name = tname.strip().lower()
+            if not normalized_name:
+                continue
+
             if normalized_name in all_tags:
                 tid = all_tags[normalized_name]
                 tag_ids_to_link.append(tid)
@@ -468,13 +546,31 @@ def import_media_logical(db: Session, zf: zipfile.ZipFile, media_list: List[dict
                 db.add(new_tag)
                 db.flush()
                 all_tags[normalized_name] = new_tag.id
-                tag_ids_to_link.append(new_tag.id)
-                affected_tag_ids.add(new_tag.id)
+                tid = new_tag.id
+                tag_ids_to_link.append(tid)
+                affected_tag_ids.add(tid)
+
+            if entry_implied:
+                implied_by_tid[tid] = _resolve_groups_to_ids(entry_implied_by)
+
+        for imp_name, imp_groups in raw_implied_tags.items():
+            norm_imp = str(imp_name).strip().lower()
+            if not norm_imp:
+                continue
+            tid = all_tags.get(norm_imp) or all_aliases.get(norm_imp)
+            if tid:
+                implied_by_tid[tid] = _resolve_groups_to_ids(imp_groups if isinstance(imp_groups, list) else [])
 
         unique_tag_ids = list(dict.fromkeys(tag_ids_to_link))
         if unique_tag_ids:
             stmt = blombooru_media_tags.insert().values([
-                {'media_id': new_media.id, 'tag_id': tid} for tid in unique_tag_ids
+                {
+                    'media_id': new_media.id,
+                    'tag_id': tid,
+                    'implied': tid in implied_by_tid,
+                    'implied_by': implied_by_tid.get(tid) if tid in implied_by_tid else None,
+                }
+                for tid in unique_tag_ids
             ])
             db.execute(stmt)
             

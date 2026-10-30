@@ -1,28 +1,66 @@
 from datetime import datetime
-from typing import Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
 from .enums import (ApiKeyPermissionEnum, FileTypeEnum, RatingEnum,
                     TagCategoryEnum)
 
+TagRatingValue = Literal["none", "safe", "questionable", "explicit"]
+
 class TagBase(BaseModel):
     name: str
     category: TagCategoryEnum = TagCategoryEnum.general
-    rating: str = None
 
 class TagCreate(TagBase):
-    pass
+    rating: Optional[TagRatingValue] = None
 
 class TagResponse(TagBase):
     id: int
+    rating: TagRatingValue = "none"
     post_count: int
     created_at: datetime
     
     model_config = ConfigDict(from_attributes=True)
 
+    @field_validator("rating", mode="before")
+    @classmethod
+    def normalize_rating(cls, v: Any) -> str:
+        if v is None:
+            return "none"
+        if hasattr(v, "value"):
+            return v.value
+        s = str(v).strip().lower()
+        return s if s in ("safe", "questionable", "explicit", "none") else "none"
+
 class TagListItem(TagResponse):
     aliases: List[str] = []
+
+class MediaTagResponse(TagResponse):
+    implied: bool = False
+    implied_by: List[List[str]] = Field(default_factory=list)
+
+    @field_validator("implied", mode="before")
+    @classmethod
+    def normalize_implied(cls, v: Any) -> bool:
+        return bool(v)
+
+    @field_validator("implied_by", mode="before")
+    @classmethod
+    def normalize_implied_by(cls, v: Any) -> List[List[str]]:
+        if not v or not isinstance(v, list):
+            return []
+        result = []
+        for group in v:
+            if isinstance(group, list):
+                cleaned = [str(item) for item in group if item]
+                if cleaned:
+                    result.append(cleaned)
+        return result
+
+class BulkRatingUpdateRequest(BaseModel):
+    tag_ids: List[int]
+    rating: TagRatingValue
 
 class MediaBase(BaseModel):
     rating: RatingEnum = RatingEnum.safe
@@ -34,10 +72,12 @@ class MediaCreate(MediaBase):
 class MediaUpdate(BaseModel):
     rating: Optional[RatingEnum] = None
     tags: Optional[List[str]] = None
+    implied_tags: Optional[Dict[str, List[List[str]]]] = None
     source: Optional[str] = None
     description: Optional[str] = None
     description_enlarged: Optional[bool] = None
     parent_id: Optional[int] = None
+    custom_date: Optional[Union[datetime, str]] = None
 
 class MediaResponse(MediaBase):
     id: int
@@ -53,6 +93,7 @@ class MediaResponse(MediaBase):
     height: Optional[int]
     duration: Optional[float]
     uploaded_at: datetime
+    custom_date: Optional[datetime] = None
     is_shared: bool
     share_uuid: Optional[str]
     share_language: Optional[str] = None
@@ -61,9 +102,80 @@ class MediaResponse(MediaBase):
     description_enlarged: Optional[bool] = False
     parent_id: Optional[int] = None
     has_children: bool = False
-    tags: List[TagResponse] = []
+    tags: List[MediaTagResponse] = []
     
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="wrap")
+    @classmethod
+    def populate_tag_implications(cls, data: Any, handler: Any) -> "MediaResponse":
+        instance = handler(data)
+        if not isinstance(data, dict) and hasattr(data, "media_tag_links"):
+            try:
+                links = getattr(data, "media_tag_links", None) or []
+            except Exception:
+                links = []
+            if links and instance.tags:
+                id_to_name: dict[int, str] = {t.id: t.name for t in instance.tags}
+                missing_ids: set[int] = set()
+                for link in links:
+                    if link.implied and isinstance(link.implied_by, list):
+                        for grp in link.implied_by:
+                            if isinstance(grp, list):
+                                for item in grp:
+                                    if isinstance(item, int) and not isinstance(item, bool) and item not in id_to_name:
+                                        missing_ids.add(item)
+
+                if missing_ids:
+                    try:
+                        from sqlalchemy.orm import object_session
+                        from .models import Tag
+                        sess = object_session(data)
+                        if sess is not None:
+                            for tid, tname in sess.query(Tag.id, Tag.name).filter(Tag.id.in_(missing_ids)).all():
+                                id_to_name[tid] = tname
+                        else:
+                            from .database import SessionLocal
+                            tmp_db = SessionLocal()
+                            try:
+                                for tid, tname in tmp_db.query(Tag.id, Tag.name).filter(Tag.id.in_(missing_ids)).all():
+                                    id_to_name[tid] = tname
+                            finally:
+                                tmp_db.close()
+                    except Exception:
+                        pass
+
+                links_by_tag_id = {link.tag_id: link for link in links}
+                for tag_resp in instance.tags:
+                    link = links_by_tag_id.get(tag_resp.id)
+                    if link is not None:
+                        tag_resp.implied = bool(link.implied)
+                        if link.implied and isinstance(link.implied_by, list):
+                            resolved_groups: list[list[str]] = []
+                            for grp in link.implied_by:
+                                if not isinstance(grp, list):
+                                    continue
+                                names_in_grp: list[str] = []
+                                for item in grp:
+                                    if isinstance(item, int) and not isinstance(item, bool):
+                                        tname = id_to_name.get(item)
+                                        if tname:
+                                            names_in_grp.append(tname)
+                                    elif isinstance(item, str) and item.strip():
+                                        names_in_grp.append(item.strip())
+                                cleaned = sorted(set(names_in_grp))
+                                if cleaned and cleaned not in resolved_groups:
+                                    resolved_groups.append(cleaned)
+                            tag_resp.implied_by = resolved_groups
+                        else:
+                            tag_resp.implied_by = []
+        return instance
+
+    @model_validator(mode="after")
+    def ensure_custom_date(self) -> "MediaResponse":
+        if self.custom_date is None and self.uploaded_at is not None:
+            self.custom_date = self.uploaded_at
+        return self
 
 class MediaDetailResponse(MediaResponse):
     @computed_field
@@ -93,6 +205,7 @@ class SharedMediaResponse(MediaBase):
     height: Optional[int]
     duration: Optional[float]
     uploaded_at: datetime
+    custom_date: Optional[datetime] = None
     is_shared: bool
     share_uuid: Optional[str]
     share_language: Optional[str] = None
@@ -101,6 +214,12 @@ class SharedMediaResponse(MediaBase):
     tags: List[SharedTagResponse] = []
     
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="after")
+    def ensure_custom_date(self) -> "SharedMediaResponse":
+        if self.custom_date is None and self.uploaded_at is not None:
+            self.custom_date = self.uploaded_at
+        return self
 
 class UserCreate(BaseModel):
     username: str
@@ -324,6 +443,7 @@ class BatchResolveCombinedResultItem(BaseModel):
     current_tags: List[str]
     new_tags: List[str]
     added_tags: List[str]
+    implied_by: Dict[str, List[List[str]]] = Field(default_factory=dict)
 
 class BatchResolveCombinedResponse(BaseModel):
     results: Dict[str, BatchResolveCombinedResultItem]
@@ -332,6 +452,7 @@ class BatchResolveCombinedResponse(BaseModel):
 class BulkTagUpdateItem(BaseModel):
     id: int
     tags: List[str]
+    implied_tags: Optional[Dict[str, List[List[str]]]] = None
 
 class BulkTagUpdateRequest(BaseModel):
     items: List[BulkTagUpdateItem]
@@ -341,12 +462,37 @@ class BulkTagUpdateResponse(BaseModel):
     updated_count: int
     updated_media_ids: List[int]
 
+class BulkMediaRatingItem(BaseModel):
+    id: int
+    rating: RatingEnum
+
+class BulkMediaRatingUpdateRequest(BaseModel):
+    items: List[BulkMediaRatingItem]
+
+class BulkMediaRatingUpdateResponse(BaseModel):
+    status: str = "success"
+    updated_count: int
+    updated_media_ids: List[int]
+
 class ProposedTag(BaseModel):
     name: str
     category: TagCategoryEnum = TagCategoryEnum.general
+    rating: TagRatingValue = "none"
     is_new: bool = False
     source: Optional[str] = "user"
     user_assigned: Optional[bool] = False
+    implied: bool = False
+    implied_by: List[List[str]] = Field(default_factory=list)
+
+    @field_validator("rating", mode="before")
+    @classmethod
+    def normalize_rating(cls, v: Any) -> str:
+        if v is None:
+            return "none"
+        if hasattr(v, "value"):
+            return v.value
+        s = str(v).strip().lower()
+        return s if s in ("safe", "questionable", "explicit", "none") else "none"
 
 class UploadSessionItemUpdate(BaseModel):
     rating: Optional[RatingEnum] = None
@@ -355,6 +501,7 @@ class UploadSessionItemUpdate(BaseModel):
     description: Optional[str] = None
     album_ids: Optional[List[int]] = None
     suggested_album_path: Optional[str] = None
+    custom_date: Optional[str] = None
 
 class UploadSessionAddUntrackedRequest(BaseModel):
     file_path: str
@@ -366,6 +513,9 @@ class UploadSessionAddUntrackedRequest(BaseModel):
     category_hints: Optional[str] = None
     user_assigned_tags: Optional[str] = None
     base_description: Optional[str] = None
+    client_date: Optional[str] = None
+    booru_date: Optional[str] = None
+    custom_date: Optional[str] = None
 
 class AlbumPathSegment(BaseModel):
     name: str
@@ -396,10 +546,15 @@ class UploadSessionItem(BaseModel):
     folder_album_custom_path: Optional[str] = None
     is_duplicate: bool = False
     duplicate_of: Optional[str] = None
+    custom_date: Optional[str] = None
+    custom_date_origin: Optional[str] = None
+    custom_date_auto: Optional[str] = None
+    custom_date_auto_origin: Optional[str] = None
 
 class PendingTagEntity(BaseModel):
     name: str
     category: TagCategoryEnum = TagCategoryEnum.general
+    rating: TagRatingValue = "none"
     used_by: List[str] = []
     merge_into: Optional[str] = None
     user_assigned: bool = False
@@ -421,6 +576,7 @@ class PendingEntitiesResponse(BaseModel):
 class PendingTagUpdate(BaseModel):
     new_name: Optional[str] = None
     category: Optional[TagCategoryEnum] = None
+    rating: Optional[TagRatingValue] = None
     merge_into: Optional[str] = None
     remove: Optional[bool] = False
 

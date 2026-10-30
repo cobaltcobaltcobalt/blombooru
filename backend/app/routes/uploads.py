@@ -37,7 +37,13 @@ from ..utils.request_helpers import safe_error_detail
 from ..utils.thumbnail_generator import generate_thumbnail, THUMBNAIL_EXT, thumbnail_mime_type
 from ..utils.transcoder import transcode_media_if_needed
 from ..services.metadata_parsers import get_parser_for_file
-from .media import preview_or_create_tags, update_tag_counts
+from .media import (
+    apply_media_tag_implications,
+    get_or_create_tags_with_implications,
+    preview_or_create_tags,
+    update_tag_counts,
+)
+from ..utils.tag_utils import get_escalated_rating, get_newly_added_tags, normalize_tag_rating
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
@@ -105,12 +111,14 @@ def _get_session_pending_tags_map(items: dict) -> Dict[str, dict]:
                 if not name:
                     continue
                 cat = t.get("category", "general")
+                rat = t.get("rating", "none")
                 user_assigned = t.get("user_assigned", False)
                 if name not in tag_map:
-                    tag_map[name] = {"category": cat, "user_assigned": user_assigned}
+                    tag_map[name] = {"category": cat, "rating": rat, "user_assigned": user_assigned}
                 else:
                     if user_assigned:
                         tag_map[name]["category"] = cat
+                        tag_map[name]["rating"] = rat
                         tag_map[name]["user_assigned"] = True
     return tag_map
 
@@ -125,6 +133,7 @@ class BulkUpdateRequest(BaseModel):
     suggested_album_path: Optional[str] = None
     add_tags: Optional[List[Union[str, ProposedTag]]] = None
     remove_tag_names: Optional[List[str]] = None
+    custom_date: Optional[str] = None
 
 @router.post("/sessions")
 async def create_upload_session(
@@ -193,6 +202,9 @@ def _process_and_stage_item(
     base_description: Optional[str],
     db: Session,
     folder_mapping_mode: Optional[str] = "use_root",
+    client_date: Optional[str] = None,
+    booru_date: Optional[str] = None,
+    custom_date: Optional[str] = None,
 ) -> dict:
     thumbs_dir = session_dir / "thumbs"
     thumbs_dir.mkdir(parents=True, exist_ok=True)
@@ -254,6 +266,9 @@ def _process_and_stage_item(
     category_hints_str = category_hints if isinstance(category_hints, str) else None
     base_description_str = base_description if isinstance(base_description, str) else None
     folder_mapping_mode_str = folder_mapping_mode if isinstance(folder_mapping_mode, str) else "use_root"
+    client_date_str = client_date if isinstance(client_date, str) else None
+    booru_date_str = booru_date if isinstance(booru_date, str) else None
+    custom_date_str = custom_date if isinstance(custom_date, str) else None
 
     # Detect sibling files for metadata parsing
     sibling_files: List[Path] = []
@@ -350,6 +365,11 @@ def _process_and_stage_item(
         if norm_rating:
             rating = norm_rating
 
+    # Tags resolved for a brand new item are all "added", so they may escalate its initial rating.
+    escalated_initial = get_escalated_rating(rating, proposed_tags)
+    if escalated_initial:
+        rating = escalated_initial
+
     if not base_source_str and parsed and parsed.source:
         base_source_str = parsed.source
 
@@ -379,6 +399,8 @@ def _process_and_stage_item(
         if td.get("is_new", False) and t_name in session_pending_map:
             session_info = session_pending_map[t_name]
             td["category"] = session_info["category"]
+            if "rating" in session_info:
+                td["rating"] = session_info["rating"]
             if session_info.get("user_assigned", False):
                 td["user_assigned"] = True
 
@@ -411,6 +433,25 @@ def _process_and_stage_item(
     if suggested_album_path:
         suggested_album_segments = resolve_album_path(db, suggested_album_path)
 
+    from ..utils.date_extractor import resolve_custom_date
+    auto_custom_date, auto_date_origin = resolve_custom_date(
+        file_path=file_path,
+        booru_date=booru_date_str,
+        sidecar_date=parsed.date if parsed else None,
+        client_date=client_date_str,
+    )
+
+    if custom_date_str is not None and custom_date_str.strip() != "":
+        resolved_custom_date, date_origin = resolve_custom_date(
+            file_path=file_path,
+            explicit_date=custom_date_str,
+            booru_date=booru_date_str,
+            sidecar_date=parsed.date if parsed else None,
+            client_date=client_date_str,
+        )
+    else:
+        resolved_custom_date, date_origin = auto_custom_date, auto_date_origin
+
     item_data = {
         "item_id": item_id,
         "filename": clean_filename,
@@ -435,6 +476,10 @@ def _process_and_stage_item(
         "folder_album_removed": False,
         "folder_album_custom_path": None,
         "metadata_source": metadata_source,
+        "custom_date": resolved_custom_date.isoformat(),
+        "custom_date_origin": date_origin,
+        "custom_date_auto": auto_custom_date.isoformat(),
+        "custom_date_auto_origin": auto_date_origin,
     }
 
     meta.setdefault("items", {})[item_id] = item_data
@@ -456,6 +501,9 @@ async def upload_files_to_session(
     category_hints: Optional[str] = Form(None),
     user_assigned_tags: Optional[str] = Form(None),
     base_description: Optional[str] = Form(None),
+    client_date: Optional[str] = Form(None),
+    booru_date: Optional[str] = Form(None),
+    custom_date: Optional[str] = Form(None),
     current_user: User = Depends(require_admin_mode),
     db: Session = Depends(get_db),
 ):
@@ -503,6 +551,9 @@ async def upload_files_to_session(
             user_assigned_tags=user_assigned_tags,
             base_description=base_description,
             db=db,
+            client_date=client_date,
+            booru_date=booru_date,
+            custom_date=custom_date,
         )
 
 @router.post("/sessions/{session_id}/untracked-files")
@@ -550,6 +601,9 @@ async def add_untracked_file_to_session(
             user_assigned_tags=request.user_assigned_tags,
             base_description=request.base_description,
             db=db,
+            client_date=request.client_date,
+            booru_date=request.booru_date,
+            custom_date=request.custom_date,
         )
 
 @router.get("/sessions/{session_id}/items/{item_id}/thumbnail")
@@ -636,6 +690,11 @@ async def analyze_staged_item(
 
         # Re-evaluate current tags with DB
         current_tag_names = [t["name"] for t in item.get("tags", []) if t.get("name")]
+        pre_implied_map = {
+            t["name"].strip().lower(): (t.get("implied_by") or [])
+            for t in item.get("tags", [])
+            if t.get("name") and t.get("implied")
+        }
         parsed_hints = None
         if category_hints:
             try:
@@ -649,6 +708,7 @@ async def analyze_staged_item(
             category_hints=parsed_hints,
             expand=True,
             dry_run=True,
+            pre_implied_map=pre_implied_map,
         )
         item["tags"] = [t.model_dump() if hasattr(t, "model_dump") else dict(t) for t in proposed_tags]
 
@@ -694,9 +754,55 @@ async def update_staged_item(
                 item["suggested_album_path"] = update.suggested_album_path
                 item["suggested_album_segments"] = resolve_album_path(db, update.suggested_album_path)
 
+        if "custom_date" in fields_set:
+            if update.custom_date is not None and str(update.custom_date).strip() != "":
+                from ..utils.date_extractor import parse_explicit_custom_date
+                parsed_dt = parse_explicit_custom_date(update.custom_date)
+                if parsed_dt is None:
+                    raise HTTPException(status_code=422, detail="Invalid custom_date format")
+                item["custom_date"] = parsed_dt.isoformat()
+                item["custom_date_origin"] = "explicit"
+            else:
+                auto_date = item.get("custom_date_auto")
+                auto_origin = item.get("custom_date_auto_origin")
+                if auto_date:
+                    item["custom_date"] = auto_date
+                    item["custom_date_origin"] = auto_origin or "default"
+                else:
+                    from ..utils.date_extractor import resolve_custom_date
+                    raw_path = (session_dir / "raw" / item.get("staged_filename")) if item.get("staged_filename") else None
+                    if not raw_path or not raw_path.exists():
+                        source_p = item.get("source_path")
+                        raw_path = Path(source_p) if source_p and Path(source_p).exists() else None
+                    resolved_dt, date_origin = resolve_custom_date(file_path=raw_path)
+                    item["custom_date"] = resolved_dt.isoformat()
+                    item["custom_date_origin"] = date_origin
+
     if update.tags is not None:
+        previous_staged_tags = list(item.get("tags", []))
         other_items = {k: v for k, v in meta.get("items", {}).items() if k != item_id}
         session_pending_map = _get_session_pending_tags_map(other_items)
+
+        pre_implied_map: Dict[str, List[List[str]]] = {
+            t["name"].strip().lower(): (t.get("implied_by") or [])
+            for t in previous_staged_tags
+            if t.get("name") and t.get("implied")
+        }
+        for t in update.tags:
+            if getattr(t, "implied", False):
+                t_lower = t.name.strip().lower()
+                existing_grps = pre_implied_map.setdefault(t_lower, [])
+                for grp in (getattr(t, "implied_by", None) or []):
+                    if grp not in existing_grps:
+                        existing_grps.append(grp)
+
+        prev_tag_names = {t["name"].strip().lower() for t in previous_staged_tags if t.get("name")}
+        newly_added_names = {
+            t.name.strip().lower()
+            for t in update.tags
+            if t.name and t.name.strip().lower() not in prev_tag_names
+        }
+        seed_triggers = None if not prev_tag_names else newly_added_names
 
         # Build category hints from user assigned tag categories
         hints = {t.name.lower(): t.category.value for t in update.tags}
@@ -707,6 +813,8 @@ async def update_staged_item(
             category_hints=hints,
             expand=True,
             dry_run=True,
+            pre_implied_map=pre_implied_map,
+            seed_trigger_names=seed_triggers,
         )
         # Preserve user_assigned flag if explicitly passed
         user_assigned_set = {t.name.lower() for t in update.tags if getattr(t, "user_assigned", False)}
@@ -720,10 +828,20 @@ async def update_staged_item(
                     dump["category"] = hints[t_name]
             elif dump.get("is_new", False) and t_name in session_pending_map:
                 dump["category"] = session_pending_map[t_name]["category"]
+                if "rating" in session_pending_map[t_name]:
+                    dump["rating"] = session_pending_map[t_name]["rating"]
                 if session_pending_map[t_name].get("user_assigned", False):
                     dump["user_assigned"] = True
             result_tags.append(dump)
         item["tags"] = result_tags
+        item["tags_reviewed"] = True
+        # Only tags added by this update escalate, and never over a rating the
+        # same request explicitly set.
+        if update.rating is None:
+            current_r = RatingEnum.normalize(item.get("rating")) or RatingEnum.safe
+            escalated = get_escalated_rating(current_r, get_newly_added_tags(previous_staged_tags, result_tags))
+            if escalated and escalated != current_r:
+                item["rating"] = escalated.value
 
     meta["items"][item_id] = item
     _save_session_meta(session_dir, meta)
@@ -747,9 +865,38 @@ async def bulk_update_staged_items(
         target_ids = set(req.item_ids)
         bulk_fields_set = req.model_fields_set if hasattr(req, "model_fields_set") else getattr(req, "__fields_set__", set())
 
+        parsed_bulk_custom_date = None
+        has_custom_date_update = "custom_date" in bulk_fields_set
+        if has_custom_date_update:
+            if req.custom_date is not None and str(req.custom_date).strip() != "":
+                from ..utils.date_extractor import parse_explicit_custom_date
+                parsed_bulk_custom_date = parse_explicit_custom_date(req.custom_date)
+                if parsed_bulk_custom_date is None:
+                    raise HTTPException(status_code=422, detail="Invalid custom_date format")
+
         for item_id, item in items.items():
             if item_id not in target_ids:
                 continue
+
+            if has_custom_date_update:
+                if parsed_bulk_custom_date is not None:
+                    item["custom_date"] = parsed_bulk_custom_date.isoformat()
+                    item["custom_date_origin"] = "explicit"
+                else:
+                    auto_date = item.get("custom_date_auto")
+                    auto_origin = item.get("custom_date_auto_origin")
+                    if auto_date:
+                        item["custom_date"] = auto_date
+                        item["custom_date_origin"] = auto_origin or "default"
+                    else:
+                        from ..utils.date_extractor import resolve_custom_date
+                        raw_path = (session_dir / "raw" / item.get("staged_filename")) if item.get("staged_filename") else None
+                        if not raw_path or not raw_path.exists():
+                            source_p = item.get("source_path")
+                            raw_path = Path(source_p) if source_p and Path(source_p).exists() else None
+                        resolved_dt, date_origin = resolve_custom_date(file_path=raw_path)
+                        item["custom_date"] = resolved_dt.isoformat()
+                        item["custom_date_origin"] = date_origin
 
             if req.rating is not None:
                 item["rating"] = req.rating.value
@@ -781,6 +928,7 @@ async def bulk_update_staged_items(
 
             # Tags update
             current_tags_dict = {t["name"].lower(): t for t in item.get("tags", []) if t.get("name")}
+            previous_staged_tags = list(current_tags_dict.values())
 
             if req.remove_tag_names:
                 remove_set = {n.strip().lower() for n in req.remove_tag_names}
@@ -792,7 +940,7 @@ async def bulk_update_staged_items(
                     if isinstance(t, str):
                         t_name = t.strip().lower()
                         if t_name and t_name not in current_tags_dict:
-                            current_tags_dict[t_name] = {"name": t_name, "category": "general", "is_new": True, "user_assigned": False}
+                            current_tags_dict[t_name] = {"name": t_name, "category": "general", "rating": "none", "is_new": True, "user_assigned": False}
                     else:
                         t_name = t.name.strip().lower()
                         if t_name:
@@ -800,6 +948,7 @@ async def bulk_update_staged_items(
                             current_tags_dict[t_name] = {
                                 "name": t_name,
                                 "category": t.category.value,
+                                "rating": getattr(t, "rating", "none") or "none",
                                 "is_new": t.is_new,
                                 "user_assigned": is_user_assigned,
                             }
@@ -811,6 +960,15 @@ async def bulk_update_staged_items(
             hints = {k: v["category"] for k, v in current_tags_dict.items() if v.get("category")}
             hints.update(user_assigned_map)
 
+            pre_implied_map: Dict[str, List[List[str]]] = {
+                k: (v.get("implied_by") or [])
+                for k, v in current_tags_dict.items()
+                if v.get("implied")
+            }
+            prev_tag_names = {t["name"].strip().lower() for t in previous_staged_tags if t.get("name")}
+            newly_added_names = {k for k in names if k not in prev_tag_names}
+            seed_triggers = None if not prev_tag_names else newly_added_names
+
             other_items = {k: v for k, v in items.items() if k != item_id}
             session_pending_map = _get_session_pending_tags_map(other_items)
 
@@ -820,6 +978,8 @@ async def bulk_update_staged_items(
                 category_hints=hints,
                 expand=True,
                 dry_run=True,
+                pre_implied_map=pre_implied_map,
+                seed_trigger_names=seed_triggers,
             )
             resolved_tags = []
             for pt in proposed:
@@ -831,11 +991,22 @@ async def bulk_update_staged_items(
                     pt_dict["user_assigned"] = True
                 elif pt_dict.get("is_new", False) and t_name in session_pending_map:
                     pt_dict["category"] = session_pending_map[t_name]["category"]
+                    if "rating" in session_pending_map[t_name]:
+                        pt_dict["rating"] = session_pending_map[t_name]["rating"]
                     if session_pending_map[t_name].get("user_assigned", False):
                         pt_dict["user_assigned"] = True
                 resolved_tags.append(pt_dict)
 
             item["tags"] = resolved_tags
+            if req.add_tags or req.remove_tag_names:
+                item["tags_reviewed"] = True
+            # Only tags added by this update escalate, and never over a rating the
+            # same request explicitly set.
+            if req.rating is None:
+                current_r = RatingEnum.normalize(item.get("rating")) or RatingEnum.safe
+                escalated = get_escalated_rating(current_r, get_newly_added_tags(previous_staged_tags, resolved_tags))
+                if escalated and escalated != current_r:
+                    item["rating"] = escalated.value
 
             items[item_id] = item
             updated_items.append(item)
@@ -899,6 +1070,7 @@ async def get_pending_entities(
                     pending_tags_map[name] = {
                         "name": name,
                         "category": t.get("category", "general"),
+                        "rating": t.get("rating", "none"),
                         "used_by": [],
                         "merge_into": t.get("merge_into"),
                         "user_assigned": t.get("user_assigned", False),
@@ -954,6 +1126,7 @@ async def update_pending_tag(
                         t["name"] = merge_target
                         t["is_new"] = existing_db_tag is None
                         t["category"] = existing_db_tag.category.value if existing_db_tag else t.get("category", "general")
+                        t["rating"] = existing_db_tag.rating.value if existing_db_tag and existing_db_tag.rating else t.get("rating", "none")
                         t["user_assigned"] = True
                         new_tags.append(t)
                     else:
@@ -961,12 +1134,35 @@ async def update_pending_tag(
                             t["name"] = update.new_name.strip().lower()
                         if update.category:
                             t["category"] = update.category.value
+                        if update.rating is not None:
+                            t["rating"] = update.rating
                         t["user_assigned"] = True
                         new_tags.append(t)
                 else:
                     new_tags.append(t)
 
             if modified:
+                replacement_name = None
+                if update.merge_into:
+                    replacement_name = update.merge_into.strip().lower()
+                elif update.new_name:
+                    replacement_name = update.new_name.strip().lower()
+
+                if replacement_name:
+                    for t in new_tags:
+                        if t.get("implied") and isinstance(t.get("implied_by"), list):
+                            updated_grps = []
+                            for grp in t["implied_by"]:
+                                if isinstance(grp, list):
+                                    new_grp = sorted({
+                                        replacement_name if str(x).strip().lower() == target_name else str(x).strip().lower()
+                                        for x in grp
+                                        if x and str(x).strip()
+                                    })
+                                    if new_grp and new_grp not in updated_grps:
+                                        updated_grps.append(new_grp)
+                            t["implied_by"] = updated_grps
+
                 # Deduplicate item's tags by name
                 seen = set()
                 deduped = []
@@ -1142,7 +1338,7 @@ async def commit_upload_session(
                     duplicate_item_ids.add(i_id)
 
             # Step 1: Gather and bulk create all confirmed new tags (skipping duplicate items)
-            pending_tags_to_create: Dict[str, str] = {}
+            pending_tags_to_create: Dict[str, dict] = {}
             for i_id, item in items.items():
                 if i_id in duplicate_item_ids:
                     continue
@@ -1152,15 +1348,21 @@ async def commit_upload_session(
                         continue
                     if t.get("is_new", False):
                         cat = t.get("category", "general")
-                        pending_tags_to_create[t_name] = cat
+                        rating = t.get("rating", "none")
+                        pending_tags_to_create[t_name] = {"category": cat, "rating": rating}
 
             if pending_tags_to_create:
                 existing_db_tags = {
                     t.name: t for t in db.query(Tag).filter(Tag.name.in_(list(pending_tags_to_create.keys()))).all()
                 }
-                for t_name, t_cat in pending_tags_to_create.items():
+                for t_name, info in pending_tags_to_create.items():
                     if t_name not in existing_db_tags:
-                        new_tag = Tag(name=t_name, post_count=0, category=t_cat)
+                        new_tag = Tag(
+                            name=t_name,
+                            post_count=0,
+                            category=info["category"],
+                            rating=normalize_tag_rating(info.get("rating"))
+                        )
                         db.add(new_tag)
                 db.flush()
 
@@ -1290,6 +1492,12 @@ async def commit_upload_session(
                 rel_path = dest_path.relative_to(settings.BASE_DIR)
                 rel_thumb = thumb_dest_path.relative_to(settings.BASE_DIR) if thumb_gen else None
 
+                item_cdate_str = item.get("custom_date")
+                parsed_cdate = None
+                if item_cdate_str:
+                    from ..utils.date_extractor import parse_explicit_custom_date
+                    parsed_cdate = parse_explicit_custom_date(item_cdate_str)
+
                 # Create Media DB record
                 media = Media(
                     filename=unique_filename,
@@ -1306,14 +1514,33 @@ async def commit_upload_session(
                     rating=RatingEnum.normalize(item.get("rating")) or RatingEnum.safe,
                     source=item.get("source") or None,
                     description=item.get("description") or None,
+                    custom_date=parsed_cdate,
                 )
 
                 # Link tags
                 item_tag_names = [t.get("name", "").strip().lower() for t in item.get("tags", []) if t.get("name")]
+                implied_by_tag_id = {}
                 if item_tag_names:
-                    media.tags = preview_or_create_tags(db, item_tag_names, expand=True, dry_run=False)
+                    pre_implied_map = {
+                        t.get("name", "").strip().lower(): (t.get("implied_by") or [])
+                        for t in item.get("tags", [])
+                        if t.get("name") and t.get("implied")
+                    }
+                    media.tags, implied_by_tag_id = get_or_create_tags_with_implications(
+                        db,
+                        item_tag_names,
+                        expand=not bool(item.get("tags_reviewed")),
+                        pre_implied_map=pre_implied_map,
+                    )
                     for t in media.tags:
                         all_tag_ids_to_update.add(t.id)
+                    # The staged rating already reflects the staged tags (and any deliberate
+                    # manual change), so only tags that first appear at commit time escalate.
+                    escalated = get_escalated_rating(
+                        media.rating, get_newly_added_tags(item.get("tags", []), media.tags)
+                    )
+                    if escalated and escalated != media.rating:
+                        media.rating = escalated
 
                 # Link albums
                 a_ids = item.get("album_ids", [])
@@ -1325,6 +1552,8 @@ async def commit_upload_session(
 
                 db.add(media)
                 db.flush()
+                if implied_by_tag_id:
+                    apply_media_tag_implications(db, media, implied_by_tag_id)
 
                 total_created += 1
                 results.append(UploadSessionCommitItemResult(

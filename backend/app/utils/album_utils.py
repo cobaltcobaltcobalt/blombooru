@@ -800,6 +800,7 @@ def get_album_popular_tags(album_id: int, db: Session, limit: int = 20) -> List[
         Tag.id,
         Tag.name,
         Tag.category,
+        Tag.rating,
         func.count(blombooru_media_tags.c.tag_id).label('count')
     ).join(
         blombooru_media_tags, Tag.id == blombooru_media_tags.c.tag_id
@@ -818,6 +819,7 @@ def get_album_popular_tags(album_id: int, db: Session, limit: int = 20) -> List[
             "id": tc.id,
             "name": tc.name,
             "category": tc.category.value if hasattr(tc.category, 'value') else tc.category,
+            "rating": tc.rating.value if tc.rating else "none",
             "count": tc.count
         }
         for tc in tag_counts

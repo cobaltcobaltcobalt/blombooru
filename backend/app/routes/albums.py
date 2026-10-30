@@ -339,7 +339,8 @@ async def update_album(
         db.flush()
     
     # Update parent relationship
-    if album_data.parent_album_id is not None:
+    fields_set = album_data.model_fields_set if hasattr(album_data, "model_fields_set") else getattr(album_data, "__fields_set__", set())
+    if "parent_album_id" in fields_set:
         reparent_album(db, album_id, album_data.parent_album_id or None)
     else:
         db.commit()
@@ -423,7 +424,7 @@ async def get_album_contents(
         Media.id == blombooru_album_media.c.media_id
     ).filter(
         blombooru_album_media.c.album_id == album_id
-    ).options(selectinload(Media.tags))
+    ).options(selectinload(Media.tags), selectinload(Media.media_tag_links))
     
     parsed_q = parse_search_query(q) if (q and isinstance(q, str) and q.strip()) else None
     media_query = apply_media_filters(

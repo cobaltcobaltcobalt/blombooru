@@ -25,7 +25,12 @@ from ..utils.media_processor import calculate_file_hash, process_media_file
 from ..utils.thumbnail_generator import generate_thumbnail, THUMBNAIL_EXT
 from ..utils.url_fetch import UrlFetchError, safe_request
 from ..utils.url_security import UrlValidationError, validate_url_not_ssrf
-from .media import get_or_create_tags, update_tag_counts
+from ..utils.tag_utils import get_escalated_rating
+from .media import (
+    apply_media_tag_implications,
+    get_or_create_tags_with_implications,
+    update_tag_counts,
+)
 
 router = APIRouter(prefix="/api/booru-import", tags=["booru-import"])
 
@@ -94,7 +99,15 @@ async def fetch_booru_post(
 
     return {
         "id": post.id,
-        "tags": [{"name": t.name, "category": t.category, "is_new": getattr(t, "is_new", True)} for t in post.tags],
+        "tags": [
+            {
+                "name": t.name,
+                "category": t.category,
+                "is_new": getattr(t, "is_new", True),
+                "rating": getattr(t, "rating", "none") or "none"
+            }
+            for t in post.tags
+        ],
         "rating": post.rating,
         "source": post.source,
         "file_url": post.file_url,
@@ -106,6 +119,7 @@ async def fetch_booru_post(
         "score": post.score,
         "booru_url": post.booru_url,
         "description": post.description,
+        "uploaded_at": post.uploaded_at,
     }
 
 @router.post("/download")
@@ -231,6 +245,9 @@ async def download_and_import(
         final_tags = req.tags if req.tags is not None else [t.name for t in post.tags]
         final_description = req.description if req.description is not None else post.description
 
+        from ..utils.date_extractor import resolve_custom_date
+        custom_dt, _ = resolve_custom_date(file_path=file_path, booru_date=post.uploaded_at)
+
         media = Media(
             filename=unique_filename,
             path=str(relative_path),
@@ -246,10 +263,12 @@ async def download_and_import(
             rating=final_rating,
             source=final_source if final_source else None,
             description=final_description if final_description else None,
+            custom_date=custom_dt,
         )
 
         # Handle tags
         tag_ids_to_update = []
+        implied_by_tag_id = {}
         if final_tags:
             category_hints = None
             if req.auto_create_tags:
@@ -259,10 +278,18 @@ async def download_and_import(
                         category_hints[t.name.lower()] = t.category
 
             tag_list = [t.strip() for t in final_tags if t.strip()]
-            media.tags = get_or_create_tags(db, tag_list, category_hints=category_hints)
+            media.tags, implied_by_tag_id = get_or_create_tags_with_implications(
+                db, tag_list, category_hints=category_hints, expand=True
+            )
             tag_ids_to_update = [tag.id for tag in media.tags]
+            escalated = get_escalated_rating(media.rating, media.tags)
+            if escalated and escalated != media.rating:
+                media.rating = escalated
 
         db.add(media)
+        db.flush()
+        if implied_by_tag_id:
+            apply_media_tag_implications(db, media, implied_by_tag_id)
         db.commit()
         db.refresh(media)
 

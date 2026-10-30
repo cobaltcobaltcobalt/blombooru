@@ -188,6 +188,13 @@
                     "done_relinked": "Successfully re-linked {count} media file(s).",
                     "done_none": "All media files are correctly linked. No moved or renamed files found.",
                     "unresolved_warning": "{count} media file(s) were not found."
+                },
+                "transcoding": {
+                    "title": "Media Transcoding",
+                    "hint": "Transcode media files with codecs or audio incompatible with web browsers to a web-compatible format.",
+                    "button": "Transcode Incompatible Media",
+                    "progress": "Transcoding: {current}/{total}{file} - Transcoded: {transcoded}, Skipped: {skipped}",
+                    "done": "Done! Transcoded: {transcoded}, Skipped: {skipped}, Failed: {failed}."
                 }
             },
             "booru_import": {
@@ -431,6 +438,10 @@
             "apply_aliases_confirm_1_msg": "This will apply all tag aliases to every media item in your library. Replaced tags will be deleted so tags do not exist as both a tag and an alias. Affected media will be opened in a batch edit modal for review.",
             "apply_aliases_processing": "Applying tag aliases to all media...",
             "apply_aliases_no_affected": "No media was affected by the current tag aliases.",
+            "apply_tag_ratings_to_all": "Apply Tag Ratings to All Media",
+            "apply_tag_ratings_confirm_msg": "This will find all media whose ratings are lower than their configured tag ratings, and open them in the bulk rating editor for review.",
+            "apply_tag_ratings_processing": "Checking media against tag ratings...",
+            "apply_tag_ratings_no_affected": "No media ratings need to be escalated.",
             "delete_all_tags": "Delete All Tags",
             "drop_csv": "Drop CSV file here or click to browse",
             "import_csv": "Import Tags from CSV",
@@ -439,7 +450,7 @@
                 "search_manage_tags": "Search & Manage Tags",
                 "search_manage_tags_description": "Use this to quickly find and edit tags, manage their aliases, or merge them with other tags.",
                 "apply_rules_title": "Apply Tag Rules",
-                "apply_rules_hint": "Retroactively apply configured tag aliases and implications to all media."
+                "apply_rules_hint": "Retroactively apply configured tag rules to all media."
             },
             "manage_tag": "Manage Tag",
             "edit_tag": "Edit Tag",
@@ -476,6 +487,11 @@
             "apply_all_confirm_1_msg": "This will apply all tag implications to every media item in your library. Affected media will be opened in a batch edit modal for review.",
             "apply_all_processing": "Applying tag implications to all media...",
             "apply_all_no_affected": "No media was affected by the current tag implications.",
+            "backfill_implied": "Backfill Implied Status",
+            "backfill_implied_confirm_msg": "This will scan all existing media and mark tags that match current implication rules as implied (along with their triggering tags). Do you want to continue?",
+            "backfill_implied_processing": "Backfilling implied tag status...",
+            "backfill_implied_none": "No media tags needed implied status backfill.",
+            "backfill_implied_success": "Marked {tags} tags as implied across {media} media items.",
             "merge_confirm_title": "Merge Tag Implication",
             "merge_confirm_msg": "An implication for target tag(s) \"{target}\" already exists with implied tag(s): \"{existing}\". Would you like to merge the new implied tag(s) \"{new}\" into the existing implication?",
             "merge_confirm_btn": "Merge",
@@ -570,13 +586,17 @@
             "add_tags": "Add",
             "remove_tags": "Remove"
         },
+        "rating": {
+            "quick_apply": "Apply rating to all",
+            "review_ratings": "Review and change ratings for each item.",
+            "reset_rating": "Reset rating"
+        },
         "ai_tags": {
             "default_media_name": "Media {id}",
             "empty_message": "No new AI tags found in the selected items' metadata.",
             "title": "Bulk Append AI Tags"
         },
         "buttons": {
-            "clear_tags": "Clear tags",
             "refresh_tags": "Refresh tags"
         },
         "defaults": {
@@ -599,8 +619,11 @@
             "fetching_metadata": "Fetching metadata...",
             "initializing_tagger": "Initializing AI Tagger...",
             "items_fetched": "items fetched",
-            "items_processed": "items processed",
+            "items_processed": "{scannedMedia} / {totalMedia} processed",
             "predicting_tags": "Predicting tags with AI...",
+            "skipped": "{count} unaffected",
+            "tagged": "{count} tagged",
+            "tagging_complete": "Tagging complete",
             "tags_checked": "tags checked",
             "validating_tags": "Validating tags..."
         },
@@ -743,6 +766,7 @@
         "sort_random": "Random",
         "sort_regen_random": "Shuffle again",
         "sort_tag_count": "# of Tags",
+        "sort_custom_date": "Custom Date",
         "sort_toggle_order": "Toggle sort order",
         "sort_manual": "Manual",
         "sort_edit_order": "Edit Order",
@@ -780,6 +804,8 @@
         "info": {
             "save_source": "Save Source",
             "source_url": "Source URL",
+            "custom_date": "Date",
+            "save_custom_date": "Save Date",
             "filename": "Filename",
             "type": "Type",
             "size": "Size",
@@ -846,6 +872,8 @@
             "append_ai_tags": "Append AI Tags",
             "edit_tags": "Edit Tags",
             "filter_results": "Filter Results",
+            "hide_implied_tags": "Hide Implied Tags",
+            "implied_tag_popover": "Implied tag",
             "predict_tags": "Predict Tags (AI)",
             "save_tags": "Save Tags",
             "search_by": "Search By",
@@ -1000,7 +1028,8 @@
             "replacement_file": "Replacement File",
             "change_file": "Change File",
             "keep_filename_hint": "Keep existing filename: {name}",
-            "new_filename_hint": "Update filename to: {name}"
+            "new_filename_hint": "Update filename to: {name}",
+            "update_date_from_file": "Update Date from Replacement File"
         }
     },
     "nav": {
@@ -1125,6 +1154,8 @@
             "parent_set": "Parent set successfully",
             "removed_from_album": "Removed from album",
             "source_updated": "Source updated successfully",
+            "date_updated": "Date updated successfully",
+            "error_updating_date": "Failed to update date",
             "description_updated": "Description updated successfully",
             "error_updating_description": "Error updating description",
             "rating_updated": "Rating updated successfully",
@@ -1223,7 +1254,12 @@
             "final_tags": "Final Tags",
             "title": "Staged Media",
             "remove_confirm": "Are you sure you want to remove this item from the upload queue?",
-            "remove_item_title": "Remove item"
+            "remove_item_title": "Remove item",
+            "origin_sidecar": "From sidecar",
+            "origin_exif": "From EXIF",
+            "origin_booru": "From booru",
+            "origin_client": "Client date",
+            "origin_explicit": "Explicit"
         },
         "bulk": {
             "editing_selected": "Editing: {count} selected items",
@@ -1234,7 +1270,8 @@
             "description_applied": "Description applied to selected items",
             "album_added": "Album added to selected items",
             "common_folder_album": "Common Folder Album",
-            "common_tags": "Common Tags"
+            "common_tags": "Common Tags",
+            "date_applied": "Date applied to selected items"
         },
         "progress": {
             "duplicates_skipped": "{count} duplicate(s) skipped.",

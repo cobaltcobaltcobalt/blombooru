@@ -7,6 +7,7 @@ class BooruTag:
     name: str
     category: str  # general, artist, character, copyright, meta
     is_new: bool = True
+    rating: str = "none"
 
 @dataclass
 class BooruPost:
@@ -24,3 +25,4 @@ class BooruPost:
     score: int = 0
     booru_url: str = ""
     description: Optional[str] = None
+    uploaded_at: Optional[str] = None

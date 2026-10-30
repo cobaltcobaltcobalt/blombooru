@@ -5,7 +5,7 @@ from urllib.parse import urljoin, urlparse
 
 import requests
 
-from .base import BooruClient, BooruNotFoundError
+from .base import BooruClient, BooruNotFoundError, parse_booru_date
 from .types import BooruPost, BooruTag
 from ...utils.logger import logger
 
@@ -133,6 +133,7 @@ class BlombooruClient(BooruClient):
             score=int(data.get("score") or 0),
             booru_url=f"{self.base_url}/media/{post_id}",
             description=description,
+            uploaded_at=parse_booru_date(data.get("uploaded_at")) or parse_booru_date(data.get("created_at")),
         )
 
     def fetch_post(self, post_id: int) -> BooruPost:

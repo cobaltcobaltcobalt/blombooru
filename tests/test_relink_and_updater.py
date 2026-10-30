@@ -76,7 +76,7 @@ class TestRelinkAndUpdater(AsyncBackupTestBase):
             self.assertEqual(media.filename, "renamed_sample.mkv")
             self.assertEqual(media.path, str(new_orig_file.relative_to(self.base_path)))
 
-            expected_new_trans = self.transcoded_dir / "new_folder" / "renamed_sample.mp4"
+            expected_new_trans = self.transcoded_dir / "new_folder" / "renamed_sample.mkv.mp4"
             self.assertEqual(media.transcoded_path, str(expected_new_trans.relative_to(self.base_path)))
 
             # Verify files on disk
@@ -132,7 +132,7 @@ class TestRelinkAndUpdater(AsyncBackupTestBase):
             self.db.refresh(media)
 
             expected_new_orig = self.original_dir / "renamed_target.mkv"
-            expected_new_trans = self.transcoded_dir / "renamed_target.mp4"
+            expected_new_trans = self.transcoded_dir / "renamed_target.mkv.mp4"
             expected_new_thumb = self.thumbnail_dir / "renamed_target.jpg"
 
             self.assertEqual(media.path, str(expected_new_orig.relative_to(self.base_path)))
@@ -496,6 +496,182 @@ class TestRelinkAndUpdater(AsyncBackupTestBase):
             self.assertEqual(media.width, 1280)
             self.assertEqual(media.height, 720)
 
+    async def test_patch_media_custom_date_valid_reset_and_invalid(self):
+        """Test PATCH /api/media/{id} updates custom_date, resets to uploaded_at on null, and raises 422 on invalid."""
+        from datetime import datetime, timezone
+        from fastapi import HTTPException
+        from backend.app.routes.media import update_media
+        from backend.app.schemas import MediaUpdate
+
+        uploaded_time = datetime(2019, 5, 1, 10, 0, 0, tzinfo=timezone.utc)
+        media = Media(
+            id=20,
+            filename="patch_test.png",
+            path="media/original/patch_test.png",
+            hash="patch_test_hash",
+            file_type=FileTypeEnum.image,
+            file_size=100,
+            rating=RatingEnum.safe,
+            uploaded_at=uploaded_time,
+            custom_date=uploaded_time,
+        )
+        self.db.add(media)
+        self.db.commit()
+
+        # 1. Valid update sets new custom_date
+        resp = await update_media(
+            media_id=20,
+            updates=MediaUpdate(custom_date="2023-11-20T15:30:00Z"),
+            current_user=self.mock_user,
+            db=self.db,
+        )
+        self.db.refresh(media)
+        cdate = media.custom_date if media.custom_date.tzinfo else media.custom_date.replace(tzinfo=timezone.utc)
+        self.assertEqual(cdate, datetime(2023, 11, 20, 15, 30, 0, tzinfo=timezone.utc))
+
+        # 2. Reset custom_date: null restores uploaded_at
+        resp = await update_media(
+            media_id=20,
+            updates=MediaUpdate(custom_date=None),
+            current_user=self.mock_user,
+            db=self.db,
+        )
+        self.db.refresh(media)
+        cdate = media.custom_date if media.custom_date.tzinfo else media.custom_date.replace(tzinfo=timezone.utc)
+        expected_up = uploaded_time if uploaded_time.tzinfo else uploaded_time.replace(tzinfo=timezone.utc)
+        self.assertEqual(cdate, expected_up)
+
+        # 3. Invalid custom_date raises 422
+        with self.assertRaises(HTTPException) as ctx:
+            await update_media(
+                media_id=20,
+                updates=MediaUpdate(custom_date="invalid-iso-date"),
+                current_user=self.mock_user,
+                db=self.db,
+            )
+        self.assertEqual(ctx.exception.status_code, 422)
+
+    async def test_update_from_source_custom_date(self):
+        """Test PATCH /api/media/{id}/update-from-source with update_custom_date."""
+        from datetime import datetime, timezone
+        from fastapi import HTTPException
+
+        uploaded_time = datetime(2019, 5, 1, 10, 0, 0, tzinfo=timezone.utc)
+        media = Media(
+            id=21,
+            filename="source_update_test.png",
+            path="media/original/source_update_test.png",
+            hash="source_update_hash",
+            file_type=FileTypeEnum.image,
+            file_size=100,
+            rating=RatingEnum.safe,
+            uploaded_at=uploaded_time,
+            custom_date=uploaded_time,
+        )
+        self.db.add(media)
+        self.db.commit()
+
+        # 1. Valid custom_date updates post
+        await update_from_source(
+            media_id=21,
+            req=PostUpdateRequest(
+                update_custom_date=True,
+                custom_date="2022-08-14T08:00:00Z",
+            ),
+            current_user=self.mock_user,
+            db=self.db,
+        )
+        self.db.refresh(media)
+        cdate = media.custom_date if media.custom_date.tzinfo else media.custom_date.replace(tzinfo=timezone.utc)
+        self.assertEqual(cdate, datetime(2022, 8, 14, 8, 0, 0, tzinfo=timezone.utc))
+
+        # 2. None or invalid custom_date raises 422 when update_custom_date is True
+        with self.assertRaises(HTTPException) as ctx:
+            await update_from_source(
+                media_id=21,
+                req=PostUpdateRequest(
+                    update_custom_date=True,
+                    custom_date=None,
+                ),
+                current_user=self.mock_user,
+                db=self.db,
+            )
+        self.assertEqual(ctx.exception.status_code, 422)
+
+        with self.assertRaises(HTTPException) as ctx:
+            await update_from_source(
+                media_id=21,
+                req=PostUpdateRequest(
+                    update_custom_date=True,
+                    custom_date="invalid_date",
+                ),
+                current_user=self.mock_user,
+                db=self.db,
+            )
+        self.assertEqual(ctx.exception.status_code, 422)
+
+    async def test_update_file_finalize_custom_date_non_clobbering(self):
+        """Test POST /api/media/{id}/update-file-finalize with update_custom_date=True does not clobber existing date when replacement lacks EXIF."""
+        import json as _json
+        from datetime import datetime, timezone
+
+        orig_file = self.original_dir / "sample_orig3.png"
+        orig_file.write_bytes(b"INITIAL_ORIG_BYTES_3")
+        old_hash = calculate_file_hash(orig_file)
+
+        initial_cdate = datetime(2018, 3, 20, 14, 0, 0, tzinfo=timezone.utc)
+        media = Media(
+            id=22,
+            filename="sample_orig3.png",
+            path="media/original/sample_orig3.png",
+            hash=old_hash,
+            file_type=FileTypeEnum.image,
+            mime_type="image/png",
+            file_size=len(b"INITIAL_ORIG_BYTES_3"),
+            rating=RatingEnum.safe,
+            uploaded_at=initial_cdate,
+            custom_date=initial_cdate,
+        )
+        self.db.add(media)
+        self.db.commit()
+
+        upload_id = "33333333-4444-5555-6666-777777777777"
+        chunk_dir = self.chunks_dir / upload_id
+        chunk_dir.mkdir(parents=True, exist_ok=True)
+        (chunk_dir / "meta.json").write_text(_json.dumps({"filename": "replacement_no_exif.png", "total_chunks": 1}))
+        (chunk_dir / "chunk_0").write_bytes(b"REPLACEMENT_CONTENT_BYTES_NO_EXIF")
+
+        with patch.object(settings, "BASE_DIR", self.base_path), \
+             patch.object(settings, "ORIGINAL_DIR", self.original_dir), \
+             patch.object(settings, "TRANSCODED_DIR", self.transcoded_dir), \
+             patch.object(settings, "THUMBNAIL_DIR", self.thumbnail_dir), \
+             patch("backend.app.routes.media.MEDIA_CHUNKS_DIR", self.chunks_dir), \
+             patch("backend.app.routes.media.process_media_file") as mock_process, \
+             patch("backend.app.routes.media.generate_thumbnail", return_value=True):
+
+            mock_process.side_effect = lambda f, precalculated_hash=None: {
+                "file_type": FileTypeEnum.image,
+                "mime_type": "image/png",
+                "file_size": f.stat().st_size,
+                "transcoded_path": None,
+                "width": 800,
+                "height": 600,
+                "duration": None,
+            }
+
+            resp = await update_file_finalize(
+                media_id=22,
+                upload_id=upload_id,
+                update_filename=False,
+                update_custom_date=True,
+                current_user=self.mock_user,
+                db=self.db,
+            )
+
+            self.db.refresh(media)
+            cdate = media.custom_date if media.custom_date.tzinfo else media.custom_date.replace(tzinfo=timezone.utc)
+            # Must remain the initial_cdate (not overwritten by now())
+            self.assertEqual(cdate, initial_cdate)
+
 if __name__ == "__main__":
     unittest.main()
-

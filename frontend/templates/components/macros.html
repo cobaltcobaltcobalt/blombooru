@@ -135,6 +135,7 @@
 location='desktop', is_admin=false) %}
 {% set standard_sort_options = {
 'uploaded_at': t('admin.settings.upload_date'),
+'custom_date': t('gallery.sort_custom_date'),
 'filename': t('admin.settings.file_name'),
 'file_size': t('admin.settings.file_size'),
 'file_type': t('admin.settings.file_type'),
@@ -252,7 +253,7 @@ location='desktop', is_admin=false) %}
 
 {# Bulk Actions Component #}
 {% macro bulk_actions(buttons=['select_all', 'deselect_all', 'delete']) %}
-<div id="bulk-actions" style="display: none;" class="surface p-3 mb-4 border">
+<div id="bulk-actions" style="display: none;" class="surface p-3 mb-4 border sticky z-20">
     <p class="mb-2">{{ t('common.items_selected', count='<span id="selected-count">0</span>') | safe }}</p>
     <div class="flex gap-2 flex-wrap">
         {% if 'select_all' in buttons %}
@@ -283,6 +284,11 @@ location='desktop', is_admin=false) %}
         {% if 'tag_category' in buttons %}
         <button id="bulk-tag-category-btn" class="btn px-3 py-1 cursor-pointer">
             {{ t('admin.tags_management.tag_category') }}
+        </button>
+        {% endif %}
+        {% if 'tag_rating' in buttons %}
+        <button id="bulk-tag-rating-btn" class="btn px-3 py-1 cursor-pointer">
+            {{ t('admin.tags_management.tag_rating') }}
         </button>
         {% endif %}
         {% if 'tag_implies' in buttons %}

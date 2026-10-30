@@ -10,7 +10,10 @@ class MediaViewer extends MediaViewerBase {
             this.albumId = albumMatch ? albumMatch[1] : null;
         }
         this.tagInputHelper = new TagInputHelper();
-        this.prefilledTags = new Set();
+        this.originalTags = new Set();
+        this.impliedTagsMap = new Map();
+        this.hiddenImpliedTags = new Set();
+        this.expandedTriggerTags = new Set();
         this.validationTimeout = null;
         this.tooltipHelper = null;
         this.ratingSelect = null;
@@ -77,14 +80,36 @@ class MediaViewer extends MediaViewerBase {
             this.applyDescriptionLayout();
 
             if (this.currentMedia && Array.isArray(this.currentMedia.tags)) {
+                this.originalTags = new Set(this.currentMedia.tags.map(t => (t.name || t).toLowerCase().trim()));
+                this.impliedTagsMap = new Map();
+                this.hiddenImpliedTags = new Set();
+                this.expandedTriggerTags = new Set();
                 for (const tag of this.currentMedia.tags) {
-                    if (tag.name && tag.category) {
-                        this.tagCategoryCache.set(tag.name.toLowerCase().trim(), tag.category);
+                    const tagName = (tag.name || tag).toLowerCase().trim();
+                    if (tagName) {
+                        this.expandedTriggerTags.add(tagName);
+                        if (tag && typeof tag === 'object' && tag.implied) {
+                            this.impliedTagsMap.set(
+                                tagName,
+                                Array.isArray(tag.implied_by) ? tag.implied_by : []
+                            );
+                        }
+                        if (this.tagInputHelper) {
+                            this.tagInputHelper.tagValidationCache.set(tagName, true);
+                            this.tagInputHelper.tagCategoryCache.set(tagName, tag.category || 'general');
+                        }
+                        const cat = tag.category || 'general';
+                        this.tagCategoryCache.set(tagName, cat);
                     }
                 }
+            } else {
+                this.originalTags = new Set();
+                this.impliedTagsMap = new Map();
+                this.hiddenImpliedTags = new Set();
+                this.expandedTriggerTags = new Set();
             }
             this.renderMedia(this.currentMedia);
-            this.renderInfo(this.currentMedia);
+            this.renderInfo(this.currentMedia, { isAdmin: app.isAdminMode });
             this.renderTags(this.currentMedia, { clickable: true });
 
             // Show rendered description for non-admin viewers
@@ -124,17 +149,12 @@ class MediaViewer extends MediaViewerBase {
 
     setupAdminMode() {
         this.el('edit-tags-section').style.display = 'block';
-        this.el('edit-source-section').style.display = 'block';
         this.el('admin-actions').style.display = 'flex';
         this.setupTagInput();
         this.setupEditTagsToggle();
         this.setupSuggestedTags();
-
-        // Set source input value
-        const sourceInput = this.el('source-input');
-        if (sourceInput) {
-            sourceInput.value = this.currentMedia.source || '';
-        }
+        this.setupEditDateToggle();
+        this.setupEditSourceToggle();
 
         // Set description input value and tabs
         const desc = (this.currentMedia && this.currentMedia.description) || '';
@@ -173,7 +193,44 @@ class MediaViewer extends MediaViewerBase {
                 if (orderA !== orderB) return orderA - orderB;
                 return a.name.localeCompare(b.name);
             });
-            tagsInput.textContent = sortedTags.map(t => t.name).join(' ');
+
+            const hideImpliedCheckbox = this.el('hide-implied-tags-checkbox');
+            const isHideImplied = this.tagInputHelper ? this.tagInputHelper.isHideImpliedEnabled() : false;
+            if (hideImpliedCheckbox) {
+                hideImpliedCheckbox.checked = isHideImplied;
+                hideImpliedCheckbox.onchange = () => {
+                    const checked = hideImpliedCheckbox.checked;
+                    this.tagInputHelper.setHideImpliedEnabled(checked);
+                    this.applyHideImpliedToEditor(checked);
+                };
+            }
+            if (!this._hideImpliedWindowListenerAdded) {
+                this._hideImpliedWindowListenerAdded = true;
+                window.addEventListener('hideImpliedTagsChanged', (e) => {
+                    const enabled = Boolean(e.detail && e.detail.enabled);
+                    const cb = this.el('hide-implied-tags-checkbox');
+                    if (cb && cb.checked !== enabled) {
+                        cb.checked = enabled;
+                    }
+                    this.applyHideImpliedToEditor(enabled);
+                });
+            }
+
+            this.hiddenImpliedTags.clear();
+            if (isHideImplied) {
+                const visibleSorted = [];
+                for (const t of sortedTags) {
+                    const lower = (t.name || '').toLowerCase().trim();
+                    if (this.impliedTagsMap.has(lower)) {
+                        this.hiddenImpliedTags.add(lower);
+                    } else {
+                        visibleSorted.push(t.name);
+                    }
+                }
+                tagsInput.textContent = visibleSorted.join(' ');
+            } else {
+                tagsInput.textContent = sortedTags.map(t => t.name).join(' ');
+            }
             this.validateAndStyleTags();
             this.updateSuggestedTags();
         }
@@ -239,6 +296,117 @@ class MediaViewer extends MediaViewerBase {
                 this.updateSuggestedTags();
             }
         });
+    }
+
+    setupEditDateToggle() {
+        const toggle = this.el('edit-date-toggle');
+        const content = this.el('edit-date-content');
+
+        if (!toggle || !content) return;
+
+        // Ensure initial state
+        content.style.display = 'none';
+        const chevron = toggle.querySelector('#edit-date-chevron');
+        if (chevron) {
+            chevron.style.transform = 'rotate(0deg)';
+        }
+
+        // Remove any existing listeners by cloning
+        const newToggle = toggle.cloneNode(true);
+        toggle.parentNode.replaceChild(newToggle, toggle);
+
+        newToggle.addEventListener('click', () => {
+            const isHidden = content.style.display === 'none';
+            content.style.display = isHidden ? 'block' : 'none';
+
+            const activeChevron = newToggle.querySelector('#edit-date-chevron');
+            if (activeChevron) {
+                activeChevron.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+            }
+        });
+
+        const customDateInput = this.el('custom-date-input');
+        if (customDateInput) {
+            customDateInput.value = toLocalInputDateTime(this.currentMedia.custom_date || this.currentMedia.uploaded_at);
+            this.initialCustomDateValue = customDateInput.value;
+            this.updateSaveCustomDateButtonVisibility();
+
+            customDateInput.oninput = () => this.updateSaveCustomDateButtonVisibility();
+            customDateInput.onchange = () => this.updateSaveCustomDateButtonVisibility();
+            customDateInput.onkeydown = async (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const saveBtn = this.el('save-custom-date-btn');
+                    if (saveBtn && saveBtn.style.display !== 'none') {
+                        await this.saveCustomDate();
+                    }
+                }
+            };
+        }
+
+        const saveDateBtn = this.el('save-custom-date-btn');
+        if (saveDateBtn) {
+            saveDateBtn.onclick = async () => {
+                await this.saveCustomDate();
+            };
+        }
+    }
+
+    setupEditSourceToggle() {
+        const toggle = this.el('edit-source-toggle');
+        const content = this.el('edit-source-content');
+
+        if (!toggle || !content) return;
+
+        // Ensure initial state
+        content.style.display = 'none';
+        const chevron = toggle.querySelector('#edit-source-chevron');
+        if (chevron) {
+            chevron.style.transform = 'rotate(0deg)';
+        }
+
+        // Remove any existing listeners by cloning
+        const newToggle = toggle.cloneNode(true);
+        toggle.parentNode.replaceChild(newToggle, toggle);
+
+        newToggle.addEventListener('click', (e) => {
+            if (e.target.closest('a')) {
+                return;
+            }
+            const isHidden = content.style.display === 'none';
+            content.style.display = isHidden ? 'block' : 'none';
+
+            const activeChevron = newToggle.querySelector('#edit-source-chevron');
+            if (activeChevron) {
+                activeChevron.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+            }
+        });
+
+        const sourceInput = this.el('source-input');
+        if (sourceInput) {
+            sourceInput.value = this.currentMedia.source || '';
+            this.initialSourceValue = sourceInput.value.trim();
+            this.updateSaveSourceButtonVisibility();
+
+            sourceInput.oninput = () => this.updateSaveSourceButtonVisibility();
+            sourceInput.onchange = () => this.updateSaveSourceButtonVisibility();
+            sourceInput.onkeydown = async (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const saveBtn = this.el('save-source-btn');
+                    if (saveBtn && saveBtn.style.display !== 'none') {
+                        await this.saveSource();
+                    }
+                }
+            };
+        }
+
+        const saveSourceBtn = this.el('save-source-btn');
+        if (saveSourceBtn) {
+            saveSourceBtn.onclick = async () => {
+                await this.saveSource();
+            };
+        }
     }
 
     async checkAlbumsExistence() {
@@ -323,6 +491,72 @@ class MediaViewer extends MediaViewerBase {
         this.el('download-btn').download = media.filename;
     }
 
+    getHighlightTags(inputElement) {
+        if (!inputElement) return new Set();
+        const inputTags = this.tagInputHelper.getPlainTextFromDiv(inputElement).split(/\s+/).filter(t => t.length > 0);
+        const highlightTags = new Set();
+        for (const t of inputTags) {
+            const lower = t.toLowerCase().trim();
+            if (!this.originalTags.has(lower)) {
+                highlightTags.add(lower);
+            }
+        }
+        return highlightTags;
+    }
+
+    handleImplicationExpanded(impliedByMap, impliedTags) {
+        const hideActive = this.tagInputHelper ? this.tagInputHelper.isHideImpliedEnabled() : false;
+        for (const tagName of (impliedTags || [])) {
+            const lower = tagName.toLowerCase().trim();
+            if (!lower) continue;
+            const groups = (impliedByMap && impliedByMap[lower]) || (impliedByMap && impliedByMap[tagName]) || [];
+            const existingGroups = this.impliedTagsMap.get(lower) || [];
+            const merged = [...existingGroups];
+            for (const g of groups) {
+                if (Array.isArray(g) && !merged.some(eg => JSON.stringify(eg) === JSON.stringify(g))) {
+                    merged.push(g);
+                }
+            }
+            this.impliedTagsMap.set(lower, merged);
+            if (hideActive) {
+                this.hiddenImpliedTags.add(lower);
+            }
+        }
+    }
+
+    async applyHideImpliedToEditor(hide) {
+        const tagsInput = this.el('tags-input');
+        if (!tagsInput || !this.tagInputHelper) return;
+
+        const text = this.tagInputHelper.getPlainTextFromDiv(tagsInput).trim();
+        const visibleTags = text ? text.split(/\s+/).filter(Boolean) : [];
+
+        if (hide) {
+            const remaining = [];
+            for (const t of visibleTags) {
+                const lower = t.toLowerCase().trim();
+                if (this.impliedTagsMap.has(lower)) {
+                    this.hiddenImpliedTags.add(lower);
+                } else {
+                    remaining.push(t);
+                }
+            }
+            tagsInput.textContent = remaining.join(' ');
+        } else {
+            const visibleLower = new Set(visibleTags.map(t => t.toLowerCase().trim()));
+            for (const hiddenLower of this.hiddenImpliedTags) {
+                if (!visibleLower.has(hiddenLower) && this.impliedTagsMap.has(hiddenLower)) {
+                    visibleTags.push(hiddenLower);
+                    visibleLower.add(hiddenLower);
+                }
+            }
+            this.hiddenImpliedTags.clear();
+            tagsInput.textContent = visibleTags.join(' ');
+        }
+
+        await this.validateAndStyleTags();
+    }
+
     setupTagInput() {
         const tagsInput = this.el('tags-input');
         if (!tagsInput) return;
@@ -330,36 +564,29 @@ class MediaViewer extends MediaViewerBase {
         this.tagInputHelper.setupTagInput(tagsInput, 'media-tags-input', {
             onValidate: () => { },
             validationCache: this.tagInputHelper.tagValidationCache,
-            checkFunction: (tag) => this.tagInputHelper.checkTagExists(tag),
-            getHighlightTags: (inputElement) => {
-                const inputTags = this.tagInputHelper.getPlainTextFromDiv(inputElement).split(/\s+/).filter(t => t.length > 0);
-                const highlightTags = new Set();
-                for (const t of inputTags) {
-                    if (this.prefilledTags.has(t.toLowerCase())) {
-                        highlightTags.add(t.toLowerCase());
-                    }
-                }
-                return highlightTags;
-            }
+            getHighlightTags: (inputElement) => this.getHighlightTags(inputElement),
+            getImpliedTags: () => this.impliedTagsMap,
+            getHiddenImpliedTags: () => this.hiddenImpliedTags,
+            getExpandedTriggers: () => this.expandedTriggerTags,
+            onImplicationExpanded: (impliedByMap, impliedTags) => {
+                this.handleImplicationExpanded(impliedByMap, impliedTags);
+            },
+            isHideImpliedActive: () => this.tagInputHelper.isHideImpliedEnabled()
         });
     }
 
     async validateAndStyleTags() {
         const tagsInput = this.el('tags-input');
-        if (!tagsInput) return;
+        if (!tagsInput || !this.tagInputHelper) return;
 
-        const inputTags = this.tagInputHelper.getPlainTextFromDiv(tagsInput).split(/\s+/).filter(t => t.length > 0);
-        const highlightTags = new Set();
-        for (const t of inputTags) {
-            if (this.prefilledTags.has(t.toLowerCase())) {
-                highlightTags.add(t.toLowerCase());
-            }
-        }
+        this.tagInputHelper.pruneImpliedTags(tagsInput, this.impliedTagsMap, this.hiddenImpliedTags);
+
+        const highlightTags = this.getHighlightTags(tagsInput);
 
         await this.tagInputHelper.validateAndStyleTags(tagsInput, {
             validationCache: this.tagInputHelper.tagValidationCache,
-            checkFunction: (tag) => this.tagInputHelper.checkTagExists(tag),
-            highlightTags: highlightTags
+            highlightTags: highlightTags,
+            impliedTags: this.impliedTagsMap
         });
     }
 
@@ -573,6 +800,7 @@ class MediaViewer extends MediaViewerBase {
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = `popular-tag-name tag ${tag.category} tag-text w-full text-xs px-2 py-1 cursor-pointer hover:opacity-75 transition-opacity`;
+            btn.dataset.tagRating = tag.rating || 'none';
 
             const nameSpan = document.createElement('span');
             nameSpan.className = 'truncate';
@@ -610,12 +838,26 @@ class MediaViewer extends MediaViewerBase {
 
         const currentText = this.tagInputHelper.getPlainTextFromDiv(tagsInput).trim();
         const currentTags = currentText ? currentText.split(/\s+/) : [];
-        const existingTagsSet = new Set(currentTags.map(t => t.toLowerCase()));
+        const existingTagsSet = new Set([
+            ...currentTags.map(t => t.toLowerCase()),
+            ...Array.from(this.hiddenImpliedTags || [])
+        ]);
 
         if (!existingTagsSet.has(tagName.toLowerCase())) {
             currentTags.push(tagName);
             tagsInput.textContent = currentTags.join(' ');
-            this.prefilledTags.add(tagName.toLowerCase());
+            if (this.tagInputHelper) {
+                this.tagInputHelper.tagValidationCache.set(tagName.toLowerCase().trim(), true);
+                await this.tagInputHelper.expandImplications(tagsInput, {
+                    extraTags: Array.from(this.hiddenImpliedTags || []),
+                    expandedTriggers: this.expandedTriggerTags,
+                    impliedTags: this.impliedTagsMap,
+                    onImplicationExpanded: (impliedByMap, impliedTags) => {
+                        this.handleImplicationExpanded(impliedByMap, impliedTags);
+                    },
+                    hideImplied: this.tagInputHelper.isHideImpliedEnabled()
+                });
+            }
             await this.validateAndStyleTags();
             this.updateSuggestedTags();
         }
@@ -820,10 +1062,6 @@ class MediaViewer extends MediaViewerBase {
             await this.saveTags();
         });
 
-        this.el('save-source-btn')?.addEventListener('click', async () => {
-            await this.saveSource();
-        });
-
         this.el('save-description-btn')?.addEventListener('click', async () => {
             await this.saveDescription();
         });
@@ -972,7 +1210,11 @@ class MediaViewer extends MediaViewerBase {
             } else {
                 const allTags = [...currentTags, ...validTags];
                 tagsInput.textContent = allTags.join(' ');
-                validTags.forEach(t => this.prefilledTags.add(t.toLowerCase()));
+                validTags.forEach(t => {
+                    if (this.tagInputHelper) {
+                        this.tagInputHelper.tagValidationCache.set(t.toLowerCase().trim(), true);
+                    }
+                });
                 await this.validateAndStyleTags();
                 this.updateSuggestedTags();
                 app.showNotification(window.i18n.t('notifications.media.tags_added', { count: validTags.length }), 'success');
@@ -1412,12 +1654,43 @@ class MediaViewer extends MediaViewerBase {
 
     async saveTags() {
         const tagsInput = this.el('tags-input');
+        if (tagsInput && this.tagInputHelper) {
+            this.tagInputHelper.pruneImpliedTags(tagsInput, this.impliedTagsMap, this.hiddenImpliedTags);
+            await this.tagInputHelper.expandImplications(tagsInput, {
+                extraTags: Array.from(this.hiddenImpliedTags || []),
+                expandedTriggers: this.expandedTriggerTags,
+                impliedTags: this.impliedTagsMap,
+                onImplicationExpanded: (impliedByMap, impliedTags) => {
+                    this.handleImplicationExpanded(impliedByMap, impliedTags);
+                },
+                hideImplied: this.tagInputHelper.isHideImpliedEnabled()
+            });
+        }
         const validTags = this.tagInputHelper.getValidTagsFromInput(tagsInput);
+        const seenLower = new Set(validTags.map(t => t.toLowerCase().trim()));
+        const finalTags = [...validTags];
+        for (const hiddenLower of (this.hiddenImpliedTags || [])) {
+            if (!seenLower.has(hiddenLower)) {
+                seenLower.add(hiddenLower);
+                finalTags.push(hiddenLower);
+            }
+        }
+
+        const impliedTagsPayload = {};
+        for (const tag of finalTags) {
+            const lower = tag.toLowerCase().trim();
+            if (this.impliedTagsMap && this.impliedTagsMap.has(lower)) {
+                impliedTagsPayload[lower] = this.impliedTagsMap.get(lower) || [];
+            }
+        }
 
         try {
             await app.apiCall(`/api/media/${this.mediaId}`, {
                 method: 'PATCH',
-                body: JSON.stringify({ tags: validTags })
+                body: JSON.stringify({
+                    tags: finalTags,
+                    implied_tags: impliedTagsPayload
+                })
             });
             location.reload();
         } catch (e) {
@@ -1434,10 +1707,39 @@ class MediaViewer extends MediaViewerBase {
                 method: 'PATCH',
                 body: JSON.stringify({ source: sourceValue || null })
             });
+            this.initialSourceValue = sourceValue;
+            this.updateSaveSourceButtonVisibility();
             app.showNotification(window.i18n.t('notifications.media.source_updated'), 'success');
             location.reload();
         } catch (e) {
             app.showNotification(e.message, 'error', window.i18n.t('notifications.media.error_updating_source'));
+        }
+    }
+
+    async saveCustomDate() {
+        const input = this.el('custom-date-input');
+        if (!input) return;
+        const val = input.value.trim();
+        let isoValue = null;
+        if (val) {
+            isoValue = parseLocalInputDateTime(val);
+            if (!isoValue) {
+                app.showNotification(window.i18n.t('notifications.media.error_updating_date'), 'error');
+                return;
+            }
+        }
+
+        try {
+            await app.apiCall(`/api/media/${this.mediaId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ custom_date: isoValue })
+            });
+            this.initialCustomDateValue = input.value;
+            this.updateSaveCustomDateButtonVisibility();
+            app.showNotification(window.i18n.t('notifications.media.date_updated'), 'success');
+            location.reload();
+        } catch (e) {
+            app.showNotification(e.message, 'error', window.i18n.t('notifications.media.error_updating_date'));
         }
     }
 
@@ -1623,6 +1925,32 @@ class MediaViewer extends MediaViewerBase {
 
         if (saveBtn) saveBtn.style.display = displayStyle;
         if (enlargedSaveBtn) enlargedSaveBtn.style.display = displayStyle;
+    }
+
+    updateSaveCustomDateButtonVisibility() {
+        const input = this.el('custom-date-input');
+        const saveBtn = this.el('save-custom-date-btn');
+        if (!saveBtn) return;
+
+        const currentVal = input ? input.value.trim() : '';
+        const initialVal = (this.initialCustomDateValue !== undefined)
+            ? this.initialCustomDateValue.trim()
+            : (this.currentMedia ? toLocalInputDateTime(this.currentMedia.custom_date || this.currentMedia.uploaded_at).trim() : '');
+        const isDifferent = currentVal !== initialVal;
+        saveBtn.style.display = isDifferent ? 'block' : 'none';
+    }
+
+    updateSaveSourceButtonVisibility() {
+        const input = this.el('source-input');
+        const saveBtn = this.el('save-source-btn');
+        if (!saveBtn) return;
+
+        const currentVal = input ? input.value.trim() : '';
+        const initialVal = (this.initialSourceValue !== undefined)
+            ? this.initialSourceValue.trim()
+            : ((this.currentMedia && this.currentMedia.source) ? this.currentMedia.source.trim() : '');
+        const isDifferent = currentVal !== initialVal;
+        saveBtn.style.display = isDifferent ? 'block' : 'none';
     }
 
     async showDescriptionMode(mode) {
@@ -1833,7 +2161,22 @@ class MediaViewer extends MediaViewerBase {
             onConfirm: async () => {
                 try {
                     await app.apiCall(`/api/media/${this.mediaId}`, { method: 'DELETE' });
-                    window.location.href = '/';
+                    const albumMatch = window.location.pathname.match(/\/album\/(\d+)\/media\//);
+                    const albumId = albumMatch ? albumMatch[1] : this.albumId;
+                    const basePath = albumId ? `/album/${albumId}` : '/';
+                    let targetUrl = `${basePath}${window.location.search || ''}`;
+
+                    if (!window.location.search && document.referrer) {
+                        try {
+                            const refUrl = new URL(document.referrer);
+                            if (refUrl.origin === window.location.origin && !refUrl.pathname.includes('/media/')) {
+                                if (!albumId || refUrl.pathname === `/album/${albumId}`) {
+                                    targetUrl = refUrl.pathname + refUrl.search;
+                                }
+                            }
+                        } catch (e) { }
+                    }
+                    window.location.href = targetUrl;
                 } catch (e) {
                     app.showNotification(e.message, 'error', window.i18n.t('media.errors.deleting_media'));
                 }
@@ -1908,7 +2251,11 @@ class MediaViewer extends MediaViewerBase {
             const allTags = [...currentTags, ...newTags];
             tagsInput.textContent = allTags.join(' ');
 
-            newTags.forEach(t => this.prefilledTags.add(t.toLowerCase()));
+            newTags.forEach(t => {
+                if (this.tagInputHelper) {
+                    this.tagInputHelper.tagValidationCache.set(t.toLowerCase().trim(), true);
+                }
+            });
 
             await this.validateAndStyleTags();
             this.updateSuggestedTags();

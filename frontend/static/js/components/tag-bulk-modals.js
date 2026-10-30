@@ -180,6 +180,86 @@ const TagBulkModals = {
         categorySelect.setValue(categories[0]);
     },
 
+    rating({ tags, onCancel, onDone }) {
+        const ratings = [
+            { value: 'none', label: window.i18n.t('common.none', { defaultValue: 'None' }) },
+            { value: 'safe', label: window.i18n.t('common.safe', { defaultValue: 'Safe' }) },
+            { value: 'questionable', label: window.i18n.t('common.questionable', { defaultValue: 'Questionable' }) },
+            { value: 'explicit', label: window.i18n.t('common.explicit', { defaultValue: 'Explicit' }) },
+        ];
+        const options = ratings.map(r =>
+            `<div class="custom-select-option px-3 py-2 cursor-pointer hover:surface text-xs" data-value="${r.value}">${r.label}</div>`
+        ).join('');
+
+        const { modal, close } = this._createDialog({
+            id: 'tag-bulk-rating-modal',
+            title: window.i18n.t('admin.tags_management.tag_rating', { defaultValue: 'Tag Rating' }),
+            submitLabel: window.i18n.t('common.apply'),
+            bodyHTML: `
+                <div class="mb-6">
+                    <label class="block text-xs font-bold mb-2">${window.i18n.t('admin.tags_management.tag_rating', { defaultValue: 'Tag Rating' })}</label>
+                    <div id="tag-bulk-rating-select" class="custom-select w-full" data-value="${ratings[0].value}">
+                        <button class="custom-select-trigger w-full flex items-center justify-between gap-3 px-3 py-2 bg border text-xs cursor-pointer focus:outline-none hover:border-primary transition-colors focus:border-primary" type="button">
+                            <span class="custom-select-value text flex items-center gap-2">
+                                <span>${ratings[0].label}</span>
+                            </span>
+                            ${window.Icons.selectArrow({ size: 12 })}
+                        </button>
+                        <div class="custom-select-dropdown bg border border-primary max-h-60 overflow-y-auto shadow-lg">
+                            ${options}
+                        </div>
+                    </div>
+                </div>
+            `,
+            onCancel,
+            onSubmit: async (closeDialog) => {
+                const newRating = ratingSelect.getValue();
+                closeDialog();
+
+                let progressOverlay = null;
+                if (tags.length > 1) {
+                    progressOverlay = document.createElement('div');
+                    progressOverlay.className = 'age-verification-overlay';
+                    progressOverlay.style.display = 'flex';
+                    progressOverlay.innerHTML = `
+                        <div class="surface border-2 border-primary p-6 max-w-sm w-full text-center">
+                            <div class="spinner inline-block mb-3"></div>
+                            <div id="bulk-rating-progress-text" class="text-sm font-semibold text"></div>
+                        </div>
+                    `;
+                    document.body.appendChild(progressOverlay);
+                    const ratText = progressOverlay.querySelector('#bulk-rating-progress-text');
+                    if (ratText) {
+                        ratText.textContent = `${window.i18n.t('common.processing')} (${tags.length})`;
+                    }
+                }
+
+                try {
+                    const tagIds = tags.map(t => t.id);
+                    const res = await app.apiCall('/api/admin/tags/bulk-rating', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            tag_ids: tagIds,
+                            rating: newRating
+                        })
+                    });
+                    const count = (res && typeof res.updated === 'number') ? res.updated : tags.length;
+                    app.showNotification(window.i18n.t('bulk_modal.notifications.updated_success', { count }), 'success');
+                } catch (err) {
+                    console.error('Bulk rating update failed:', err);
+                    app.showNotification(err.message, 'error');
+                } finally {
+                    if (progressOverlay) progressOverlay.remove();
+                }
+
+                if (onDone) await onDone();
+            }
+        });
+
+        const ratingSelect = new CustomSelect(modal.querySelector('#tag-bulk-rating-select'));
+        ratingSelect.setValue(ratings[0].value);
+    },
+
     implies({ tags, onCancel, onDone }) {
         const { modal } = this._createDialog({
             id: 'tag-bulk-implies-modal',

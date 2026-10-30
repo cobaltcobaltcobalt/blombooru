@@ -6,7 +6,7 @@ from urllib.parse import urljoin, urlparse
 
 import requests
 
-from .base import BooruClient
+from .base import BooruClient, parse_booru_date
 from .types import BooruPost, BooruTag
 from ...utils.logger import logger
 
@@ -139,6 +139,7 @@ class SzurubooruClient(BooruClient):
             file_size=int(data.get("fileSize") or 0),
             score=int(data.get("score") or 0),
             booru_url=f"{self.base_url}/post/{post_id}",
+            uploaded_at=parse_booru_date(data.get("creationTime")),
         )
 
     def fetch_post(self, post_id: int) -> BooruPost:

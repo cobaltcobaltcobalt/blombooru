@@ -22,6 +22,11 @@ class ExifXmpParser(MetadataParser):
 
     name: str = "EXIF/XMP"
 
+    DEFAULT_DATE_KEYS = (
+        "date", "created_at", "upload_date", "uploaded_at", "timestamp",
+        "datetime", "creation_time", "creationtime", "postdate",
+    )
+
     @classmethod
     def _find_xmp_sidecar(cls, media_path: Path, sibling_files: List[Path]) -> Optional[Path]:
         media_name = media_path.name.lower()
@@ -62,9 +67,11 @@ class ExifXmpParser(MetadataParser):
         candidate_keys = {
             "tags", "keywords", "xpkeywords", "rating", "source",
             "description", "comment", "usercomment", "creator", "artist", "author",
-            "post_url", "url", "identifier"
+            "post_url", "url", "identifier",
         }
-        for key_list in field_map.values():
+        for category, key_list in field_map.items():
+            if category == "date":
+                continue
             if isinstance(key_list, list):
                 for k in key_list:
                     if isinstance(k, str):
@@ -72,9 +79,21 @@ class ExifXmpParser(MetadataParser):
         return candidate_keys
 
     @classmethod
+    def _get_date_keys(cls) -> set[str]:
+        field_map = settings.METADATA_PARSERS.get("exif_metadata_field_map", {})
+        date_keys = {k.lower() for k in cls.DEFAULT_DATE_KEYS}
+        custom_date_keys = field_map.get("date", [])
+        if isinstance(custom_date_keys, list):
+            for k in custom_date_keys:
+                if isinstance(k, str):
+                    date_keys.add(k.lower())
+        return date_keys
+
+    @classmethod
     def _has_embedded_structured_metadata(cls, media_path: Path) -> bool:
         """Cheap probe for embedded structured EXIF/PNG JSON or Grabber tags."""
         candidate_keys = cls._get_candidate_keys()
+        date_keys = cls._get_date_keys()
         try:
             with Image.open(media_path) as img:
                 # Check PNG text chunks
@@ -85,14 +104,17 @@ class ExifXmpParser(MetadataParser):
                             xmp_str = val.decode("utf-8", errors="replace") if isinstance(val, bytes) else str(val)
                             if "<rdf:RDF" in xmp_str or "<x:xmpmeta" in xmp_str:
                                 return True
-                        if k_low in candidate_keys:
+                        if k_low in candidate_keys or k_low in date_keys:
                             return True
                         if isinstance(val, str):
                             val_stripped = val.strip()
                             if val_stripped.startswith("{"):
                                 try:
                                     parsed = json.loads(val_stripped)
-                                    if isinstance(parsed, dict) and any(str(pk).lower() in candidate_keys for pk in parsed.keys()):
+                                    if isinstance(parsed, dict) and any(
+                                        str(pk).lower() in candidate_keys or str(pk).lower() in date_keys
+                                        for pk in parsed.keys()
+                                    ):
                                         return True
                                 except Exception:
                                     pass
@@ -114,7 +136,10 @@ class ExifXmpParser(MetadataParser):
                             if d_str.startswith("{"):
                                 try:
                                     parsed = json.loads(d_str)
-                                    if isinstance(parsed, dict) and any(str(pk).lower() in candidate_keys for pk in parsed.keys()):
+                                    if isinstance(parsed, dict) and any(
+                                        str(pk).lower() in candidate_keys or str(pk).lower() in date_keys
+                                        for pk in parsed.keys()
+                                    ):
                                         return True
                                 except Exception:
                                     pass
@@ -125,31 +150,61 @@ class ExifXmpParser(MetadataParser):
         return False
 
     def parse(self, media_path: Path, sibling_files: List[Path]) -> ParsedMetadata:
-        # 1. Try XMP sidecar first
+        sidecar_result: Optional[ParsedMetadata] = None
         xmp_sidecar = self._find_xmp_sidecar(media_path, sibling_files)
         if xmp_sidecar:
             try:
                 with open(xmp_sidecar, "r", encoding="utf-8", errors="replace") as f:
                     xmp_content = f.read()
-                parsed_xmp = self._parse_xmp_content(xmp_content)
-                if parsed_xmp.tags or parsed_xmp.rating or parsed_xmp.source or parsed_xmp.description:
-                    return parsed_xmp
+                sidecar_result = self._parse_xmp_content(xmp_content)
             except Exception as e:
                 logger.warning(f"Failed to parse XMP sidecar {xmp_sidecar}: {e}")
 
-        # 2. Try embedded EXIF / PNG chunks
+        embedded_result: Optional[ParsedMetadata] = None
         if format_registry.is_image(media_path):
             try:
-                parsed_embedded = self._parse_embedded_metadata(media_path)
-                if parsed_embedded.tags or parsed_embedded.rating or parsed_embedded.source or parsed_embedded.description:
-                    return parsed_embedded
+                embedded_result = self._parse_embedded_metadata(media_path)
             except Exception as e:
                 logger.debug(f"Error parsing embedded EXIF/XMP in {media_path}: {e}")
 
-        return ParsedMetadata(confidence="exif")
+        has_sidecar = sidecar_result is not None and (
+            sidecar_result.tags or sidecar_result.rating
+            or sidecar_result.source or sidecar_result.description
+            or sidecar_result.date
+        )
+        has_embedded = embedded_result is not None and (
+            embedded_result.tags or embedded_result.rating
+            or embedded_result.source or embedded_result.description
+            or embedded_result.date
+        )
+
+        if not has_sidecar and not has_embedded:
+            return ParsedMetadata(confidence="exif")
+
+        # Sidecar wins for every field it has and embedded metadata fills the rest
+        tags = (sidecar_result.tags if sidecar_result and sidecar_result.tags
+                else (embedded_result.tags if embedded_result else []))
+        rating = ((sidecar_result.rating if sidecar_result and sidecar_result.rating else None)
+                  or (embedded_result.rating if embedded_result else None))
+        source = ((sidecar_result.source if sidecar_result and sidecar_result.source else None)
+                  or (embedded_result.source if embedded_result else None))
+        description = ((sidecar_result.description if sidecar_result and sidecar_result.description else None)
+                       or (embedded_result.description if embedded_result else None))
+        date = ((sidecar_result.date if sidecar_result and sidecar_result.date else None)
+                or (embedded_result.date if embedded_result else None))
+        confidence = "xmp" if has_sidecar else "exif"
+
+        return ParsedMetadata(
+            tags=tags,
+            rating=rating,
+            source=source,
+            description=description,
+            confidence=confidence,
+            date=date,
+        )
 
     def _parse_xmp_content(self, xmp_content: str) -> ParsedMetadata:
-        """Extract tags, rating, source, description from XMP XML string."""
+        """Extract tags, rating, source, description, and date from XMP XML string."""
         tags: List[BooruTag] = []
         rating: Optional[str] = None
         source: Optional[str] = None
@@ -296,12 +351,18 @@ class ExifXmpParser(MetadataParser):
                 if values:
                     description = html.unescape("\n".join(values).strip())
 
+        from ...utils.date_extractor import _extract_xmp_dates_from_string
+        c_dates, _ = _extract_xmp_dates_from_string(xmp_content)
+        earliest_dt = min(c_dates) if c_dates else None
+        xmp_date = earliest_dt.isoformat() if earliest_dt else None
+
         return ParsedMetadata(
             tags=tags,
             rating=rating,
             source=source,
             description=description,
             confidence="xmp",
+            date=xmp_date,
         )
 
     def _parse_embedded_metadata(self, media_path: Path) -> ParsedMetadata:
@@ -310,6 +371,7 @@ class ExifXmpParser(MetadataParser):
         rating: Optional[str] = None
         source: Optional[str] = None
         description: Optional[str] = None
+        date: Optional[str] = None
         seen_tags: set[str] = set()
 
         field_map = settings.METADATA_PARSERS.get("exif_metadata_field_map", {})
@@ -325,6 +387,8 @@ class ExifXmpParser(MetadataParser):
                     source = res_info["source"]
                 if not description and res_info.get("description"):
                     description = res_info["description"]
+                if not date and res_info.get("date"):
+                    date = res_info["date"]
 
                 for key, val in img.info.items():
                     if key.lower() in ("xmp", "xml:com.adobe.xmp") and isinstance(val, (bytes, str)):
@@ -354,6 +418,8 @@ class ExifXmpParser(MetadataParser):
                                     source = res["source"]
                                 if not description and res.get("description"):
                                     description = res["description"]
+                                if not date and res.get("date"):
+                                    date = res["date"]
                         except Exception:
                             pass
 
@@ -378,6 +444,8 @@ class ExifXmpParser(MetadataParser):
                                     source = res["source"]
                                 if not description and res.get("description"):
                                     description = res["description"]
+                                if not date and res.get("date"):
+                                    date = res["date"]
                         except Exception:
                             pass
 
@@ -387,6 +455,7 @@ class ExifXmpParser(MetadataParser):
             source=source,
             description=description,
             confidence="exif",
+            date=date,
         )
 
     def _extract_from_dict(
@@ -489,8 +558,21 @@ class ExifXmpParser(MetadataParser):
         if raw_desc and isinstance(raw_desc, str) and raw_desc.strip():
             description = html.unescape(raw_desc.strip())
 
+        # Extract date
+        date = None
+        raw_date = get_field(
+            list(self.DEFAULT_DATE_KEYS),
+            "date",
+        )
+        if raw_date is not None and str(raw_date).strip():
+            from ...utils.date_extractor import parse_candidate_datetime
+            dt = parse_candidate_datetime(raw_date)
+            if dt is not None:
+                date = dt.isoformat()
+
         return {
             "rating": rating,
             "source": source,
             "description": description,
+            "date": date,
         }

@@ -105,6 +105,34 @@ class TestSimilarityIndex(BackupTestBase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0][0], 3)
 
+    def test_candidate_media_ids_similarity(self):
+        """Verify that passing candidate_media_ids restricts results to that candidate set."""
+        t_artist = self._create_tag(1, "artist_a", TagCategoryEnum.artist, 4)
+        m1 = self._create_media(1, "m1.jpg")
+        m2 = self._create_media(2, "m2.jpg")
+        m3 = self._create_media(3, "m3.jpg")
+        m4 = self._create_media(4, "m4.jpg")
+        self.db.commit()
+
+        m1.tags = [t_artist]
+        m2.tags = [t_artist]
+        m3.tags = [t_artist]
+        m4.tags = [t_artist]
+        self.db.commit()
+
+        self.index.rebuild(self.db)
+
+        # Restrict candidates to m2 and m4
+        candidate_ids = {2, 4}
+        results = self.index.get_similar_media(1, limit=10, candidate_media_ids=candidate_ids)
+        self.assertEqual(len(results), 2)
+        self.assertCountEqual([r[0] for r in results], [2, 4])
+
+        # Intersect with album_media_ids = {2}
+        results_intersect = self.index.get_similar_media(1, limit=10, album_media_ids={2}, candidate_media_ids={2, 4})
+        self.assertEqual(len(results_intersect), 1)
+        self.assertEqual(results_intersect[0][0], 2)
+
     def test_danbooru_related_tags(self):
         """Verify get_related_tags computes metrics accurately."""
         t_artist = self._create_tag(1, "artist_a", TagCategoryEnum.artist, 3)

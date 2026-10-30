@@ -193,6 +193,9 @@ def check_and_migrate_schema(engine):
         migrate_add_album_indexes,
         migrate_add_album_cached_columns,
         migrate_add_manual_sort_positions,
+        migrate_add_tag_rating,
+        migrate_add_custom_date,
+        migrate_add_media_tags_implication_columns,
     ]
     
     for migration in migrations:
@@ -509,5 +512,88 @@ def migrate_add_manual_sort_positions(engine, inspector):
                 logger.info("Adding sort_position column to blombooru_album_hierarchy...")
                 conn.execute(text("ALTER TABLE blombooru_album_hierarchy ADD COLUMN sort_position INTEGER"))
                 conn.execute(text("CREATE INDEX IF NOT EXISTS ix_blombooru_album_hierarchy_sort_position ON blombooru_album_hierarchy(sort_position)"))
+
+        conn.commit()
+
+def migrate_add_tag_rating(engine, inspector):
+    """Add rating column to blombooru_tags, migrate data from blombooru_tags_ratings if present, and drop blombooru_tags_ratings."""
+    from sqlalchemy import text
+
+    tables = inspector.get_table_names()
+    if 'blombooru_tags' not in tables:
+        return
+
+    tag_cols = [c['name'] for c in inspector.get_columns('blombooru_tags')]
+    with engine.connect() as conn:
+        if 'rating' not in tag_cols:
+            logger.info("Adding rating column to blombooru_tags...")
+            if engine.dialect.name == 'postgresql':
+                conn.execute(text("ALTER TABLE blombooru_tags ADD COLUMN rating ratingenum"))
+            else:
+                conn.execute(text("ALTER TABLE blombooru_tags ADD COLUMN rating VARCHAR(20)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_blombooru_tags_rating ON blombooru_tags(rating)"))
+
+        if 'blombooru_tags_ratings' in tables:
+            logger.info("Migrating data from blombooru_tags_ratings into blombooru_tags.rating...")
+            conn.execute(text("""
+                UPDATE blombooru_tags
+                SET rating = (
+                    SELECT rating FROM blombooru_tags_ratings
+                    WHERE blombooru_tags_ratings.tag_id = blombooru_tags.id
+                )
+                WHERE EXISTS (
+                    SELECT 1 FROM blombooru_tags_ratings
+                    WHERE blombooru_tags_ratings.tag_id = blombooru_tags.id
+                )
+            """))
+            logger.info("Dropping table blombooru_tags_ratings...")
+            conn.execute(text("DROP TABLE blombooru_tags_ratings"))
+
+        conn.commit()
+
+def migrate_add_custom_date(engine, inspector):
+    """Add custom_date column, backfill with uploaded_at, and add index to blombooru_media."""
+    from sqlalchemy import text
+
+    tables = inspector.get_table_names()
+    if 'blombooru_media' not in tables:
+        return
+
+    columns = [c['name'] for c in inspector.get_columns('blombooru_media')]
+    if 'custom_date' in columns:
+        return
+
+    logger.info("Adding custom_date column to blombooru_media...")
+    is_postgres = engine.dialect.name == 'postgresql'
+
+    with engine.connect() as conn:
+        conn.execute(text("ALTER TABLE blombooru_media ADD COLUMN custom_date TIMESTAMP WITH TIME ZONE"))
+        conn.execute(text("UPDATE blombooru_media SET custom_date = COALESCE(uploaded_at, CURRENT_TIMESTAMP) WHERE custom_date IS NULL"))
+        if is_postgres:
+            conn.execute(text("ALTER TABLE blombooru_media ALTER COLUMN custom_date SET NOT NULL"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_blombooru_media_custom_date ON blombooru_media (custom_date)"))
+        conn.commit()
+
+def migrate_add_media_tags_implication_columns(engine, inspector):
+    """Add implied and implied_by columns to blombooru_media_tags table."""
+    from sqlalchemy import text
+
+    tables = inspector.get_table_names()
+    if 'blombooru_media_tags' not in tables:
+        return
+
+    columns = [c['name'] for c in inspector.get_columns('blombooru_media_tags')]
+    is_sqlite = engine.dialect.name == 'sqlite'
+
+    with engine.connect() as conn:
+        if 'implied' not in columns:
+            logger.info("Adding implied column to blombooru_media_tags...")
+            col_type = "BOOLEAN DEFAULT 0 NOT NULL" if is_sqlite else "BOOLEAN DEFAULT FALSE NOT NULL"
+            conn.execute(text(f"ALTER TABLE blombooru_media_tags ADD COLUMN implied {col_type}"))
+
+        if 'implied_by' not in columns:
+            logger.info("Adding implied_by column to blombooru_media_tags...")
+            col_type = "TEXT" if is_sqlite else "JSONB"
+            conn.execute(text(f"ALTER TABLE blombooru_media_tags ADD COLUMN implied_by {col_type}"))
 
         conn.commit()

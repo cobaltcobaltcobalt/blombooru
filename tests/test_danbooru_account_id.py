@@ -20,7 +20,7 @@ class TestDanbooruAccountId(unittest.TestCase, BlombooruTestSandboxMixin):
         self.teardown_sandbox()
 
     def test_danbooru_client_without_credentials(self):
-        client = DanbooruClient("https://danbooru.donmai.us")
+        client = DanbooruClient("https://danbooru.example.com")
         self.assertIsNone(client.user_id)
         self.assertEqual(client.session.headers.get("User-Agent"), "Blombooru/1.0 (booru-import)")
 
@@ -36,7 +36,7 @@ class TestDanbooruAccountId(unittest.TestCase, BlombooruTestSandboxMixin):
         mock_get.return_value = mock_resp
 
         client = DanbooruClient(
-            "https://danbooru.donmai.us",
+            "https://danbooru.example.com",
             api_key="secret123",
             username="test_user",
         )
@@ -57,7 +57,7 @@ class TestDanbooruAccountId(unittest.TestCase, BlombooruTestSandboxMixin):
         mock_get.return_value = mock_resp
 
         client = DanbooruClient(
-            "https://danbooru.donmai.us",
+            "https://danbooru.example.com",
             api_key="invalid_key",
             username="test_user",
         )
@@ -68,7 +68,7 @@ class TestDanbooruAccountId(unittest.TestCase, BlombooruTestSandboxMixin):
 
     def test_get_booru_config_exact_domain_matching_only(self):
         config = BooruConfig(
-            domain="safebooru.donmai.us",
+            domain="safebooru.example.com",
             username="safebooru_user",
             api_key="safebooru_key",
         )
@@ -76,28 +76,28 @@ class TestDanbooruAccountId(unittest.TestCase, BlombooruTestSandboxMixin):
         self.db.commit()
 
         # Exact match succeeds
-        matched = get_booru_config_for_url(self.db, "https://safebooru.donmai.us/posts/100")
+        matched = get_booru_config_for_url(self.db, "https://safebooru.example.com/posts/100")
         self.assertIsNotNone(matched)
-        self.assertEqual(matched.domain, "safebooru.donmai.us")
+        self.assertEqual(matched.domain, "safebooru.example.com")
 
         # Different subdomain must NOT match (no credential leakage)
-        unmatched = get_booru_config_for_url(self.db, "https://danbooru.donmai.us/posts/100")
+        unmatched = get_booru_config_for_url(self.db, "https://danbooru.example.com/posts/100")
         self.assertIsNone(unmatched)
 
-        unmatched_beta = get_booru_config_for_url(self.db, "https://betabooru.donmai.us/posts/100")
+        unmatched_beta = get_booru_config_for_url(self.db, "https://betabooru.example.com/posts/100")
         self.assertIsNone(unmatched_beta)
 
     def test_factory_requires_both_username_and_api_key(self):
         # Only username, no api_key
         config_no_key = BooruConfig(
-            domain="danbooru.donmai.us",
+            domain="danbooru.example.com",
             username="lonely_user",
             api_key=None,
         )
         self.db.add(config_no_key)
         self.db.commit()
 
-        client = get_client_for_url("https://danbooru.donmai.us/posts/1", db=self.db)
+        client = get_client_for_url("https://danbooru.example.com/posts/1", db=self.db)
         self.assertIsNotNone(client)
         self.assertIsNone(client.api_key)
         self.assertIsNone(client.username)
@@ -111,18 +111,18 @@ class TestDanbooruAccountId(unittest.TestCase, BlombooruTestSandboxMixin):
         mock_get.return_value = mock_resp
 
         config = BooruConfig(
-            domain="danbooru.donmai.us",
+            domain="danbooru.example.com",
             username="dan_user",
             api_key="dan_key",
         )
         self.db.add(config)
         self.db.commit()
 
-        ua = get_user_agent_for_url("https://danbooru.donmai.us/data/sample.jpg", db=self.db)
+        ua = get_user_agent_for_url("https://danbooru.example.com/data/sample.jpg", db=self.db)
         self.assertEqual(ua, "Blombooru/1.0 (booru-import); user #1633079")
 
         # Different subdomain returns default UA
-        diff_ua = get_user_agent_for_url("https://safebooru.donmai.us/data/sample.jpg", db=self.db)
+        diff_ua = get_user_agent_for_url("https://safebooru.example.com/data/sample.jpg", db=self.db)
         self.assertEqual(diff_ua, "Blombooru/1.0 (booru-import)")
 
     @patch("backend.app.routes.booru_import.safe_request")
@@ -135,7 +135,7 @@ class TestDanbooruAccountId(unittest.TestCase, BlombooruTestSandboxMixin):
         mock_session_get.return_value = mock_profile_resp
 
         config = BooruConfig(
-            domain="danbooru.donmai.us",
+            domain="danbooru.example.com",
             username="dan_user",
             api_key="dan_key",
         )
@@ -148,7 +148,7 @@ class TestDanbooruAccountId(unittest.TestCase, BlombooruTestSandboxMixin):
         fake_resp.iter_content.return_value = [b"data"]
         mock_safe_request.return_value = fake_resp
 
-        asyncio.run(proxy_image("https://danbooru.donmai.us/sample.jpg", current_user=None, db=self.db))
+        asyncio.run(proxy_image("https://danbooru.example.com/sample.jpg", current_user=None, db=self.db))
 
         self.assertTrue(mock_safe_request.called)
         self.assertEqual(mock_safe_request.call_args[1].get("user_agent"), "Blombooru/1.0 (booru-import); user #1633079")
@@ -156,7 +156,7 @@ class TestDanbooruAccountId(unittest.TestCase, BlombooruTestSandboxMixin):
     def test_danbooru_client_init_does_not_make_network_call(self):
         with patch("requests.Session.get") as mock_get:
             client = DanbooruClient(
-                "https://danbooru.donmai.us",
+                "https://danbooru.example.com",
                 api_key="secret123",
                 username="test_user",
             )
@@ -182,7 +182,7 @@ class TestDanbooruAccountId(unittest.TestCase, BlombooruTestSandboxMixin):
         mock_get.return_value = mock_fail
 
         client = DanbooruClient(
-            "https://danbooru.donmai.us",
+            "https://danbooru.example.com",
             api_key="secret123",
             username="test_user",
         )
@@ -211,7 +211,7 @@ class TestDanbooruAccountId(unittest.TestCase, BlombooruTestSandboxMixin):
         mock_get.return_value = mock_401
 
         client = DanbooruClient(
-            "https://danbooru.donmai.us",
+            "https://danbooru.example.com",
             api_key="wrong_key",
             username="test_user",
         )
@@ -226,14 +226,14 @@ class TestDanbooruAccountId(unittest.TestCase, BlombooruTestSandboxMixin):
 
     def test_case_insensitive_domain_matching(self):
         config = BooruConfig(
-            domain="Danbooru.Donmai.Us",
+            domain="Danbooru.Example.Com",
             username="mixed_user",
             api_key="key",
         )
         self.db.add(config)
         self.db.commit()
 
-        matched = get_booru_config_for_url(self.db, "https://danbooru.donmai.us/posts/100")
+        matched = get_booru_config_for_url(self.db, "https://danbooru.example.com/posts/100")
         self.assertIsNotNone(matched)
         self.assertEqual(matched.username, "mixed_user")
 
@@ -258,19 +258,19 @@ class TestDanbooruAccountId(unittest.TestCase, BlombooruTestSandboxMixin):
         mock_get.return_value = mock_resp
 
         config = BooruConfig(
-            domain="danbooru.local",
+            domain="danbooru.example.com",
             username="local_user",
             api_key="local_key",
         )
         self.db.add(config)
         self.db.commit()
 
-        ua = get_user_agent_for_url("http://danbooru.local/data/test.jpg", db=self.db)
+        ua = get_user_agent_for_url("http://danbooru.example.com/data/test.jpg", db=self.db)
         self.assertEqual(ua, "Blombooru/1.0 (booru-import); user #999")
         # Verify the client URL used http:// and not https://
         self.assertTrue(mock_get.called)
         called_url = mock_get.call_args[0][0]
-        self.assertTrue(called_url.startswith("http://danbooru.local"))
+        self.assertTrue(called_url.startswith("http://danbooru.example.com"))
 
     @patch("requests.Session.get")
     def test_direct_url_handled_without_synthetic_fallback(self, mock_get):
@@ -280,7 +280,7 @@ class TestDanbooruAccountId(unittest.TestCase, BlombooruTestSandboxMixin):
         mock_get.return_value = mock_resp
 
         config = BooruConfig(
-            domain="danbooru.donmai.us",
+            domain="danbooru.example.com",
             username="direct_user",
             api_key="direct_key",
         )
@@ -288,7 +288,7 @@ class TestDanbooruAccountId(unittest.TestCase, BlombooruTestSandboxMixin):
         self.db.commit()
 
         # Direct post URL is handled directly by get_client_for_url
-        ua = get_user_agent_for_url("https://danbooru.donmai.us/posts/555", db=self.db)
+        ua = get_user_agent_for_url("https://danbooru.example.com/posts/555", db=self.db)
         self.assertEqual(ua, "Blombooru/1.0 (booru-import); user #1234")
 
     @patch("requests.Session.get")
@@ -299,7 +299,7 @@ class TestDanbooruAccountId(unittest.TestCase, BlombooruTestSandboxMixin):
         mock_get.return_value = mock_resp
 
         config = BooruConfig(
-            domain="danbooru.donmai.us",
+            domain="danbooru.example.com",
             username="dan_user",
             api_key="dan_key",
         )
@@ -307,7 +307,7 @@ class TestDanbooruAccountId(unittest.TestCase, BlombooruTestSandboxMixin):
         self.db.commit()
 
         with patch.object(self.db, "query", wraps=self.db.query) as spy_query:
-            ua = get_user_agent_for_url("https://danbooru.donmai.us/data/sample.jpg", db=self.db)
+            ua = get_user_agent_for_url("https://danbooru.example.com/data/sample.jpg", db=self.db)
             self.assertEqual(ua, "Blombooru/1.0 (booru-import); user #1633079")
             # Must only execute at most 1 DB query, not 2
             self.assertEqual(spy_query.call_count, 1)

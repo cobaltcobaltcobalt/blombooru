@@ -36,11 +36,31 @@ class TooltipHelper {
         return this.tooltipElement;
     }
 
-    show(element, content) {
+    show(element, content, title = false) {
         if (!content) return;
 
+        let titleText = '';
+        if (title) {
+            if (typeof title === 'string') {
+                titleText = title;
+            } else if (title === true && window.i18n && typeof window.i18n.t === 'function') {
+                const translated = window.i18n.t('tags_gallery.implied_by');
+                titleText = (translated && translated !== 'tags_gallery.implied_by') ? translated : 'Implied By';
+            } else if (title === true) {
+                titleText = 'Implied By';
+            }
+        }
+
+        const titleHtml = titleText
+            ? `<div class="text-center font-medium mb-1" style="color: var(--text);">${escapeHtml(titleText)}</div>`
+            : '';
+
         if (typeof content === 'string') {
-            this.tooltipElement.textContent = content;
+            if (titleHtml) {
+                this.tooltipElement.innerHTML = `${titleHtml}<div>${escapeHtml(content)}</div>`;
+            } else {
+                this.tooltipElement.textContent = content;
+            }
         } else if (Array.isArray(content)) {
             if (content.length === 0) return;
 
@@ -70,12 +90,12 @@ class TooltipHelper {
                 return `<span class="font-medium" style="color: var(--tag-${validCategory});">${escapeHtml(name)}</span>`;
             }).join(' ');
 
-            this.tooltipElement.innerHTML = html;
+            this.tooltipElement.innerHTML = `${titleHtml}<div>${html}</div>`;
         } else if (typeof content === 'object') {
             if (content.html) {
-                this.tooltipElement.innerHTML = content.html;
+                this.tooltipElement.innerHTML = `${titleHtml}<div>${content.html}</div>`;
             } else if (content.text) {
-                this.tooltipElement.textContent = content.text;
+                this.tooltipElement.innerHTML = `${titleHtml}<div>${escapeHtml(content.text)}</div>`;
             } else {
                 return;
             }

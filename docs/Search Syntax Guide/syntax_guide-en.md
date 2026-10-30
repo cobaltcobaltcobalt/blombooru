@@ -47,6 +47,7 @@ Note: Ranges and multi-value lists can be used with most meta qualifiers.
 - `rating`: safe, questionable, explicit (s, q, e) (`rating:s,q`, `-rating:e`)
 - `source`: Source URL, domain, http, or none (`source:twitter`, `source:none`, `source:http`)
 - `date`, `age`: Upload date (YYYY-MM-DD) or relative age (s, mi, h, d, w, mo, y) (`date:>=2024-01-01`, `age:<24h`, `age:1w..1mo`)
+- `custom_date`, `custom_age`: Custom media date (YYYY-MM-DD) or relative custom age (s, mi, h, d, w, mo, y) (`custom_date:>=2024-01-01`, `custom_age:<30d`, `custom_date:2024-01-01..2024-12-31`)
 - `md5`: Exact file MD5 hash checksum (`md5:d34e...`)
 
 ### Tag Counts
@@ -61,6 +62,7 @@ Use `order:value` or `sort:value`. Suffix with `_asc` or `_desc`. Most sorts def
 - `id` / `id_desc`: Newest first (default)
 - `id_asc`: Oldest first
 - `date_desc` / `date_asc`: Upload date
+- `custom_date_desc` / `custom_date_asc`: Custom media date
 - `filesize` / `filesize_asc`: File size
 - `width_desc` / `height_desc` / `mpixels_desc`: Dimensions and resolution
 - `duration_desc` / `duration_asc`: Duration

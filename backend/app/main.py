@@ -622,7 +622,7 @@ async def favicon():
 async def service_worker():
     from fastapi import Response
     content = (static_path / "sw.js").read_text()
-    content = content.replace('__APP_VERSION__', APP_VERSION)
+    content = content.replace('__APP_VERSION__', str(CACHE_BUSTER))
     content = content.replace('__DEBUG__', str(settings.DEBUG).lower())
     return Response(content=content, media_type="application/javascript")
 

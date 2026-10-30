@@ -13,3 +13,4 @@ class ParsedMetadata:
     pool_names: List[str] = field(default_factory=list)  # -> Proposed albums
     parent_source_id: Optional[str] = None  # For parent/child relations
     confidence: str = "sidecar"  # sidecar | exif | xmp | native
+    date: Optional[str] = None  # Extracted creation or upload date

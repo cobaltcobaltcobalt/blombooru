@@ -74,6 +74,11 @@ class UpdatePostUrlImport extends UpdatePostModalBase {
         q('#upm-url-input').addEventListener('paste', () => {
             setTimeout(() => this._fetchBooru(), 100);
         });
+        q('#upm-url-input').addEventListener('input', (e) => {
+            const pasted = ['insertFromPaste', 'insertFromDrop', 'insertReplacementText'].includes(e.inputType)
+                || (e.inputType === 'insertText' && e.data && e.data.length > 1);
+            if (pasted) setTimeout(() => this._fetchBooru(), 100);
+        });
         q('#upm-url-apply').addEventListener('click', () => this._applyFromUrl());
 
         this._registerEscapeHandler(() => this._onBack());
@@ -140,9 +145,10 @@ class UpdatePostUrlImport extends UpdatePostModalBase {
     }
 
     _renderDropdownTag(tag, colorClass) {
+        const tagRating = tag.rating || 'none';
         return `
-            <div class="custom-select booru-tag-select inline-block align-middle" data-value="${tag.category}" data-tag="${escapeHtml(tag.name)}">
-                <div class="custom-select-trigger tag-text tag ${colorClass} cursor-pointer select-none" style="display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
+            <div class="custom-select booru-tag-select inline-block align-middle" data-value="${tag.category}" data-tag="${escapeHtml(tag.name)}" data-tag-rating="${tagRating}">
+                <div class="custom-select-trigger tag-text tag ${colorClass} cursor-pointer select-none" data-tag-rating="${tagRating}" style="display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
                     <span class="text-xs">${escapeHtml(tag.name)}</span>
                     <span class="custom-select-value" style="display: none;"></span>
                     ${window.Icons.chevronDown({ size: 10, class: 'custom-select-arrow flex-shrink-0 transition-transform duration-200', style: 'display: block;' })}
@@ -237,7 +243,7 @@ class UpdatePostUrlImport extends UpdatePostModalBase {
                         <span class="text-secondary shrink-0 mr-1">${window.i18n.t('media.info.source')}</span>
                         ${post.source
                     ? `<strong class="truncate min-w-0 flex-1 font-normal text-right">
-                                <a href="${escapeHtml(post.source)}" target="_blank" class="text-primary hover:underline block truncate" title="${escapeHtml(post.source)}">
+                                <a href="${escapeHtml(post.source)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="text-primary hover:underline block truncate" title="${escapeHtml(post.source)}">
                                     ${escapeHtml(post.source)}
                                 </a>
                                </strong>`
@@ -253,6 +259,11 @@ class UpdatePostUrlImport extends UpdatePostModalBase {
                     <div>
                         <span class="text-secondary">${window.i18n.t('media.info.size')}</span>
                         <span class="font-medium ml-1">${formatFileSize(post.file_size, { mode: 'compact', fallback: '-' })}</span>
+                    </div>` : ''}
+                    ${post.uploaded_at ? `
+                    <div>
+                        <span class="text-secondary">${window.i18n.t('media.info.custom_date')}</span>
+                        <span class="font-medium ml-1">${new Date(post.uploaded_at).toLocaleDateString()}</span>
                     </div>` : ''}
                 </div>
                 <div class="mb-3">
@@ -301,13 +312,22 @@ class UpdatePostUrlImport extends UpdatePostModalBase {
                     <p class="text-xs font-bold text-secondary uppercase tracking-wide mb-1">
                         ${window.i18n.t('modal.update_post.what_to_update')}
                     </p>
-                    <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
-                        ${post.is_booru_post ? this._checkboxRow('upm-upd-tags', window.i18n.t('common.tags'), true) : ''}
-                        ${post.is_booru_post ? this._checkboxRow('upm-upd-rating', window.i18n.t('media.info.rating'), true) : ''}
-                        ${this._checkboxRow('upm-upd-file', window.i18n.t('modal.update_post.update_file'), autoCheckFile)}
-                        ${this._checkboxRow('upm-upd-source', window.i18n.t('media.info.source_url'), true)}
-                        ${post.is_booru_post ? this._checkboxRow('upm-upd-desc', window.i18n.t('common.description'), false) : ''}
-                        ${this._checkboxRow('upm-upd-filename', window.i18n.t('media.info.filename'), false)}
+                    <div class="flex flex-col gap-2">
+                        ${post.is_booru_post ? `
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            ${this._checkboxRow('upm-upd-tags', window.i18n.t('common.tags'), true)}
+                            ${this._checkboxRow('upm-upd-rating', window.i18n.t('media.info.rating'), true)}
+                        </div>
+                        ` : ''}
+                        <div class="grid grid-cols-1 ${post.is_booru_post ? 'sm:grid-cols-2' : ''} gap-2">
+                            ${this._checkboxRow('upm-upd-source', window.i18n.t('media.info.source_url'), true)}
+                            ${post.is_booru_post ? this._checkboxRow('upm-upd-desc', window.i18n.t('common.description'), false) : ''}
+                        </div>
+                        <div class="grid grid-cols-1 ${post.uploaded_at ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} gap-2">
+                            ${this._checkboxRow('upm-upd-file', window.i18n.t('modal.update_post.update_file'), autoCheckFile)}
+                            ${this._checkboxRow('upm-upd-filename', window.i18n.t('media.info.filename'), false)}
+                            ${post.uploaded_at ? this._checkboxRow('upm-upd-custom-date', window.i18n.t('media.info.custom_date'), true) : ''}
+                        </div>
                     </div>
                 </div>
 
@@ -317,14 +337,14 @@ class UpdatePostUrlImport extends UpdatePostModalBase {
                     <p class="text-xs font-bold text-secondary uppercase tracking-wide mb-2">
                         ${window.i18n.t('modal.update_post.tag_mode')}
                     </p>
-                    <div class="grid grid-cols-1 gap-2">
-                        <label>
+                    <div class="flex flex-wrap gap-2">
+                        <label class="flex-1 max-w-full" style="min-width: fit-content;">
                             <input type="radio" name="upm-tag-mode" id="upm-merge-tags" class="hidden" checked>
                             <span class="block text-center px-3 py-1 border cursor-pointer bg hover:border-primary transition-colors text-xs">
                                 ${window.i18n.t('modal.update_post.merge_tags')}
                             </span>
                         </label>
-                        <label>
+                        <label class="flex-1 max-w-full" style="min-width: fit-content;">
                             <input type="radio" name="upm-tag-mode" id="upm-replace-tags" class="hidden">
                             <span class="block text-center px-3 py-1 border cursor-pointer bg hover:border-primary transition-colors text-xs">
                                 ${window.i18n.t('modal.update_post.replace_tags')}
@@ -440,8 +460,9 @@ class UpdatePostUrlImport extends UpdatePostModalBase {
         const updateSource = q('upm-upd-source')?.checked ?? false;
         const updateDesc = q('upm-upd-desc')?.checked ?? false;
         const updateFilename = q('upm-upd-filename')?.checked ?? false;
+        const updateCustomDate = q('upm-upd-custom-date')?.checked ?? false;
 
-        if (!updateTags && !updateRating && !updateFile && !updateSource && !updateDesc && !updateFilename) {
+        if (!updateTags && !updateRating && !updateFile && !updateSource && !updateDesc && !updateFilename && !updateCustomDate) {
             if (typeof app !== 'undefined' && app.showNotification) {
                 app.showNotification(window.i18n.t('modal.update_post.error_no_changes'), 'error');
             }
@@ -497,7 +518,9 @@ class UpdatePostUrlImport extends UpdatePostModalBase {
             update_description: updateDesc,
             description: updateDesc ? (post.description || null) : null,
             update_filename: updateFilename,
-            filename: updateFilename ? (post.filename || null) : null
+            filename: updateFilename ? (post.filename || null) : null,
+            update_custom_date: updateCustomDate,
+            custom_date: updateCustomDate ? (post.uploaded_at || null) : null
         };
 
         try {

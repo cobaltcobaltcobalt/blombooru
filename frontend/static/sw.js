@@ -49,6 +49,7 @@ const STATIC_ASSETS = [
     '/static/js/components/album-tree.js',
     '/static/js/components/tag-input-helper.js',
     '/static/js/components/tag-preview.js',
+    '/static/js/components/tag-rating.js',
     '/static/js/components/search-query.js',
     '/static/js/components/changelog-modal.js',
     '/static/js/components/acknowledgements-modal.js',
@@ -109,31 +110,37 @@ self.addEventListener('fetch', (event) => {
 
     const url = new URL(event.request.url);
 
-    // Don't intercept media file/thumbnail requests.
-    if (url.pathname.match(/^\/api\/(media|shared)\/[^/]+\/(file|thumbnail)$/)) {
+    // Bypass Service Worker for API and media requests
+    if (url.pathname.startsWith('/api/')) {
         return;
     }
 
-    // Network-first for navigation and API
-    if (event.request.mode === 'navigate' || url.pathname.startsWith('/api/')) {
+    // Network-first for navigation
+    if (event.request.mode === 'navigate') {
         event.respondWith(
             fetch(event.request)
                 .catch(() => {
-                    return caches.match(event.request);
+                    return caches.match(event.request).then((cached) => cached || Response.error());
                 })
         );
         return;
     }
 
-    // Cache-first for static assets
+    // Cache-first for static assets with query-string ignoring and error response guard
     if (url.pathname.startsWith('/static/')) {
         event.respondWith(
-            caches.match(event.request).then((response) => {
-                return response || fetch(event.request).then((fetchResponse) => {
-                    return caches.open(CACHE_NAME).then((cache) => {
-                        cache.put(event.request, fetchResponse.clone());
-                        return fetchResponse;
-                    });
+            caches.match(event.request, { ignoreSearch: true }).then((response) => {
+                if (response) {
+                    return response;
+                }
+                return fetch(event.request).then((fetchResponse) => {
+                    if (fetchResponse && fetchResponse.ok) {
+                        const responseClone = fetchResponse.clone();
+                        caches.open(CACHE_NAME).then((cache) => {
+                            cache.put(event.request, responseClone).catch(() => {});
+                        }).catch(() => {});
+                    }
+                    return fetchResponse;
                 });
             })
         );

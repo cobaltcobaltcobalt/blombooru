@@ -1,5 +1,5 @@
 from .base import (BooruAuthenticationError, BooruClient, BooruError,
-                   BooruNotFoundError, BooruRateLimitError)
+                   BooruNotFoundError, BooruRateLimitError, parse_booru_date)
 from .factory import (clear_client_cache, get_booru_config_for_url,
                       get_client_for_url, get_user_agent_for_url,
                       normalize_domain, upsert_booru_config)
@@ -16,6 +16,7 @@ __all__ = [
     "BooruAuthenticationError",
     "BooruNotFoundError",
     "BooruRateLimitError",
+    "parse_booru_date",
     "BooruPost",
     "BooruTag",
     "BooruClient",

@@ -2,7 +2,7 @@ import enum
 from datetime import datetime, timezone
 
 from sqlalchemy import (BigInteger, Boolean, Column, DateTime, Enum, Float,
-                        ForeignKey, Index, Integer, JSON, String, Table, Text, UniqueConstraint)
+                        ForeignKey, Integer, JSON, String, Table, Text)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -14,8 +14,13 @@ blombooru_media_tags = Table(
     'blombooru_media_tags',
     Base.metadata,
     Column('media_id', Integer, ForeignKey('blombooru_media.id', ondelete='CASCADE'), primary_key=True),
-    Column('tag_id', Integer, ForeignKey('blombooru_tags.id', ondelete='CASCADE'), primary_key=True)
+    Column('tag_id', Integer, ForeignKey('blombooru_tags.id', ondelete='CASCADE'), primary_key=True),
+    Column('implied', Boolean, default=False, nullable=False, server_default='0'),
+    Column('implied_by', JSON().with_variant(JSONB(), 'postgresql'), nullable=True, default=None),
 )
+
+class MediaTag(Base):
+    __table__ = blombooru_media_tags
 
 class User(Base):
     __tablename__ = 'blombooru_users'
@@ -42,6 +47,13 @@ class Media(Base):
     duration = Column(Float, nullable=True)
     rating = Column(Enum(RatingEnum), default=RatingEnum.safe, index=True)
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    custom_date = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda ctx: ctx.get_current_parameters().get("uploaded_at") or datetime.now(timezone.utc),
+        server_default=func.now(),
+        index=True,
+    )
     is_shared = Column(Boolean, default=False, index=True)
     share_uuid = Column(String(36), unique=True, nullable=True, index=True)
     share_ai_metadata = Column(Boolean, default=False)
@@ -52,6 +64,7 @@ class Media(Base):
     parent_id = Column(Integer, ForeignKey('blombooru_media.id', ondelete='SET NULL'), nullable=True, index=True)
     
     tags = relationship('Tag', secondary=blombooru_media_tags, back_populates='media')
+    media_tag_links = relationship('MediaTag', viewonly=True, lazy='select')
     parent = relationship('Media', remote_side=[id], backref='children')
 
     @property
@@ -64,23 +77,12 @@ class Tag(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), unique=True, nullable=False, index=True)
     category = Column(Enum(TagCategoryEnum), default=TagCategoryEnum.general, index=True)
+    rating = Column(Enum(RatingEnum), nullable=True, index=True)
     post_count = Column(Integer, default=0, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     media = relationship('Media', secondary=blombooru_media_tags, back_populates='tags')
     aliases = relationship('TagAlias', foreign_keys='TagAlias.target_tag_id', back_populates='target_tag', cascade="all, delete-orphan")
-    rating_entry= relationship('TagRating', uselist=False, back_populates="target_tag", cascade="all, delete-orphan")
-
-# Tag Ratings Table
-class TagRating(Base):
-    __tablename__ = 'blombooru_tags_ratings'
-    id = Column(Integer, primary_key=True)
-    tag_id = Column(Integer, ForeignKey(Tag.id))
-    rating = Column(Enum(RatingEnum), nullable=False, default=RatingEnum.safe)
-
-    target_tag = relationship('Tag', back_populates="rating_entry")
-
-    __table_args__ = (UniqueConstraint("tag_id"),)
 
 class BooruConfig(Base):
     __tablename__ = "blombooru_booru_config"

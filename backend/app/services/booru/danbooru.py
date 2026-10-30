@@ -8,10 +8,10 @@ import html
 import requests
 
 from .base import (BooruAuthenticationError, BooruClient, BooruNotFoundError,
-                   BooruRateLimitError)
+                   BooruRateLimitError, parse_booru_date)
 from .types import BooruPost, BooruTag
 from ...utils.logger import logger
-from ...utils.tag_utils import dtext_to_plain
+from ...utils.tag_utils import build_artist_commentary, dtext_to_plain
 
 DANBOORU_CATEGORY_MAP: Dict[int, str] = {
     0: "general",
@@ -242,8 +242,8 @@ class DanbooruClient(BooruClient):
         """
         Fetch the artist commentary for a post and return it as plain text.
 
-        Combines the original title and original description (both converted
-        from DText) into a single string.  Returns None if there is no
+        Combines the title, translated and original description (all converted
+        from DText) into a single Markdown string.  Returns None if there is no
         commentary or if the request fails.
         """
         url = f"{self.api_base_url}/posts/{post_id}/artist_commentary.json"
@@ -257,24 +257,13 @@ class DanbooruClient(BooruClient):
             logger.debug(f"Could not fetch artist commentary for post {post_id}: {self._redact(e)}")
             return None
 
-        title = (data.get("original_title") or "").strip()
-        body = (data.get("original_description") or "").strip()
-
-        # Prefer translated versions when available
-        translated_title = (data.get("translated_title") or "").strip()
-        translated_body = (data.get("translated_description") or "").strip()
-        if translated_title:
-            title = translated_title
-        if translated_body:
-            body = translated_body
-
-        parts = []
-        if title:
-            parts.append(self._dtext_to_plain(title))
-        if body:
-            parts.append(self._dtext_to_plain(body))
-
-        return "\n\n".join(parts) if parts else None
+        # Prefer the translated title when available
+        title = data.get("translated_title") or data.get("original_title")
+        return build_artist_commentary(
+            title,
+            data.get("translated_description"),
+            data.get("original_description"),
+        )
 
     def fetch_post(self, post_id: int) -> BooruPost:
         self.ensure_user_id()
@@ -304,6 +293,7 @@ class DanbooruClient(BooruClient):
             score=data.get("score", 0),
             booru_url=f"{self.base_url}/posts/{data.get('id', post_id)}",
             description=description,
+            uploaded_at=parse_booru_date(data.get("created_at")),
         )
 
     def search_posts(self, tags: str = "", page: int = 1, limit: int = 20) -> List[BooruPost]:
@@ -336,6 +326,7 @@ class DanbooruClient(BooruClient):
                     file_size=data.get("file_size", 0),
                     score=data.get("score", 0),
                     booru_url=f"{self.base_url}/posts/{data.get('id', 0)}",
+                    uploaded_at=parse_booru_date(data.get("created_at")),
                 )
                 results.append(post)
             except Exception as e:

@@ -113,10 +113,11 @@ class PendingEntitiesPanel {
             tagsList.innerHTML = tags.map(tag => {
                 const cat = tag.category || 'general';
                 const grayscaleClass = (!tag.user_assigned) ? 'grayscale' : '';
+                const tagRating = tag.rating || 'none';
                 return `
-                    <div class="pending-tag-item inline-flex items-center gap-1 bg border p-1 transition-colors max-w-full min-w-0" data-name="${escapeHtml(tag.name)}">
-                        <div class="custom-select pending-cat-select max-w-full min-w-0 inline-flex shrink" data-value="${cat}" data-tag="${escapeHtml(tag.name)}">
-                            <div class="custom-select-trigger tag-text tag ${cat} ${grayscaleClass} cursor-pointer select-none max-w-full min-w-0 !inline-flex items-center gap-1 flex-nowrap" style="white-space: nowrap; display: inline-flex;">
+                    <div class="pending-tag-item inline-flex items-center gap-1 bg border p-1 transition-colors max-w-full min-w-0" data-name="${escapeHtml(tag.name)}" data-tag-rating="${tagRating}">
+                        <div class="custom-select pending-cat-select max-w-full min-w-0 inline-flex shrink" data-value="${cat}" data-tag="${escapeHtml(tag.name)}" data-tag-rating="${tagRating}">
+                            <div class="custom-select-trigger tag-text tag ${cat} ${grayscaleClass} cursor-pointer select-none max-w-full min-w-0 !inline-flex items-center gap-1 flex-nowrap" data-tag-rating="${tagRating}" style="white-space: nowrap; display: inline-flex;">
                                 <span class="text-xs truncate min-w-0" title="${escapeHtml(tag.name)}">${escapeHtml(tag.name)}</span>
                                 <span class="custom-select-value" style="display: none;"></span>
                                 ${window.Icons.chevronDown({ size: 10, class: 'custom-select-arrow shrink-0 transition-transform duration-200' })}

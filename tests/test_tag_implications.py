@@ -4,19 +4,39 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from backend.app.enums import FileTypeEnum, RatingEnum, TagCategoryEnum
-from backend.app.models import Media, Tag, TagAlias, TagImplication, User
+from backend.app.models import Media, Tag, TagAlias, TagImplication, User, blombooru_media_tags
 from backend.app.redis_client import redis_cache
-from backend.app.routes.media import bulk_update_tags, preview_or_create_tags
+from backend.app.routes.admin.tags import MergeTagRequest, merge_tag, update_tag
+from backend.app.routes.media import (
+    _fetch_media_batch_tags_only,
+    bulk_update_tags,
+    preview_or_create_tags,
+    update_media,
+)
 from backend.app.routes.tags import batch_resolve_combined_tags
+from backend.app.routes.uploads import (
+    BulkUpdateRequest,
+    ProposedTag,
+    UploadSessionItemUpdate,
+    _get_session_dir,
+    _save_session_meta,
+    bulk_update_staged_items,
+    commit_upload_session,
+    create_upload_session,
+    update_staged_item,
+)
 from backend.app.schemas import (
     BatchResolveCombinedItem,
     BatchResolveCombinedRequest,
     BulkTagUpdateItem,
     BulkTagUpdateRequest,
+    MediaResponse,
+    MediaUpdate,
 )
 from backend.app.routes.tag_implications import (
     _clean_patterns,
     _resolve_tag_names,
+    backfill_implied_tags,
     create_implication,
     delete_implication,
     expand_tag_implications,
@@ -26,7 +46,11 @@ from backend.app.routes.tag_implications import (
     ExpandImplicationsRequest,
     TagImplicationCreate,
 )
-from backend.app.utils.tag_utils import expand_implications, resolve_implications
+from backend.app.utils.tag_utils import (
+    expand_implications,
+    resolve_implications,
+    resolve_implications_with_sources,
+)
 from tests.test_base import BackupTestBase
 
 class TestTagImplications(BackupTestBase):
@@ -699,11 +723,11 @@ class TestTagImplications(BackupTestBase):
 
         payload = ExpandImplicationsRequest(tags=["tabby"])
         res = asyncio.run(expand_tag_implications(payload, current_user=self.admin_user, db=self.db))
-        self.assertEqual(res, {"implied_tags": ["hunter"]})
+        self.assertEqual(res, {"implied_tags": ["hunter"], "implied_by": {"hunter": [["tabby"]]}})
 
         empty_payload = ExpandImplicationsRequest(tags=[])
         empty_res = asyncio.run(expand_tag_implications(empty_payload, current_user=self.admin_user, db=self.db))
-        self.assertEqual(empty_res, {"implied_tags": []})
+        self.assertEqual(empty_res, {"implied_tags": [], "implied_by": {}})
 
     def test_simulate_apply_all_large_scale(self):
         """Verify simulate_apply_all_implications performs efficiently with large rule sets."""
@@ -862,6 +886,460 @@ class TestTagImplications(BackupTestBase):
         self.assertIn(rule2.id, res_ears_ids)
         self.assertIn(rule3.id, res_ears_ids)  # matches *_exact pattern
         self.assertNotIn(rule1.id, res_ears_ids)
+
+    def test_implied_vs_explicit_tag_differentiation(self):
+        """Verify clean implications mark tags as implied while pre-existing explicit tags remain non-implied."""
+        self.db.add(TagImplication(target_tags=[self.tag_cat], implied_tags=[self.tag_animal]))
+        self.db.commit()
+
+        # Case 1: Clean implication via UI (sending expanded tags + implied_tags)
+        media1 = self._create_media("clean_implication.jpg")
+        self.db.commit()
+        res1 = asyncio.run(
+            update_media(
+                media_id=media1.id,
+                updates=MediaUpdate(tags=["cat", "animal"], implied_tags={"animal": [["cat"]]}),
+                current_user=self.admin_user,
+                db=self.db,
+            )
+        )
+        tag_map1 = {t["name"]: t for t in res1.model_dump()["tags"]}
+        self.assertIn("cat", tag_map1)
+        self.assertIn("animal", tag_map1)
+        self.assertFalse(tag_map1["cat"]["implied"])
+        self.assertEqual(tag_map1["cat"]["implied_by"], [])
+        self.assertTrue(tag_map1["animal"]["implied"])
+        self.assertEqual(tag_map1["animal"]["implied_by"], [["cat"]])
+
+        # Case 1b: Direct API PATCH without implied_tags does NOT auto-expand server-side (expand=False)
+        media_api = self._create_media("api_no_auto_expand.jpg")
+        self.db.commit()
+        res_api = asyncio.run(
+            update_media(
+                media_id=media_api.id,
+                updates=MediaUpdate(tags=["cat"]),
+                current_user=self.admin_user,
+                db=self.db,
+            )
+        )
+        tag_map_api = {t["name"]: t for t in res_api.model_dump()["tags"]}
+        self.assertEqual(list(tag_map_api.keys()), ["cat"])
+        self.assertFalse(tag_map_api["cat"]["implied"])
+
+        # Case 2: Tag already present explicitly before trigger tag is added
+        media2 = self._create_media("explicit_first.jpg")
+        self.db.commit()
+        # First save 'animal' explicitly
+        asyncio.run(
+            update_media(
+                media_id=media2.id,
+                updates=MediaUpdate(tags=["animal"]),
+                current_user=self.admin_user,
+                db=self.db,
+            )
+        )
+        # Then add 'cat' alongside 'animal'
+        res2 = asyncio.run(
+            update_media(
+                media_id=media2.id,
+                updates=MediaUpdate(tags=["animal", "cat"]),
+                current_user=self.admin_user,
+                db=self.db,
+            )
+        )
+        tag_map2 = {t["name"]: t for t in res2.model_dump()["tags"]}
+        self.assertFalse(tag_map2["animal"]["implied"])
+        self.assertEqual(tag_map2["animal"]["implied_by"], [])
+        self.assertFalse(tag_map2["cat"]["implied"])
+
+    def test_implied_tag_deletion_and_trigger_removal(self):
+        """Verify deleting an implied tag does not re-add it, and removing a trigger preserves implied status."""
+        self.db.add(TagImplication(target_tags=[self.tag_cat], implied_tags=[self.tag_animal]))
+        self.db.commit()
+
+        media = self._create_media("delete_behavior.jpg")
+        self.db.commit()
+
+        # Initial save: 'cat' implies 'animal'
+        asyncio.run(
+            update_media(
+                media_id=media.id,
+                updates=MediaUpdate(tags=["cat", "animal"], implied_tags={"animal": [["cat"]]}),
+                current_user=self.admin_user,
+                db=self.db,
+            )
+        )
+
+        # Remove trigger 'cat' while keeping implied 'animal'
+        res_keep_implied = asyncio.run(
+            update_media(
+                media_id=media.id,
+                updates=MediaUpdate(tags=["animal"], implied_tags={"animal": [["cat"]]}),
+                current_user=self.admin_user,
+                db=self.db,
+            )
+        )
+        tag_map_keep = {t["name"]: t for t in res_keep_implied.model_dump()["tags"]}
+        self.assertNotIn("cat", tag_map_keep)
+        self.assertIn("animal", tag_map_keep)
+        self.assertTrue(tag_map_keep["animal"]["implied"])
+        self.assertEqual(tag_map_keep["animal"]["implied_by"], [["cat"]])
+
+        # Re-add 'cat' so post has both 'cat' and 'animal'
+        asyncio.run(
+            update_media(
+                media_id=media.id,
+                updates=MediaUpdate(tags=["cat", "animal"], implied_tags={"animal": [["cat"]]}),
+                current_user=self.admin_user,
+                db=self.db,
+            )
+        )
+
+        # Now delete implied 'animal' directly while keeping existing trigger 'cat'
+        res_delete_implied = asyncio.run(
+            update_media(
+                media_id=media.id,
+                updates=MediaUpdate(tags=["cat"], implied_tags={}),
+                current_user=self.admin_user,
+                db=self.db,
+            )
+        )
+        tag_map_del = {t["name"]: t for t in res_delete_implied.model_dump()["tags"]}
+        self.assertIn("cat", tag_map_del)
+        self.assertNotIn("animal", tag_map_del)
+
+    def test_chained_and_wildcard_implied_by_attribution(self):
+        """Verify chained implications and wildcard conjunctions record exact direct triggering groups."""
+        cat_ears = self._create_tag("cat_ears")
+        kemonomimi = self._create_tag("kemonomimi")
+
+        # Chain: kitten -> cat -> animal
+        self.db.add(TagImplication(target_tags=[self.tag_kitten], implied_tags=[self.tag_cat]))
+        self.db.add(TagImplication(target_tags=[self.tag_cat], implied_tags=[self.tag_animal]))
+        # Wildcard + exact conjunction: 1girl + *_ears -> kemonomimi
+        self.db.add(
+            TagImplication(
+                target_tags=[self.tag_1girl],
+                target_tag_patterns=["*_ears"],
+                implied_tags=[kemonomimi],
+            )
+        )
+        self.db.commit()
+
+        implied_names, implied_by = resolve_implications_with_sources(
+            self.db, ["kitten", "1girl", "cat_ears"]
+        )
+        self.assertIn("cat", implied_names)
+        self.assertIn("animal", implied_names)
+        self.assertIn("kemonomimi", implied_names)
+        self.assertEqual(implied_by["cat"], [["kitten"]])
+        self.assertEqual(implied_by["animal"], [["cat"]])
+        self.assertEqual(implied_by["kemonomimi"], [["1girl", "cat_ears"]])
+
+    def test_backfill_implied_tags_endpoint(self):
+        """Verify POST /api/tag-implications/backfill-implied-tags marks existing matching tags as implied."""
+        self.db.add(TagImplication(target_tags=[self.tag_cat], implied_tags=[self.tag_animal]))
+        self.db.commit()
+
+        # Media tagged prior to feature: has both 'cat' and 'animal', neither marked as implied
+        media = self._create_media("legacy_tagged.jpg")
+        media.tags.extend([self.tag_cat, self.tag_animal])
+        self.db.commit()
+
+        res = asyncio.run(backfill_implied_tags(current_user=self.admin_user))
+        self.assertEqual(res["updated_media_count"], 1)
+        self.assertEqual(res["updated_tags_count"], 1)
+
+        self.db.expire_all()
+        refreshed = self.db.query(Media).filter(Media.id == media.id).first()
+        serialized = MediaResponse.model_validate(refreshed).model_dump()
+        tag_map = {t["name"]: t for t in serialized["tags"]}
+        self.assertFalse(tag_map["cat"]["implied"])
+        self.assertTrue(tag_map["animal"]["implied"])
+        self.assertEqual(tag_map["animal"]["implied_by"], [["cat"]])
+
+    def test_client_implied_tags_validation_against_real_rules(self):
+        """Verify fake or unmatched client-supplied implied_tags are rejected and not marked as implied."""
+        self.db.add(TagImplication(target_tags=[self.tag_cat], implied_tags=[self.tag_animal]))
+        self.db.commit()
+
+        media = self._create_media("validate_implied.jpg")
+        self.db.commit()
+
+        # 'solo' has no implication rule from '1girl'; 'animal' has rule from 'cat', not '1girl'
+        res = asyncio.run(
+            update_media(
+                media_id=media.id,
+                updates=MediaUpdate(
+                    tags=["1girl", "solo", "animal"],
+                    implied_tags={
+                        "solo": [["1girl"]],
+                        "animal": [["1girl"]],
+                    },
+                ),
+                current_user=self.admin_user,
+                db=self.db,
+            )
+        )
+        tag_map = {t["name"]: t for t in res.model_dump()["tags"]}
+        self.assertFalse(tag_map["solo"]["implied"])
+        self.assertEqual(tag_map["solo"]["implied_by"], [])
+        self.assertFalse(tag_map["animal"]["implied"])
+        self.assertEqual(tag_map["animal"]["implied_by"], [])
+
+    def test_bulk_update_tags_omitted_vs_provided_implied_tags(self):
+        """Verify bulk_update_tags re-expands all tags when implied_tags is omitted and only newly added triggers when provided."""
+        self.db.add(TagImplication(target_tags=[self.tag_cat], implied_tags=[self.tag_animal]))
+        self.db.add(TagImplication(target_tags=[self.tag_kitten], implied_tags=[self.tag_feline]))
+        self.db.commit()
+
+        # Media 1: already has 'cat' (without 'animal').
+        # When implied_tags is omitted (None), bulk_update_tags re-expands all tags on the post.
+        m1 = self._create_media("bulk_omitted.jpg")
+        m1.tags.append(self.tag_cat)
+        self.db.commit()
+
+        req_omitted = BulkTagUpdateRequest(
+            items=[BulkTagUpdateItem(id=m1.id, tags=["cat", "solo"])]
+        )
+        asyncio.run(bulk_update_tags(req_omitted, current_user=self.admin_user, db=self.db))
+        self.db.expire_all()
+        m1_refreshed = self.db.query(Media).filter(Media.id == m1.id).first()
+        m1_tags = {t["name"]: t for t in MediaResponse.model_validate(m1_refreshed).model_dump()["tags"]}
+        self.assertIn("animal", m1_tags)
+        self.assertTrue(m1_tags["animal"]["implied"])
+        self.assertEqual(m1_tags["animal"]["implied_by"], [["cat"]])
+
+        # Media 2: already has 'cat' (user previously removed 'animal').
+        # When implied_tags is provided ({}), existing 'cat' is NOT re-expanded,
+        # while newly added 'kitten' IS expanded (or validated from client implied_tags),
+        # and fake implied_tags are rejected.
+        m2 = self._create_media("bulk_provided.jpg")
+        m2.tags.append(self.tag_cat)
+        self.db.commit()
+
+        req_provided = BulkTagUpdateRequest(
+            items=[
+                BulkTagUpdateItem(
+                    id=m2.id,
+                    tags=["cat", "kitten", "feline", "solo"],
+                    implied_tags={
+                        "feline": [["kitten"]],
+                        "solo": [["cat"]],  # fake rule, must be ignored
+                    },
+                )
+            ]
+        )
+        asyncio.run(bulk_update_tags(req_provided, current_user=self.admin_user, db=self.db))
+        self.db.expire_all()
+        m2_refreshed = self.db.query(Media).filter(Media.id == m2.id).first()
+        m2_tags = {t["name"]: t for t in MediaResponse.model_validate(m2_refreshed).model_dump()["tags"]}
+        self.assertNotIn("animal", m2_tags)
+        self.assertIn("feline", m2_tags)
+        self.assertTrue(m2_tags["feline"]["implied"])
+        self.assertEqual(m2_tags["feline"]["implied_by"], [["kitten"]])
+        self.assertFalse(m2_tags["solo"]["implied"])
+        self.assertEqual(m2_tags["solo"]["implied_by"], [])
+
+    def test_tag_rename_and_merge_implied_by_id_storage(self):
+        """Verify blombooru_media_tags.implied_by stores Tag IDs and dynamically reflects tag renames and merges."""
+        self.db.add(TagImplication(target_tags=[self.tag_cat], implied_tags=[self.tag_animal]))
+        self.db.commit()
+
+        media = self._create_media("rename_merge_test.jpg")
+        self.db.commit()
+
+        asyncio.run(
+            update_media(
+                media_id=media.id,
+                updates=MediaUpdate(tags=["cat", "animal"], implied_tags={"animal": [["cat"]]}),
+                current_user=self.admin_user,
+                db=self.db,
+            )
+        )
+
+        # Verify raw DB row stores Tag.id integers in implied_by
+        raw_row = (
+            self.db.query(blombooru_media_tags.c.implied, blombooru_media_tags.c.implied_by)
+            .filter(
+                blombooru_media_tags.c.media_id == media.id,
+                blombooru_media_tags.c.tag_id == self.tag_animal.id,
+            )
+            .first()
+        )
+        self.assertTrue(raw_row[0])
+        self.assertEqual(raw_row[1], [[self.tag_cat.id]])
+
+        # 1. Rename trigger tag 'cat' -> 'kitty_cat'
+        asyncio.run(
+            update_tag(
+                tag_id=self.tag_cat.id,
+                data={"name": "kitty_cat"},
+                current_user=self.admin_user,
+                db=self.db,
+            )
+        )
+        self.db.expire_all()
+        refreshed = self.db.query(Media).filter(Media.id == media.id).first()
+        serialized = MediaResponse.model_validate(refreshed).model_dump()
+        tag_map = {t["name"]: t for t in serialized["tags"]}
+        self.assertTrue(tag_map["animal"]["implied"])
+        self.assertEqual(tag_map["animal"]["implied_by"], [["kitty_cat"]])
+
+        # Also check batch tags_only projection
+        batch_items = _fetch_media_batch_tags_only(self.db, [media.id])
+        batch_tag_map = {t["name"]: t for t in batch_items[0]["tags"]}
+        self.assertTrue(batch_tag_map["animal"]["implied"])
+        self.assertEqual(batch_tag_map["animal"]["implied_by"], [["kitty_cat"]])
+
+        # 2. Merge trigger tag 'kitty_cat' into 'feline'
+        asyncio.run(
+            merge_tag(
+                tag_id=self.tag_cat.id,
+                request_data=MergeTagRequest(target_tag_name="feline"),
+                db=self.db,
+                current_user=self.admin_user,
+            )
+        )
+        self.db.expire_all()
+        refreshed_after_trigger_merge = self.db.query(Media).filter(Media.id == media.id).first()
+        serialized_trigger_merge = MediaResponse.model_validate(refreshed_after_trigger_merge).model_dump()
+        tag_map_trigger_merge = {t["name"]: t for t in serialized_trigger_merge["tags"]}
+        self.assertIn("feline", tag_map_trigger_merge)
+        self.assertTrue(tag_map_trigger_merge["animal"]["implied"])
+        self.assertEqual(tag_map_trigger_merge["animal"]["implied_by"], [["feline"]])
+
+        # 3. Merge implied tag 'animal' into 'mammal' and verify implied status carries over
+        asyncio.run(
+            merge_tag(
+                tag_id=self.tag_animal.id,
+                request_data=MergeTagRequest(target_tag_name="mammal"),
+                db=self.db,
+                current_user=self.admin_user,
+            )
+        )
+        self.db.expire_all()
+        refreshed_after_implied_merge = self.db.query(Media).filter(Media.id == media.id).first()
+        serialized_implied_merge = MediaResponse.model_validate(refreshed_after_implied_merge).model_dump()
+        tag_map_implied_merge = {t["name"]: t for t in serialized_implied_merge["tags"]}
+        self.assertIn("mammal", tag_map_implied_merge)
+        self.assertTrue(tag_map_implied_merge["mammal"]["implied"])
+        self.assertEqual(tag_map_implied_merge["mammal"]["implied_by"], [["feline"]])
+
+    def test_preview_or_create_tags_repreview_and_upload_session_commit(self):
+        """Verify preview_or_create_tags preserves implied status across re-previews, staged edits, and session commit."""
+        from PIL import Image
+
+        self.db.add(TagImplication(target_tags=[self.tag_cat], implied_tags=[self.tag_animal]))
+        self.db.add(TagImplication(target_tags=[self.tag_kitten], implied_tags=[self.tag_feline]))
+        self.db.commit()
+
+        # 1. Direct preview_or_create_tags first pass -> re-preview second pass
+        first_pass = preview_or_create_tags(self.db, ["cat"], expand=True, dry_run=True)
+        first_map = {t.name: t for t in first_pass}
+        self.assertFalse(first_map["cat"].implied)
+        self.assertTrue(first_map["animal"].implied)
+        self.assertEqual(first_map["animal"].implied_by, [["cat"]])
+
+        # Re-previewing the ProposedTag list (or with pre_implied_map) preserves animal as implied
+        second_pass = preview_or_create_tags(self.db, first_pass, expand=True, dry_run=True)
+        second_map = {t.name: t for t in second_pass}
+        self.assertFalse(second_map["cat"].implied)
+        self.assertTrue(second_map["animal"].implied)
+        self.assertEqual(second_map["animal"].implied_by, [["cat"]])
+
+        # 2. Full Upload Session review & commit workflow
+        session_info = asyncio.run(create_upload_session(current_user=self.admin_user))
+        session_id = session_info["session_id"]
+        session_dir = _get_session_dir(session_id)
+
+        # Create a valid small image in raw/
+        item_id = "item_test_1"
+        staged_filename = f"{item_id}.png"
+        raw_file = session_dir / "raw" / staged_filename
+        Image.new("RGB", (32, 32), color=(100, 150, 200)).save(raw_file, format="PNG")
+
+        meta = {
+            "session_id": session_id,
+            "items": {
+                item_id: {
+                    "item_id": item_id,
+                    "filename": "staged_cat.png",
+                    "staged_filename": staged_filename,
+                    "file_type": "image",
+                    "mime_type": "image/png",
+                    "width": 32,
+                    "height": 32,
+                    "rating": "safe",
+                    "tags": [t.model_dump() for t in first_pass],
+                    "album_ids": [],
+                }
+            },
+        }
+        _save_session_meta(session_dir, meta)
+
+        # Edit tags in upload review: keep 'cat' and 'animal', and add 'solo'
+        updated_item = asyncio.run(
+            update_staged_item(
+                session_id=session_id,
+                item_id=item_id,
+                update=UploadSessionItemUpdate(
+                    tags=[
+                        ProposedTag(name="cat", category=TagCategoryEnum.general),
+                        ProposedTag(name="animal", category=TagCategoryEnum.general),
+                        ProposedTag(name="solo", category=TagCategoryEnum.general),
+                    ]
+                ),
+                current_user=self.admin_user,
+                db=self.db,
+            )
+        )
+        staged_tag_map = {t["name"]: t for t in updated_item["tags"]}
+        self.assertFalse(staged_tag_map["cat"]["implied"])
+        self.assertTrue(staged_tag_map["animal"]["implied"])
+        self.assertEqual(staged_tag_map["animal"]["implied_by"], [["cat"]])
+        self.assertFalse(staged_tag_map["solo"]["implied"])
+
+        # Bulk-update staged item to add 'kitten' (which implies 'feline')
+        bulk_res = asyncio.run(
+            bulk_update_staged_items(
+                session_id=session_id,
+                req=BulkUpdateRequest(
+                    item_ids=[item_id],
+                    add_tags=[ProposedTag(name="kitten", category=TagCategoryEnum.general)],
+                ),
+                current_user=self.admin_user,
+                db=self.db,
+            )
+        )
+        bulk_tag_map = {t["name"]: t for t in bulk_res["items"][0]["tags"]}
+        self.assertTrue(bulk_tag_map["animal"]["implied"])
+        self.assertEqual(bulk_tag_map["animal"]["implied_by"], [["cat"]])
+        self.assertFalse(bulk_tag_map["kitten"]["implied"])
+        self.assertTrue(bulk_tag_map["feline"]["implied"])
+        self.assertEqual(bulk_tag_map["feline"]["implied_by"], [["kitten"]])
+
+        # Commit upload session and verify DB Media record preserves implied flags and Tag IDs
+        commit_res = asyncio.run(
+            commit_upload_session(
+                session_id=session_id,
+                current_user=self.admin_user,
+                db=self.db,
+            )
+        )
+        self.assertEqual(commit_res.total_created, 1)
+        created_media_id = commit_res.results[0].media_id
+        self.assertIsNotNone(created_media_id)
+
+        self.db.expire_all()
+        committed_media = self.db.query(Media).filter(Media.id == created_media_id).first()
+        committed_tags = {t["name"]: t for t in MediaResponse.model_validate(committed_media).model_dump()["tags"]}
+        self.assertFalse(committed_tags["cat"]["implied"])
+        self.assertTrue(committed_tags["animal"]["implied"])
+        self.assertEqual(committed_tags["animal"]["implied_by"], [["cat"]])
+        self.assertFalse(committed_tags["kitten"]["implied"])
+        self.assertTrue(committed_tags["feline"]["implied"])
+        self.assertEqual(committed_tags["feline"]["implied_by"], [["kitten"]])
 
 if __name__ == "__main__":
     unittest.main()

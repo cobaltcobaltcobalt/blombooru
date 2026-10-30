@@ -1,8 +1,9 @@
 import json
 import shutil
 import uuid
+from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Set
+from typing import Dict, List, Optional, Set, Union
 
 from fastapi import (APIRouter, BackgroundTasks, Depends, File, Form,
                      HTTPException, Query, Request, UploadFile)
@@ -19,9 +20,10 @@ from ..database import get_db
 from ..models import (Album, Media, Tag, User, blombooru_album_media,
                       blombooru_media_tags)
 from ..schemas import (AlbumListResponse, BatchMediaRequest, BatchMetadataRequest,
+                       BulkMediaRatingUpdateRequest, BulkMediaRatingUpdateResponse,
                        BulkTagUpdateRequest, BulkTagUpdateResponse,
                        MediaDetailResponse, MediaResponse,
-                       MediaUpdate, ShareSettingsUpdate)
+                       MediaUpdate, ProposedTag, ShareSettingsUpdate)
 from ..utils.album_utils import (get_bulk_album_thumbnails, get_flattened_media_ids,
                                 handle_media_deleted, handle_media_rating_changed,
                                 set_media_albums)
@@ -41,7 +43,15 @@ from ..utils.media_sort import apply_media_sort, get_media_sort_clauses
 from ..utils.search_parser import (apply_custom_filters_or,
                                    apply_search_criteria, parse_search_query)
 from ..utils.thumbnail_generator import generate_thumbnail, THUMBNAIL_EXT, thumbnail_mime_type
-from ..utils.transcoder import (get_transcoded_path_for_original,
+from ..utils.tag_utils import (
+    convert_implied_by_names_to_ids,
+    get_escalated_rating,
+    get_newly_added_tags,
+    validate_and_resolve_implied_by_ids,
+)
+from ..utils.transcoder import (get_transcode_target_ext,
+                                get_transcoded_path_for_original,
+                                is_transcoding_required,
                                 transcode_media_if_needed)
 from ..utils.url_fetch import UrlFetchError, safe_request
 
@@ -74,6 +84,8 @@ class PostUpdateRequest(BaseModel):
     filename: Optional[str] = None
     update_file: bool = False
     file_url: Optional[str] = None
+    update_custom_date: bool = False
+    custom_date: Optional[str] = None
 
 @router.patch("/{media_id}/update-from-source", response_model=MediaDetailResponse)
 async def update_from_source(
@@ -88,28 +100,41 @@ async def update_from_source(
     Supports selective overwriting: callers set update_* flags for only the
     fields they want changed.
     """
-    media = db.query(Media).options(joinedload(Media.tags)).filter(Media.id == media_id).first()
+    media = db.query(Media).options(joinedload(Media.tags), selectinload(Media.media_tag_links)).filter(Media.id == media_id).first()
     if not media:
         raise HTTPException(status_code=404, detail="Media not found")
 
     affected_tag_ids: list[int] = []
+    newly_added_tags: list = []
+    implied_by_tag_id_update: Optional[dict[int, list[list[int]]]] = None
 
     if req.update_tags and req.tags is not None:
         old_tag_ids = [tag.id for tag in media.tags]
+        previous_tags = list(media.tags)
 
         if req.merge_tags:
-            # Merge: keep existing tags, add any that are missing
             existing_names = {tag.name.lower() for tag in media.tags}
-            new_names = [t for t in req.tags if t.strip().lower() not in existing_names]
-            if new_names:
-                new_tags = get_or_create_tags(db, new_names, category_hints=req.category_hints)
-                media.tags = list(media.tags) + new_tags
+            merged_names = [t.name for t in media.tags] + [
+                t for t in req.tags if t.strip().lower() not in existing_names
+            ]
+            tags_list, implied_by_tag_id_update = resolve_media_tag_update(
+                db,
+                media.id,
+                merged_names,
+                client_implied_tags=None,
+                category_hints=req.category_hints,
+                expand=True,
+            )
+            media.tags = tags_list
         else:
-            # Replace: remove all current tags and set the new list
-            media.tags = get_or_create_tags(db, req.tags, category_hints=req.category_hints)
+            tags_list, implied_by_tag_id_update = get_or_create_tags_with_implications(
+                db, req.tags, category_hints=req.category_hints, expand=True
+            )
+            media.tags = tags_list
 
         new_tag_ids = [tag.id for tag in media.tags]
         affected_tag_ids = list(set(old_tag_ids + new_tag_ids))
+        newly_added_tags = get_newly_added_tags(previous_tags, media.tags)
 
     rating_changed = False
     filename_changed = False
@@ -120,12 +145,29 @@ async def update_from_source(
             media.rating = norm_rating
             rating_changed = True
 
+    # Only tags added by this request escalate, and never over a rating the
+    # request explicitly asked to apply.
+    if newly_added_tags and not (req.update_rating and req.rating):
+        escalated = get_escalated_rating(media.rating, newly_added_tags)
+        if escalated and media.rating != escalated:
+            media.rating = escalated
+            rating_changed = True
+
     if req.update_source:
         media.source = req.source or None
 
     if req.update_description:
         media.description = req.description or None
         sync_description_enlarged(media)
+
+    if req.update_custom_date:
+        if not req.custom_date or not str(req.custom_date).strip():
+            raise HTTPException(status_code=422, detail="custom_date is required when update_custom_date is true")
+        from ..utils.date_extractor import parse_explicit_custom_date
+        parsed_dt = parse_explicit_custom_date(req.custom_date)
+        if parsed_dt is None:
+            raise HTTPException(status_code=422, detail="Invalid custom_date format")
+        media.custom_date = parsed_dt
 
     if req.update_filename and req.filename:
         new_filename = sanitize_filename(req.filename)
@@ -139,9 +181,10 @@ async def update_from_source(
                 old_path.rename(new_path)
 
             # Handle transcoded file rename/move if needed
-            fmt = format_registry.get_format(new_unique)
-            if fmt and fmt.requires_transcode:
-                new_transc_path = get_transcoded_path_for_original(new_path, fmt.transcode_target)
+            needs_transcode = is_transcoding_required(new_path)
+            if needs_transcode is True:
+                target_ext = get_transcode_target_ext(new_path)
+                new_transc_path = get_transcoded_path_for_original(new_path, target_ext)
                 if media.transcoded_path:
                     old_transc_path = settings.BASE_DIR / media.transcoded_path
                     if old_transc_path.exists():
@@ -155,7 +198,7 @@ async def update_from_source(
                 else:
                     trans_file = transcode_media_if_needed(new_path)
                     media.transcoded_path = str(trans_file.relative_to(settings.BASE_DIR)) if trans_file else None
-            else:
+            elif needs_transcode is False:
                 if media.transcoded_path:
                     old_transc_path = settings.BASE_DIR / media.transcoded_path
                     if old_transc_path.exists():
@@ -261,10 +304,13 @@ async def update_from_source(
             logger.exception("Error replacing media file")
             raise HTTPException(status_code=500, detail=safe_error_detail("File replacement failed", e))
 
+    db.flush()
+    if implied_by_tag_id_update is not None:
+        apply_media_tag_implications(db, media, implied_by_tag_id_update)
     db.commit()
 
     if rating_changed:
-        handle_media_rating_changed(db, media_id, req.rating)
+        handle_media_rating_changed(db, media_id, media.rating.value if hasattr(media.rating, "value") else media.rating)
 
     if affected_tag_ids:
         update_tag_counts(db, affected_tag_ids)
@@ -285,6 +331,7 @@ async def update_file_finalize(
     media_id: int,
     upload_id: str = Form(...),
     update_filename: bool = Form(False),
+    update_custom_date: bool = Form(False),
     background_tasks: BackgroundTasks = None,
     current_user: User = Depends(require_admin_mode),
     db: Session = Depends(get_db),
@@ -301,7 +348,7 @@ async def update_file_finalize(
     if not re.match(r'^[0-9a-f\-]{36}$', upload_id):
         raise HTTPException(status_code=400, detail="Invalid upload_id")
 
-    media = db.query(Media).options(joinedload(Media.tags)).filter(Media.id == media_id).first()
+    media = db.query(Media).options(joinedload(Media.tags), selectinload(Media.media_tag_links)).filter(Media.id == media_id).first()
     if not media:
         raise HTTPException(status_code=404, detail="Media not found")
 
@@ -400,6 +447,12 @@ async def update_file_finalize(
         media.height = new_meta["height"]
         media.duration = new_meta["duration"]
 
+        if update_custom_date:
+            from ..utils.date_extractor import extract_embedded_date
+            embedded_dt = extract_embedded_date(target_file)
+            if embedded_dt is not None:
+                media.custom_date = embedded_dt
+
         db.commit()
         db.refresh(media)
         invalidate_media_cache()
@@ -433,27 +486,67 @@ def update_tag_counts(db: Session, tag_ids: List[int]):
             synchronize_session=False
         )
 
-def preview_or_create_tags(
+def _clean_implied_by_groups(groups: Optional[list]) -> list[list[str]]:
+    if not groups or not isinstance(groups, list):
+        return []
+    result: list[list[str]] = []
+    for grp in groups:
+        if isinstance(grp, list):
+            cleaned = sorted({str(x).strip().lower() for x in grp if x and str(x).strip()})
+            if cleaned and cleaned not in result:
+                result.append(cleaned)
+    return result
+
+def _normalize_db_implied_by_ids(db: Session, groups: Optional[list]) -> list[list[int]]:
+    """Normalize stored implied_by groups into list[list[int]] of Tag.id values."""
+    if not groups or not isinstance(groups, list):
+        return []
+    str_names: set[str] = set()
+    for grp in groups:
+        if isinstance(grp, list):
+            for item in grp:
+                if isinstance(item, str) and not item.strip().isdigit():
+                    norm = item.strip().lower()
+                    if norm:
+                        str_names.add(norm)
+    name_to_id: dict[str, int] = {}
+    if str_names:
+        for t_name, t_id in db.query(Tag.name, Tag.id).filter(Tag.name.in_(list(str_names))).all():
+            name_to_id[t_name.lower()] = t_id
+
+    result: list[list[int]] = []
+    for grp in groups:
+        if not isinstance(grp, list):
+            continue
+        ids: list[int] = []
+        for item in grp:
+            tid: Optional[int] = None
+            if isinstance(item, int) and not isinstance(item, bool):
+                tid = item
+            elif isinstance(item, str):
+                s = item.strip().lower()
+                if s.isdigit():
+                    tid = int(s)
+                else:
+                    tid = name_to_id.get(s)
+            if tid is not None and tid not in ids:
+                ids.append(tid)
+        if ids:
+            ids.sort()
+            if ids not in result:
+                result.append(ids)
+    return result
+
+def get_or_create_tags_with_implications(
     db: Session,
     tag_names: List[str],
     category_hints: Optional[dict] = None,
     expand: bool = True,
-    dry_run: bool = False
-):
-    """Get or create tags by name (or preview them without creating if dry_run=True).
-    Resolves aliases and applies tag implications.
-
-    Args:
-        db: Database session
-        tag_names: List of tag name strings
-        category_hints: Optional dict mapping tag names to category strings
-                       (e.g. {"artist_name": "artist", "char_name": "character"}).
-                       When a tag doesn't exist and a hint is provided, the tag
-                       is created with that category instead of the default "general".
-        expand: Whether to recursively expand tag implications. Defaults to True.
-        dry_run: When True, do not create new Tag rows in the database;
-                 instead return proposed tag objects with is_new boolean.
-    """
+    pre_implied_map: Optional[Dict[str, List[List[str]]]] = None,
+) -> tuple[List[Tag], dict[int, list[list[int]]]]:
+    """Get or create tags by name, resolving aliases and applying implications,
+    returning (tags_list, implied_by_tag_id) where implied_by_tag_id maps
+    tag_id -> list[list[int]] of trigger Tag.id groups."""
     from ..models import TagAlias
     from ..utils.tag_utils import expand_implications, resolve_aliases
 
@@ -467,40 +560,331 @@ def preview_or_create_tags(
         seen_names.add(name)
         unique_names.append(name)
 
+    all_lookup_names = set(unique_names)
+    if pre_implied_map:
+        for k in pre_implied_map.keys():
+            if k and k.strip():
+                all_lookup_names.add(k.strip().lower())
+
+    alias_map = resolve_aliases(db, list(all_lookup_names))
+
+    norm_pre_implied: dict[str, list[list[str]]] = {}
+    if pre_implied_map:
+        for k, groups in pre_implied_map.items():
+            norm_k = k.strip().lower()
+            if not norm_k:
+                continue
+            canon_k = alias_map[norm_k][0].lower() if norm_k in alias_map else norm_k
+            cleaned = _clean_implied_by_groups(groups)
+            existing = norm_pre_implied.setdefault(canon_k, [])
+            for grp in cleaned:
+                if grp not in existing:
+                    existing.append(grp)
+
+    explicit_tag_set: dict[int, Tag] = {}
+    pre_implied_tag_set: dict[int, Tag] = {}
+
+    for name in unique_names:
+        if name in alias_map:
+            alias = db.query(TagAlias).filter(TagAlias.alias_name == name).first()
+            tag = alias.target_tag if alias else None
+        else:
+            tag = db.query(Tag).filter(Tag.name == name).first()
+            if not tag:
+                category = "general"
+                if category_hints and name in category_hints:
+                    category = category_hints[name]
+                tag = Tag(name=name, post_count=0, category=category)
+                db.add(tag)
+                db.flush()
+
+        if tag:
+            if tag.name.lower() in norm_pre_implied and tag.id not in explicit_tag_set:
+                pre_implied_tag_set[tag.id] = tag
+            else:
+                explicit_tag_set[tag.id] = tag
+                pre_implied_tag_set.pop(tag.id, None)
+
+    explicit_ids = set(explicit_tag_set.keys())
+    tag_set: dict[int, Tag] = dict(explicit_tag_set)
+
+    implied_by_name: dict[str, list[list[str]]] = {}
+    if expand:
+        implied_by_name = expand_implications(db, tag_set)
+
+    for tid, tag in pre_implied_tag_set.items():
+        if tid not in tag_set:
+            tag_set[tid] = tag
+
+    if expand and pre_implied_tag_set:
+        extra_implied_by = expand_implications(
+            db,
+            tag_set,
+            seed_trigger_names={t.name.lower() for t in pre_implied_tag_set.values()},
+        )
+        for tname, grps in extra_implied_by.items():
+            target_list = implied_by_name.setdefault(tname, [])
+            for grp in grps:
+                if grp not in target_list:
+                    target_list.append(grp)
+
+    combined_by_name: dict[str, list[list[str]]] = {}
+    for tid, tag in tag_set.items():
+        if tid in explicit_ids:
+            continue
+        merged_groups: list[list[str]] = []
+        for grp in norm_pre_implied.get(tag.name.lower(), []):
+            if grp not in merged_groups:
+                merged_groups.append(grp)
+        for grp in implied_by_name.get(tag.name, []):
+            if grp not in merged_groups:
+                merged_groups.append(grp)
+        combined_by_name[tag.name] = merged_groups
+
+    converted_ids = convert_implied_by_names_to_ids(db, combined_by_name, tag_set)
+    implied_by_tag_id: dict[int, list[list[int]]] = {}
+    for tid in tag_set.keys():
+        if tid in explicit_ids:
+            continue
+        implied_by_tag_id[tid] = converted_ids.get(tid, [])
+
+    return list(tag_set.values()), implied_by_tag_id
+
+def apply_media_tag_implications(
+    db: Session,
+    media: Media,
+    implied_by_tag_id: dict[int, list[list[int]]],
+) -> None:
+    """Persist implied and implied_by (as Tag.id groups) for a Media item."""
+    if not media or not media.id:
+        return
+
+    current_tag_ids = [t.id for t in media.tags]
+    if not current_tag_ids:
+        db.expire(media, ["media_tag_links"])
+        return
+
+    non_implied_ids = [tid for tid in current_tag_ids if tid not in implied_by_tag_id]
+    if non_implied_ids:
+        db.execute(
+            blombooru_media_tags.update()
+            .where(
+                and_(
+                    blombooru_media_tags.c.media_id == media.id,
+                    blombooru_media_tags.c.tag_id.in_(non_implied_ids),
+                )
+            )
+            .values(implied=False, implied_by=None)
+        )
+
+    for tid, groups in implied_by_tag_id.items():
+        if tid in current_tag_ids:
+            db.execute(
+                blombooru_media_tags.update()
+                .where(
+                    and_(
+                        blombooru_media_tags.c.media_id == media.id,
+                        blombooru_media_tags.c.tag_id == tid,
+                    )
+                )
+                .values(implied=True, implied_by=groups)
+            )
+
+    db.expire(media, ["media_tag_links"])
+
+def resolve_media_tag_update(
+    db: Session,
+    media_id: int,
+    requested_tags: List[str],
+    client_implied_tags: Optional[Dict[str, List[List[str]]]] = None,
+    category_hints: Optional[dict] = None,
+    expand: bool = False,
+) -> tuple[List[Tag], dict[int, list[list[int]]]]:
+    """Resolve tags and implication attribution when updating an existing media item."""
+    from ..models import TagAlias
+    from ..utils.tag_utils import expand_implications, resolve_aliases
+
+    old_rows = db.query(
+        blombooru_media_tags.c.tag_id,
+        blombooru_media_tags.c.implied,
+        blombooru_media_tags.c.implied_by,
+    ).filter(blombooru_media_tags.c.media_id == media_id).all()
+
+    old_explicit_ids: set[int] = set()
+    old_implied_by_id: dict[int, list[list[int]]] = {}
+    for t_id, is_imp, imp_by in old_rows:
+        if is_imp:
+            old_implied_by_id[t_id] = _normalize_db_implied_by_ids(db, imp_by)
+        else:
+            old_explicit_ids.add(t_id)
+
+    seen_names: set[str] = set()
+    unique_names: list[str] = []
+    for name in requested_tags:
+        name = name.strip().lower()
+        if not name or name in seen_names:
+            continue
+        seen_names.add(name)
+        unique_names.append(name)
+
     alias_map = resolve_aliases(db, unique_names)
 
-    if not dry_run:
-        tag_set: dict[int, Tag] = {}
+    tag_set: dict[int, Tag] = {}
+    for name in unique_names:
+        if name in alias_map:
+            alias = db.query(TagAlias).filter(TagAlias.alias_name == name).first()
+            tag = alias.target_tag if alias else None
+        else:
+            tag = db.query(Tag).filter(Tag.name == name).first()
+            if not tag:
+                category = "general"
+                if category_hints and name in category_hints:
+                    category = category_hints[name]
+                tag = Tag(name=name, post_count=0, category=category)
+                db.add(tag)
+                db.flush()
+        if tag and tag.id not in tag_set:
+            tag_set[tag.id] = tag
 
-        for name in unique_names:
-            if name in alias_map:
-                alias = db.query(TagAlias).filter(TagAlias.alias_name == name).first()
-                tag = alias.target_tag if alias else None
+    validated_client_implied = validate_and_resolve_implied_by_ids(
+        db, tag_set, client_implied_tags
+    )
+
+    implied_by_tag_id: dict[int, list[list[int]]] = {}
+    newly_added_explicit_names: set[str] = set()
+
+    for tid, tag_obj in tag_set.items():
+        if tid in old_explicit_ids:
+            continue
+        elif tid in old_implied_by_id:
+            merged = list(old_implied_by_id[tid])
+            for grp in validated_client_implied.get(tid, []):
+                if grp not in merged:
+                    merged.append(grp)
+            implied_by_tag_id[tid] = merged
+        else:
+            if tid in validated_client_implied:
+                implied_by_tag_id[tid] = list(validated_client_implied[tid])
             else:
-                tag = db.query(Tag).filter(Tag.name == name).first()
-                if not tag:
-                    category = "general"
-                    if category_hints and name in category_hints:
-                        category = category_hints[name]
-                    tag = Tag(name=name, post_count=0, category=category)
-                    db.add(tag)
-                    db.flush()
+                newly_added_explicit_names.add(tag_obj.name.lower())
 
-            if tag and tag.id not in tag_set:
-                tag_set[tag.id] = tag
+    if expand and client_implied_tags is None and newly_added_explicit_names:
+        seed_names = None if not old_rows else newly_added_explicit_names
+        backend_implied_by = expand_implications(db, tag_set, seed_trigger_names=seed_names)
+        backend_id_groups = convert_implied_by_names_to_ids(db, backend_implied_by, tag_set)
+        for tid, tag_obj in tag_set.items():
+            if tid in old_explicit_ids or tag_obj.name.lower() in newly_added_explicit_names:
+                continue
+            if tid in backend_id_groups:
+                merged = implied_by_tag_id.setdefault(tid, [])
+                for grp in backend_id_groups[tid]:
+                    if grp not in merged:
+                        merged.append(grp)
 
-        if expand:
-            expand_implications(db, tag_set)
+    return list(tag_set.values()), implied_by_tag_id
 
-        return list(tag_set.values())
+def preview_or_create_tags(
+    db: Session,
+    tag_names: List[Union[str, dict, "ProposedTag"]],
+    category_hints: Optional[dict] = None,
+    expand: bool = True,
+    dry_run: bool = False,
+    pre_implied_map: Optional[Dict[str, List[List[str]]]] = None,
+    seed_trigger_names: Optional[Set[str]] = None,
+):
+    """Get or create tags by name (or preview them without creating if dry_run=True).
+    Resolves aliases and applies tag implications.
+
+    Args:
+        db: Database session
+        tag_names: List of tag name strings, ProposedTag objects, or dicts
+        category_hints: Optional dict mapping tag names to category strings
+                       (e.g. {"artist_name": "artist", "char_name": "character"}).
+                       When a tag doesn't exist and a hint is provided, the tag
+                       is created with that category instead of the default "general".
+        expand: Whether to recursively expand tag implications. Defaults to True.
+        dry_run: When True, do not create new Tag rows in the database;
+                 instead return proposed tag objects with is_new boolean.
+        pre_implied_map: Optional mapping of previously staged implied tag names
+                         to their implied_by trigger groups, carried forward on re-preview.
+        seed_trigger_names: Optional set of tag names to seed implication expansion.
+    """
+    from ..models import TagAlias
+    from ..utils.tag_utils import expand_implications, resolve_aliases
+
+    combined_pre_implied: dict[str, list[list[str]]] = {}
+    if pre_implied_map:
+        for k, grps in pre_implied_map.items():
+            if k and str(k).strip():
+                norm_k = str(k).strip().lower()
+                cleaned = _clean_implied_by_groups(grps)
+                target = combined_pre_implied.setdefault(norm_k, [])
+                for grp in cleaned:
+                    if grp not in target:
+                        target.append(grp)
+
+    raw_string_names: list[str] = []
+    for item in tag_names:
+        if isinstance(item, str):
+            raw_string_names.append(item)
+        elif isinstance(item, dict):
+            n = str(item.get("name", "")).strip()
+            if n:
+                raw_string_names.append(n)
+                if item.get("implied"):
+                    norm_n = n.lower()
+                    cleaned = _clean_implied_by_groups(item.get("implied_by"))
+                    target = combined_pre_implied.setdefault(norm_n, [])
+                    for grp in cleaned:
+                        if grp not in target:
+                            target.append(grp)
+        else:
+            n = str(getattr(item, "name", "")).strip()
+            if n:
+                raw_string_names.append(n)
+                if getattr(item, "implied", False):
+                    norm_n = n.lower()
+                    cleaned = _clean_implied_by_groups(getattr(item, "implied_by", None))
+                    target = combined_pre_implied.setdefault(norm_n, [])
+                    for grp in cleaned:
+                        if grp not in target:
+                            target.append(grp)
+
+    if not dry_run:
+        tags_list, _ = get_or_create_tags_with_implications(
+            db,
+            raw_string_names,
+            category_hints=category_hints,
+            expand=expand,
+            pre_implied_map=combined_pre_implied if combined_pre_implied else None,
+        )
+        return tags_list
+
+    # Deduplicate input names
+    seen_names: set[str] = set()
+    unique_names: list[str] = []
+    for name in raw_string_names:
+        name = name.strip().lower()
+        if not name or name in seen_names:
+            continue
+        seen_names.add(name)
+        unique_names.append(name)
+
+    all_lookup_names = set(unique_names) | set(combined_pre_implied.keys())
+    alias_map = resolve_aliases(db, list(all_lookup_names))
+
+    norm_pre_implied: dict[str, list[list[str]]] = {}
+    for k, groups in combined_pre_implied.items():
+        canon_k = alias_map[k][0].lower() if k in alias_map else k
+        existing = norm_pre_implied.setdefault(canon_k, [])
+        for grp in groups:
+            if grp not in existing:
+                existing.append(grp)
 
     # Dry run
-    import fnmatch
-    from sqlalchemy import select
-    from ..models import TagImplication
-    from ..schemas import ProposedTag
 
     tag_set: dict[int, Tag] = {}
+    explicit_ids: set[int] = set()
     new_tags: list[ProposedTag] = []
     seen_canonical: set[str] = set()
 
@@ -513,6 +897,8 @@ def preview_or_create_tags(
             tag = db.query(Tag).filter(Tag.name == canonical_name).first()
             if tag:
                 tag_set[tag.id] = tag
+                if canonical_name.lower() not in norm_pre_implied:
+                    explicit_ids.add(tag.id)
         else:
             if name in seen_canonical:
                 continue
@@ -520,42 +906,51 @@ def preview_or_create_tags(
             tag = db.query(Tag).filter(Tag.name == name).first()
             if tag:
                 tag_set[tag.id] = tag
+                if name.lower() not in norm_pre_implied:
+                    explicit_ids.add(tag.id)
             else:
                 category = "general"
                 if category_hints and name in category_hints:
                     category = category_hints[name]
+                is_pre_imp = name.lower() in norm_pre_implied
                 new_tags.append(ProposedTag(
                     name=name,
                     category=category,
+                    rating="none",
                     is_new=True,
-                    source="user"
+                    source="user",
+                    implied=is_pre_imp,
+                    implied_by=list(norm_pre_implied.get(name.lower(), [])) if is_pre_imp else [],
                 ))
 
+    implied_by_map: dict[str, list[list[str]]] = {}
     if expand:
-        expand_implications(db, tag_set)
-        pattern_only_implications = db.execute(
-            select(TagImplication)
-            .where(
-                TagImplication.target_tag_patterns.is_not(None),
-                ~TagImplication.target_tags.any(),
-            )
-            .options(selectinload(TagImplication.implied_tags))
-        ).scalars().all()
-        for imp in pattern_only_implications:
-            if imp.target_tag_patterns:
-                for n_tag in new_tags:
-                    if any(fnmatch.fnmatch(n_tag.name, pat) for pat in imp.target_tag_patterns):
-                        for implied in imp.implied_tags:
-                            if implied.id not in tag_set:
-                                tag_set[implied.id] = implied
+        implied_by_map = expand_implications(
+            db,
+            tag_set,
+            extra_names=[nt.name for nt in new_tags],
+            seed_trigger_names=seed_trigger_names,
+        )
 
     result: list[ProposedTag] = []
     for tag in tag_set.values():
+        is_imp = tag.id not in explicit_ids
+        imp_by: list[list[str]] = []
+        if is_imp:
+            for grp in norm_pre_implied.get(tag.name.lower(), []):
+                if grp not in imp_by:
+                    imp_by.append(grp)
+            for grp in implied_by_map.get(tag.name, []):
+                if grp not in imp_by:
+                    imp_by.append(grp)
         result.append(ProposedTag(
             name=tag.name,
             category=tag.category,
+            rating=tag.rating.value if tag.rating else "none",
             is_new=False,
-            source="user"
+            source="user",
+            implied=is_imp,
+            implied_by=imp_by,
         ))
     for n_tag in new_tags:
         if not any(r.name == n_tag.name for r in result):
@@ -577,6 +972,10 @@ def process_and_save_media(
     source: Optional[str],
     category_hints: Optional[str],
     description: Optional[str] = None,
+    explicit_date: Optional[Union[datetime, str]] = None,
+    booru_date: Optional[Union[datetime, str]] = None,
+    sidecar_date: Optional[Union[datetime, str]] = None,
+    client_date: Optional[Union[datetime, str]] = None,
 ) -> "MediaResponse":
     """Hash-check, thumbnail generation, DB insert, tag/album linking, and cache
     invalidation for a media file that is already on disk at *file_path*.
@@ -584,6 +983,11 @@ def process_and_save_media(
     Raises HTTPException 409 on duplicate hash.  Does NOT delete file_path on
     error. Callers are responsible for cleanup of files they created.
     """
+    if explicit_date is not None:
+        from ..utils.date_extractor import parse_explicit_custom_date
+        if parse_explicit_custom_date(explicit_date) is None:
+            raise HTTPException(status_code=422, detail="Invalid custom_date format")
+
     file_hash = calculate_file_hash(file_path)
 
     existing = db.query(Media).filter(Media.hash == file_hash).first()
@@ -611,59 +1015,91 @@ def process_and_save_media(
     relative_path = file_path.relative_to(settings.BASE_DIR)
     relative_thumb = thumbnail_path.relative_to(settings.BASE_DIR) if thumbnail_generated else None
 
-    media = Media(
-        filename=unique_filename,
-        path=str(relative_path),
-        transcoded_path=metadata.get("transcoded_path"),
-        thumbnail_path=str(relative_thumb) if relative_thumb else None,
-        hash=file_hash,
-        file_type=metadata["file_type"],
-        mime_type=metadata["mime_type"],
-        file_size=metadata["file_size"],
-        width=metadata["width"],
-        height=metadata["height"],
-        duration=metadata["duration"],
-        rating=rating,
-        source=source if source else None,
-        description=description if description else None,
-    )
+    committed = False
+    try:
+        from ..utils.date_extractor import resolve_custom_date
+        resolved_custom_date, _origin = resolve_custom_date(
+            file_path=file_path,
+            explicit_date=explicit_date,
+            booru_date=booru_date,
+            sidecar_date=sidecar_date,
+            client_date=client_date,
+        )
 
-    tag_ids_to_update = []
-    if tags:
-        tag_list = [t.strip() for t in tags.split() if t.strip()]
-        parsed_hints = None
-        if category_hints:
+        media = Media(
+            filename=unique_filename,
+            path=str(relative_path),
+            transcoded_path=metadata.get("transcoded_path"),
+            thumbnail_path=str(relative_thumb) if relative_thumb else None,
+            hash=file_hash,
+            file_type=metadata["file_type"],
+            mime_type=metadata["mime_type"],
+            file_size=metadata["file_size"],
+            width=metadata["width"],
+            height=metadata["height"],
+            duration=metadata["duration"],
+            rating=rating,
+            source=source if source else None,
+            description=description if description else None,
+            custom_date=resolved_custom_date,
+        )
+
+        tag_ids_to_update = []
+        implied_by_tag_id = {}
+        if tags:
+            tag_list = [t.strip() for t in tags.split() if t.strip()]
+            parsed_hints = None
+            if category_hints:
+                try:
+                    parsed_hints = json.loads(category_hints)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            media.tags, implied_by_tag_id = get_or_create_tags_with_implications(
+                db, tag_list, category_hints=parsed_hints, expand=True
+            )
+            tag_ids_to_update = [tag.id for tag in media.tags]
+            escalated = get_escalated_rating(media.rating, media.tags)
+            if escalated and media.rating != escalated:
+                media.rating = escalated
+            logger.debug(f"Tags added: {tag_list}")
+
+        a_ids = []
+        if album_ids:
             try:
-                parsed_hints = json.loads(category_hints)
-            except (json.JSONDecodeError, TypeError):
-                pass
-        media.tags = get_or_create_tags(db, tag_list, category_hints=parsed_hints)
-        tag_ids_to_update = [tag.id for tag in media.tags]
-        logger.debug(f"Tags added: {tag_list}")
+                a_ids = [
+                    int(id_str.strip())
+                    for id_str in album_ids.split(",")
+                    if id_str.strip().isdigit()
+                ]
+            except Exception as e:
+                logger.error(f"Error parsing album_ids: {e}")
 
-    a_ids = []
-    if album_ids:
-        try:
-            a_ids = [
-                int(id_str.strip())
-                for id_str in album_ids.split(",")
-                if id_str.strip().isdigit()
-            ]
-        except Exception as e:
-            logger.error(f"Error parsing album_ids: {e}")
-
-    db.add(media)
-    db.commit()
-    db.refresh(media)
-
-    if tag_ids_to_update:
-        update_tag_counts(db, tag_ids_to_update)
+        db.add(media)
+        db.flush()
+        if implied_by_tag_id:
+            apply_media_tag_implications(db, media, implied_by_tag_id)
         db.commit()
+        committed = True
+        db.refresh(media)
 
-    if a_ids:
-        set_media_albums(db, media.id, a_ids)
+        if tag_ids_to_update:
+            update_tag_counts(db, tag_ids_to_update)
+            db.commit()
 
-    db.refresh(media)
+        if a_ids:
+            set_media_albums(db, media.id, a_ids)
+
+        db.refresh(media)
+    except Exception:
+        if not committed:
+            db.rollback()
+            if thumbnail_generated and thumbnail_path.exists():
+                thumbnail_path.unlink(missing_ok=True)
+            if metadata.get("transcoded_path"):
+                t_path = settings.BASE_DIR / metadata["transcoded_path"]
+                if t_path.exists():
+                    t_path.unlink(missing_ok=True)
+        raise
 
     logger.info(f"Media saved: ID={media.id}, filename={unique_filename}")
 
@@ -691,7 +1127,7 @@ async def get_media_list(
         limit = settings.get_items_per_page()
     
     try:
-        query = db.query(Media).options(selectinload(Media.tags))
+        query = db.query(Media).options(selectinload(Media.tags), selectinload(Media.media_tag_links))
         
         if rating:
             valid_ratings = parse_rating_filter(rating)
@@ -734,7 +1170,7 @@ async def get_media_list(
         raise HTTPException(status_code=500, detail=safe_error_detail("Failed to retrieve media list", e))
 
 def _fetch_media_batch_tags_only(db: Session, media_ids: List[int], include_metadata: bool = False) -> List[dict]:
-    """Fast projection query returning only id, filename, file_type, tags (name, category), and optional metadata."""
+    """Fast projection query returning only id, filename, file_type, tags (name, category, rating), and optional metadata."""
     results = []
     
     for i in range(0, len(media_ids), BATCH_CHUNK_SIZE):
@@ -743,8 +1179,13 @@ def _fetch_media_batch_tags_only(db: Session, media_ids: List[int], include_meta
             Media.id,
             Media.filename,
             Media.file_type,
+            Media.rating,
+            Tag.id,
             Tag.name,
             Tag.category,
+            Tag.rating,
+            blombooru_media_tags.c.implied,
+            blombooru_media_tags.c.implied_by,
         ]
         if include_metadata:
             query_cols.append(Media.path)
@@ -757,21 +1198,52 @@ def _fetch_media_batch_tags_only(db: Session, media_ids: List[int], include_meta
             .order_by(Media.id)
         )
         rows = query.all()
+
+        chunk_id_to_name: dict[int, str] = {}
+        missing_trigger_ids: set[int] = set()
+        for row in rows:
+            t_id = row[4]
+            t_name = row[5]
+            if t_id is not None and t_name:
+                chunk_id_to_name[t_id] = t_name
+        for row in rows:
+            if row[8] and isinstance(row[9], list):
+                for grp in row[9]:
+                    if isinstance(grp, list):
+                        for item in grp:
+                            if isinstance(item, int) and not isinstance(item, bool):
+                                if item not in chunk_id_to_name:
+                                    missing_trigger_ids.add(item)
+                            elif isinstance(item, str) and item.strip().isdigit():
+                                tid_int = int(item.strip())
+                                if tid_int not in chunk_id_to_name:
+                                    missing_trigger_ids.add(tid_int)
+
+        if missing_trigger_ids:
+            for tid, tname in db.query(Tag.id, Tag.name).filter(Tag.id.in_(list(missing_trigger_ids))).all():
+                chunk_id_to_name[tid] = tname
+
         media_map = {}
         for row in rows:
             m_id = row[0]
             filename = row[1]
             file_type = row[2]
-            tag_name = row[3]
-            tag_cat = row[4]
-            rel_path = row[5] if include_metadata else None
+            media_rating = row[3]
+            tag_name = row[5]
+            tag_cat = row[6]
+            tag_rating = row[7]
+            tag_implied = row[8]
+            tag_implied_by = row[9]
+            rel_path = row[10] if include_metadata else None
 
             if m_id not in media_map:
                 ft_val = file_type.value if hasattr(file_type, 'value') else file_type
+                r_val = media_rating.value if hasattr(media_rating, 'value') else (media_rating or "safe")
                 item_dict = {
                     "id": m_id,
                     "filename": filename,
                     "file_type": ft_val,
+                    "rating": r_val,
                     "tags": []
                 }
                 if include_metadata:
@@ -788,9 +1260,36 @@ def _fetch_media_batch_tags_only(db: Session, media_ids: List[int], include_meta
 
             if tag_name:
                 cat_val = tag_cat.value if hasattr(tag_cat, 'value') else tag_cat
+                rat_val = tag_rating.value if hasattr(tag_rating, 'value') else (tag_rating or "none")
+                is_imp = bool(tag_implied)
+                resolved_imp_by: list[list[str]] = []
+                if is_imp and isinstance(tag_implied_by, list):
+                    for grp in tag_implied_by:
+                        if not isinstance(grp, list):
+                            continue
+                        names_grp: list[str] = []
+                        for item in grp:
+                            name_val: Optional[str] = None
+                            if isinstance(item, int) and not isinstance(item, bool):
+                                name_val = chunk_id_to_name.get(item)
+                            elif isinstance(item, str):
+                                s = item.strip()
+                                if s.isdigit():
+                                    name_val = chunk_id_to_name.get(int(s))
+                                elif s:
+                                    name_val = s.lower()
+                            if name_val and name_val not in names_grp:
+                                names_grp.append(name_val)
+                        if names_grp:
+                            names_grp.sort()
+                            if names_grp not in resolved_imp_by:
+                                resolved_imp_by.append(names_grp)
                 media_map[m_id]["tags"].append({
                     "name": tag_name,
-                    "category": cat_val
+                    "category": cat_val,
+                    "rating": rat_val,
+                    "implied": is_imp,
+                    "implied_by": resolved_imp_by,
                 })
 
         for m_id in chunk_ids:
@@ -803,7 +1302,7 @@ def _fetch_media_batch_full(db: Session, media_ids: List[int]) -> List[dict]:
     results = []
     for i in range(0, len(media_ids), BATCH_CHUNK_SIZE):
         chunk_ids = media_ids[i:i + BATCH_CHUNK_SIZE]
-        media_list = db.query(Media).options(selectinload(Media.tags)).filter(Media.id.in_(chunk_ids)).all()
+        media_list = db.query(Media).options(selectinload(Media.tags), selectinload(Media.media_tag_links)).filter(Media.id.in_(chunk_ids)).all()
         media_dict = {m.id: m for m in media_list}
         for m_id in chunk_ids:
             if m_id in media_dict:
@@ -930,6 +1429,11 @@ async def bulk_update_tags(
             norm = tag.strip().lower()
             if norm:
                 all_raw_tags.add(norm)
+        if item.implied_tags:
+            for k in item.implied_tags.keys():
+                norm_k = k.strip().lower()
+                if norm_k:
+                    all_raw_tags.add(norm_k)
 
     alias_map = resolve_aliases(db, list(all_raw_tags))
 
@@ -952,11 +1456,18 @@ async def bulk_update_tags(
     missing_tag_names = [n for n in resolved_unique_names if n not in existing_tags_map]
 
     if missing_tag_names:
-        from sqlalchemy.dialects.postgresql import insert as pg_insert
-        stmt = pg_insert(Tag).values([
-            {"name": name, "category": "general", "post_count": 0}
-            for name in missing_tag_names
-        ]).on_conflict_do_nothing(index_elements=["name"])
+        if db.bind and db.bind.dialect.name == "sqlite":
+            from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+            stmt = sqlite_insert(Tag).values([
+                {"name": name, "category": "general", "post_count": 0}
+                for name in missing_tag_names
+            ]).on_conflict_do_nothing(index_elements=["name"])
+        else:
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+            stmt = pg_insert(Tag).values([
+                {"name": name, "category": "general", "post_count": 0}
+                for name in missing_tag_names
+            ]).on_conflict_do_nothing(index_elements=["name"])
         db.execute(stmt)
         db.flush()
 
@@ -967,13 +1478,25 @@ async def bulk_update_tags(
             for t in tags:
                 existing_tags_map[t.name.lower()] = t
 
-    # 4. Fetch old tags to compute affected tag IDs
+    # 4. Fetch old tags to compute affected tag IDs and preserve implied metadata
     old_tag_ids = set()
+    old_tag_ids_by_media: Dict[int, set] = {}
+    old_tag_meta_by_media: Dict[int, Dict[int, tuple[bool, list[list[str]]]]] = {}
     for i in range(0, len(requested_ids), BATCH_CHUNK_SIZE):
         chunk = requested_ids[i:i + BATCH_CHUNK_SIZE]
-        rows = db.query(blombooru_media_tags.c.tag_id).filter(blombooru_media_tags.c.media_id.in_(chunk)).all()
-        for r in rows:
-            old_tag_ids.add(r[0])
+        rows = db.query(
+            blombooru_media_tags.c.media_id,
+            blombooru_media_tags.c.tag_id,
+            blombooru_media_tags.c.implied,
+            blombooru_media_tags.c.implied_by,
+        ).filter(blombooru_media_tags.c.media_id.in_(chunk)).all()
+        for m_id, t_id, is_imp, imp_by in rows:
+            old_tag_ids.add(t_id)
+            old_tag_ids_by_media.setdefault(m_id, set()).add(t_id)
+            old_tag_meta_by_media.setdefault(m_id, {})[t_id] = (
+                bool(is_imp),
+                imp_by if isinstance(imp_by, list) else [],
+            )
 
     # 5. Delete existing media tags for requested_ids
     for i in range(0, len(requested_ids), BATCH_CHUNK_SIZE):
@@ -985,8 +1508,24 @@ async def bulk_update_tags(
     # 6. Build new associations
     new_associations = []
     affected_tag_ids = set(old_tag_ids)
+    rating_changed_media = []
+
+    media_map = {}
+    for i in range(0, len(requested_ids), BATCH_CHUNK_SIZE):
+        chunk = requested_ids[i:i + BATCH_CHUNK_SIZE]
+        medias = db.query(Media).filter(Media.id.in_(chunk)).all()
+        for m in medias:
+            media_map[m.id] = m
 
     for item in payload.items:
+        old_meta = old_tag_meta_by_media.get(item.id, {})
+        old_explicit_ids = {tid for tid, (is_imp, _) in old_meta.items() if not is_imp}
+        old_implied_by_id = {
+            tid: _normalize_db_implied_by_ids(db, imp_by)
+            for tid, (is_imp, imp_by) in old_meta.items()
+            if is_imp
+        }
+
         item_tag_set = {}
         for raw_tag in item.tags:
             norm = raw_tag.strip().lower()
@@ -997,16 +1536,72 @@ async def bulk_update_tags(
             if tag_obj:
                 item_tag_set[tag_obj.id] = tag_obj
 
-        expand_implications(db, item_tag_set)
+        validated_client_implied = validate_and_resolve_implied_by_ids(
+            db, item_tag_set, item.implied_tags
+        )
+
+        item_implied_by_id: dict[int, list[list[int]]] = {}
+        newly_added_explicit_names: set[str] = set()
+
+        for tid, tag_obj in item_tag_set.items():
+            if tid in old_explicit_ids:
+                continue
+            elif tid in old_implied_by_id:
+                merged = list(old_implied_by_id[tid])
+                for grp in validated_client_implied.get(tid, []):
+                    if grp not in merged:
+                        merged.append(grp)
+                item_implied_by_id[tid] = merged
+            else:
+                if tid in validated_client_implied:
+                    item_implied_by_id[tid] = list(validated_client_implied[tid])
+                else:
+                    newly_added_explicit_names.add(tag_obj.name.lower())
+
+        should_expand = (item.implied_tags is None) or bool(newly_added_explicit_names)
+        if should_expand and item_tag_set:
+            seed_names = None if item.implied_tags is None else newly_added_explicit_names
+            backend_implied_by = expand_implications(db, item_tag_set, seed_trigger_names=seed_names)
+            backend_id_groups = convert_implied_by_names_to_ids(db, backend_implied_by, item_tag_set)
+            for tid, tag_obj in item_tag_set.items():
+                if tid in old_explicit_ids or tag_obj.name.lower() in newly_added_explicit_names:
+                    continue
+                if tid in backend_id_groups:
+                    merged = item_implied_by_id.setdefault(tid, [])
+                    for grp in backend_id_groups[tid]:
+                        if grp not in merged:
+                            merged.append(grp)
+
+        media = media_map.get(item.id)
+        if media:
+            previously_attached = old_tag_ids_by_media.get(item.id, set())
+            added_tags = [t for tid, t in item_tag_set.items() if tid not in previously_attached]
+            escalated = get_escalated_rating(media.rating, added_tags)
+            if escalated and media.rating != escalated:
+                media.rating = escalated
+                rating_changed_media.append((media.id, media.rating.value if hasattr(media.rating, "value") else media.rating))
 
         for tid in item_tag_set.keys():
             affected_tag_ids.add(tid)
-            new_associations.append({"media_id": item.id, "tag_id": tid})
+            is_imp = tid in item_implied_by_id
+            imp_by = item_implied_by_id.get(tid) if is_imp else None
+            new_associations.append({
+                "media_id": item.id,
+                "tag_id": tid,
+                "implied": is_imp,
+                "implied_by": imp_by,
+            })
 
     if new_associations:
         db.execute(blombooru_media_tags.insert(), new_associations)
 
+    for m in media_map.values():
+        db.expire(m, ["media_tag_links", "tags"])
+
     db.commit()
+
+    for m_id, new_r in rating_changed_media:
+        handle_media_rating_changed(db, m_id, new_r)
 
     # 7. Aggregate update tag counts
     if affected_tag_ids:
@@ -1024,6 +1619,60 @@ async def bulk_update_tags(
         updated_media_ids=requested_ids
     )
 
+@router.post("/bulk-update-ratings", response_model=BulkMediaRatingUpdateResponse)
+async def bulk_update_ratings(
+    payload: BulkMediaRatingUpdateRequest,
+    current_user: User = Depends(require_admin_mode),
+    db: Session = Depends(get_db)
+):
+    """Atomically update ratings across multiple media items."""
+    if not payload.items:
+        return BulkMediaRatingUpdateResponse(status="success", updated_count=0, updated_media_ids=[])
+
+    requested_ids = [item.id for item in payload.items]
+    if len(requested_ids) != len(set(requested_ids)):
+        raise HTTPException(status_code=400, detail="Duplicate media IDs in update request")
+
+    existing_media_map = {}
+    for i in range(0, len(requested_ids), BATCH_CHUNK_SIZE):
+        chunk = requested_ids[i:i + BATCH_CHUNK_SIZE]
+        found = db.query(Media).filter(Media.id.in_(chunk)).all()
+        for m in found:
+            existing_media_map[m.id] = m
+
+    missing_ids = set(requested_ids) - set(existing_media_map.keys())
+    if missing_ids:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Media items not found: {sorted(list(missing_ids))[:10]}"
+        )
+
+    updated_ids = []
+    rating_changed_media = []
+    for item in payload.items:
+        media = existing_media_map[item.id]
+        norm_rating = RatingEnum.normalize(item.rating)
+        if norm_rating and media.rating != norm_rating:
+            media.rating = norm_rating
+            rating_changed_media.append((media.id, norm_rating.value if hasattr(norm_rating, "value") else norm_rating))
+            updated_ids.append(media.id)
+
+    db.commit()
+
+    for m_id, new_r in rating_changed_media:
+        handle_media_rating_changed(db, m_id, new_r)
+
+    if updated_ids:
+        invalidate_media_cache()
+        for m_id in updated_ids:
+            invalidate_media_item_cache(m_id)
+
+    return BulkMediaRatingUpdateResponse(
+        status="success",
+        updated_count=len(updated_ids),
+        updated_media_ids=updated_ids
+    )
+
 @router.get("/{media_id}/related")
 @cache_response(expire=600, key_prefix="related_media")
 async def get_related_media(
@@ -1031,6 +1680,7 @@ async def get_related_media(
     media_id: int,
     limit: int = Query(12, ge=1, le=100),
     album_id: Optional[int] = Query(None),
+    q: Optional[str] = Query(default=None),
     rating: Optional[str] = Query(default=None),
     custom_filter: Optional[List[str]] = Query(default=None),
     db: Session = Depends(get_db)
@@ -1040,10 +1690,21 @@ async def get_related_media(
 
     if not isinstance(limit, int) or limit <= 0:
         limit = 12
-    if not isinstance(rating, str):
+    if not isinstance(q, str) or not q.strip():
+        q = None
+    else:
+        q = q.strip()
+    if not isinstance(rating, str) or not rating.strip():
         rating = None
-    if not isinstance(custom_filter, (list, tuple, str, set)):
-        custom_filter = None
+    else:
+        rating = rating.strip()
+    clean_custom_filter = None
+    if isinstance(custom_filter, (list, tuple, set)):
+        clean_custom_filter = [cf.strip() for cf in custom_filter if isinstance(cf, str) and cf.strip()]
+        if not clean_custom_filter:
+            clean_custom_filter = None
+    elif isinstance(custom_filter, str) and custom_filter.strip():
+        clean_custom_filter = [custom_filter.strip()]
 
     if similarity_index.rebuild_pending:
         await similarity_index.wait_for_build(timeout=10.0)
@@ -1054,6 +1715,8 @@ async def get_related_media(
     album_media_ids = None
     if isinstance(album_id, int):
         album_media_ids = set(get_flattened_media_ids(db, album_id))
+        if not album_media_ids:
+            return {"items": [], "status": "ready"}
 
     # Exclude parent, siblings, and children of current media
     excluded_hierarchy_ids: Set[int] = set()
@@ -1070,13 +1733,38 @@ async def get_related_media(
         for (cid,) in db.query(Media.id).filter(Media.parent_id == media_id).all():
             excluded_hierarchy_ids.add(cid)
 
-    has_filters = bool(rating or custom_filter)
-    fetch_limit = max(limit * 5, 50) if has_filters else limit
+    has_filters = bool(q or rating or clean_custom_filter)
+    candidate_media_ids = None
+
+    if has_filters:
+        media_filter_query = db.query(Media.id).distinct().filter(Media.id != media_id)
+        if album_media_ids is not None:
+            media_filter_query = media_filter_query.filter(Media.id.in_(album_media_ids))
+
+        parsed = parse_search_query(q or "")
+        media_filter_query = apply_search_criteria(media_filter_query, parsed, db)
+
+        if rating and 'rating' not in parsed.get('meta', {}):
+            valid_ratings = parse_rating_filter(rating)
+            if valid_ratings:
+                media_filter_query = media_filter_query.filter(Media.rating.in_(valid_ratings))
+            else:
+                return {"items": [], "status": "ready"}
+
+        if clean_custom_filter:
+            media_filter_query = apply_custom_filters_or(media_filter_query, clean_custom_filter, db)
+
+        media_filter_query = media_filter_query.order_by(None)
+        matching_rows = media_filter_query.all()
+        candidate_media_ids = {r[0] for r in matching_rows}
+        if not candidate_media_ids:
+            return {"items": [], "status": "ready"}
 
     similar_pairs = similarity_index.get_similar_media(
         media_id=media_id,
-        limit=fetch_limit,
-        album_media_ids=album_media_ids,
+        limit=limit,
+        album_media_ids=album_media_ids if not has_filters else None,
+        candidate_media_ids=candidate_media_ids,
         excluded_media_ids=excluded_hierarchy_ids,
     )
 
@@ -1087,17 +1775,7 @@ async def get_related_media(
     if not similar_ids:
         return {"items": [], "status": "ready"}
 
-    media_query = db.query(Media).options(selectinload(Media.tags)).filter(Media.id.in_(similar_ids))
-
-    if rating:
-        valid_ratings = parse_rating_filter(rating)
-        if valid_ratings:
-            media_query = media_query.filter(Media.rating.in_(valid_ratings))
-
-    if custom_filter:
-        media_query = apply_custom_filters_or(media_query, custom_filter, db)
-
-    media_records = media_query.all()
+    media_records = db.query(Media).options(selectinload(Media.tags), selectinload(Media.media_tag_links)).filter(Media.id.in_(similar_ids)).all()
     media_dict = {m.id: m for m in media_records}
 
     items = []
@@ -1263,7 +1941,7 @@ async def preview_media_description(
 @router.get("/{media_id}")
 async def get_media(media_id: int, db: Session = Depends(get_db)):
     """Get media by ID"""
-    media = db.query(Media).options(joinedload(Media.tags)).filter(Media.id == media_id).first()
+    media = db.query(Media).options(joinedload(Media.tags), selectinload(Media.media_tag_links)).filter(Media.id == media_id).first()
     if not media:
         raise HTTPException(status_code=404, detail="Media not found")
     
@@ -1274,7 +1952,7 @@ async def get_media(media_id: int, db: Session = Depends(get_db)):
     hierarchy = []
     if media.parent_id:
         # I am a child
-        related = db.query(Media).filter(
+        related = db.query(Media).options(selectinload(Media.tags), selectinload(Media.media_tag_links)).filter(
             or_(
                 Media.id == media.parent_id,
                 and_(Media.parent_id == media.parent_id, Media.id != media.id)
@@ -1283,7 +1961,7 @@ async def get_media(media_id: int, db: Session = Depends(get_db)):
         hierarchy = [MediaResponse.model_validate(r).model_dump() for r in related]
     else:
         # I might be a parent
-        children = db.query(Media).filter(Media.parent_id == media.id).all()
+        children = db.query(Media).options(selectinload(Media.tags), selectinload(Media.media_tag_links)).filter(Media.parent_id == media.id).all()
         hierarchy = [MediaResponse.model_validate(c).model_dump() for c in children]
     
     result['hierarchy'] = hierarchy
@@ -1356,6 +2034,7 @@ async def upload_media(
     source: Optional[str] = Form(None),
     category_hints: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
+    custom_date: Optional[str] = Form(None),
     current_user: User = Depends(require_admin_mode),
     db: Session = Depends(get_db)
 ):
@@ -1410,12 +2089,11 @@ async def upload_media(
                 source=source,
                 category_hints=category_hints,
                 description=description,
+                explicit_date=custom_date,
             )
         except HTTPException as e:
-            if e.status_code == 409:
-                # Duplicate: clean up only if it was a fresh upload (not a scan)
-                if not scanned_path and file_path.exists():
-                    file_path.unlink(missing_ok=True)
+            if not scanned_path and file_path.exists():
+                file_path.unlink(missing_ok=True)
             raise
 
     except HTTPException:
@@ -1458,13 +2136,40 @@ async def update_media(
         media.description_enlarged = updates.description_enlarged
 
     sync_description_enlarged(media)
+
+    custom_date_changed = False
+    if 'custom_date' in updates.model_fields_set:
+        old_custom_date = media.custom_date
+        if updates.custom_date is None or str(updates.custom_date).strip() == "":
+            media.custom_date = media.uploaded_at
+        else:
+            from ..utils.date_extractor import parse_explicit_custom_date
+            parsed = parse_explicit_custom_date(updates.custom_date)
+            if parsed is None:
+                raise HTTPException(status_code=422, detail="Invalid custom_date format")
+            media.custom_date = parsed
+        if old_custom_date != media.custom_date:
+            custom_date_changed = True
     
     affected_tag_ids = []
+    implied_by_tag_id_update: Optional[dict[int, list[list[str]]]] = None
     if updates.tags is not None:
         old_tag_ids = [tag.id for tag in media.tags]
-        media.tags = get_or_create_tags(db, updates.tags, expand=False)
+        previous_tags = list(media.tags)
+        tags_list, implied_by_tag_id_update = resolve_media_tag_update(
+            db,
+            media.id,
+            updates.tags,
+            client_implied_tags=updates.implied_tags,
+        )
+        media.tags = tags_list
         new_tag_ids = [tag.id for tag in media.tags]
         affected_tag_ids = list(set(old_tag_ids + new_tag_ids))
+        added_tags = [] if updates.rating else get_newly_added_tags(previous_tags, media.tags)
+        escalated = get_escalated_rating(media.rating, added_tags)
+        if escalated and media.rating != escalated:
+            media.rating = escalated
+            rating_changed = True
 
     parent_id_changed = False
     old_parent_id = media.parent_id
@@ -1492,10 +2197,13 @@ async def update_media(
                 parent_id_changed = True
             media.parent_id = None
     
+    db.flush()
+    if implied_by_tag_id_update is not None:
+        apply_media_tag_implications(db, media, implied_by_tag_id_update)
     db.commit()
 
     if rating_changed:
-        handle_media_rating_changed(db, media_id, updates.rating)
+        handle_media_rating_changed(db, media_id, media.rating.value if hasattr(media.rating, "value") else media.rating)
 
     if affected_tag_ids:
         update_tag_counts(db, affected_tag_ids)
@@ -1511,6 +2219,9 @@ async def update_media(
 
         if media.parent_id:
             invalidate_media_item_cache(media.parent_id)
+
+        if custom_date_changed:
+            invalidate_media_cache()
     else:
         invalidate_media_cache()
         invalidate_tag_cache()
@@ -2067,6 +2778,7 @@ async def finalize_chunked_upload(
     source: Optional[str] = Form(None),
     category_hints: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
+    custom_date: Optional[str] = Form(None),
     current_user: User = Depends(require_admin_mode),
     db: Session = Depends(get_db)
 ):
@@ -2121,10 +2833,10 @@ async def finalize_chunked_upload(
                 source=source,
                 category_hints=category_hints,
                 description=description,
+                explicit_date=custom_date,
             )
         except HTTPException as e:
-            if e.status_code == 409:
-                file_path.unlink(missing_ok=True)
+            file_path.unlink(missing_ok=True)
             raise
 
     except HTTPException:

@@ -58,60 +58,70 @@ span.checked:hover {
 .category-filter-label-general:hover {
     border-color: var(--tag-general);
 }
-.category-filter-input:checked + .category-filter-label-general {
+
+.category-filter-input:checked+.category-filter-label-general {
     border-color: var(--tag-general);
     background-color: var(--tag-general);
     color: var(--tag-text);
 }
-.category-filter-input:checked + .category-filter-label-general:hover {
+
+.category-filter-input:checked+.category-filter-label-general:hover {
     filter: brightness(1.1);
 }
 
 .category-filter-label-artist:hover {
     border-color: var(--tag-artist);
 }
-.category-filter-input:checked + .category-filter-label-artist {
+
+.category-filter-input:checked+.category-filter-label-artist {
     border-color: var(--tag-artist);
     background-color: var(--tag-artist);
     color: var(--tag-text);
 }
-.category-filter-input:checked + .category-filter-label-artist:hover {
+
+.category-filter-input:checked+.category-filter-label-artist:hover {
     filter: brightness(1.1);
 }
 
 .category-filter-label-character:hover {
     border-color: var(--tag-character);
 }
-.category-filter-input:checked + .category-filter-label-character {
+
+.category-filter-input:checked+.category-filter-label-character {
     border-color: var(--tag-character);
     background-color: var(--tag-character);
     color: var(--tag-text);
 }
-.category-filter-input:checked + .category-filter-label-character:hover {
+
+.category-filter-input:checked+.category-filter-label-character:hover {
     filter: brightness(1.1);
 }
 
 .category-filter-label-copyright:hover {
     border-color: var(--tag-copyright);
 }
-.category-filter-input:checked + .category-filter-label-copyright {
+
+.category-filter-input:checked+.category-filter-label-copyright {
     border-color: var(--tag-copyright);
     background-color: var(--tag-copyright);
     color: var(--tag-text);
 }
-.category-filter-input:checked + .category-filter-label-copyright:hover {
+
+.category-filter-input:checked+.category-filter-label-copyright:hover {
     filter: brightness(1.1);
 }
 
 .category-filter-label-meta:hover {
     border-color: var(--tag-meta);
 }
-.category-filter-input:checked + .category-filter-label-meta {
+
+.category-filter-input:checked+.category-filter-label-meta {
     border-color: var(--tag-meta);
     background-color: var(--tag-meta);
     color: var(--tag-text);
 }
-.category-filter-input:checked + .category-filter-label-meta:hover {
+
+.category-filter-input:checked+.category-filter-label-meta:hover {
     filter: brightness(1.1);
 }
 
@@ -196,18 +206,22 @@ span.checked .filter-check-icon {
     color: var(--success);
 }
 
+#tags-input .implied-tag,
+[contenteditable="true"] .implied-tag {
+    text-decoration: underline dotted var(--info);
+    text-decoration-thickness: 1.5px;
+    text-underline-offset: 3px;
+}
+
 /* Tag suggestion styling */
 .tag-suggestions {
-    position: absolute;
-    z-index: 1000;
+    position: fixed;
+    z-index: 100000 !important;
     background: var(--surface);
     border: 1px solid var(--border);
     border-top: none;
     max-height: 200px;
     overflow-y: auto;
-    top: 100%;
-    left: 0;
-    width: 100%;
 }
 
 .bulk-tag-item:focus-within,
@@ -368,6 +382,72 @@ a.tag:hover {
     background-color: var(--tag-meta);
 }
 
+/* Tag Rating Badges */
+.tag-rating-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.25rem;
+    height: 1.25rem;
+    padding: 0 0.25rem;
+    font-size: 0.65rem;
+    font-weight: 700;
+    line-height: 1;
+    text-transform: uppercase;
+    border: 1px solid currentColor;
+    user-select: none;
+    letter-spacing: 0.02em;
+    flex-shrink: 0;
+    transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.tag-rating-badge.rating-safe {
+    color: var(--rating-safe);
+    background-color: color-mix(in srgb, var(--rating-safe) 15%, transparent);
+}
+
+.tag-rating-badge.rating-questionable {
+    color: var(--rating-questionable);
+    background-color: color-mix(in srgb, var(--rating-questionable) 15%, transparent);
+}
+
+.tag-rating-badge.rating-explicit {
+    color: var(--rating-explicit);
+    background-color: color-mix(in srgb, var(--rating-explicit) 15%, transparent);
+}
+
+.tag-rating-badge.rating-none {
+    color: var(--text-tertiary);
+    border-color: var(--border);
+    background-color: color-mix(in srgb, var(--text-tertiary) 10%, transparent);
+}
+
+/* Tag Rating Styles */
+.tag.rating-safe {
+    background-color: var(--rating-safe);
+    color: var(--tag-text);
+}
+
+.tag.rating-questionable {
+    background-color: var(--rating-questionable);
+    color: var(--tag-text);
+}
+
+.tag.rating-explicit {
+    background-color: var(--rating-explicit);
+    color: var(--tag-text);
+}
+
+.tag.rating-none {
+    background-color: var(--surface-light);
+    color: var(--text-secondary);
+}
+
+.tag-rating-element .custom-select-dropdown {
+    min-width: 10rem;
+    white-space: nowrap;
+}
+
 /* Tag Gallery Item */
 .tag-card {
     transition: background-color 0.15s ease, border-color 0.15s ease;
@@ -411,7 +491,7 @@ a.tag:hover {
 }
 
 .gallery-item a img.gif-preview,
-.gallery-item .blur-wrapper > img.gif-preview {
+.gallery-item .blur-wrapper>img.gif-preview {
     opacity: 1;
     transition: border-color 0.15s ease;
 }
@@ -1092,6 +1172,15 @@ video:focus-visible {
     }
 }
 
+#bulk-actions {
+    top: -1px;
+    transition: top 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+body:has(#main-header.-translate-y-full) #bulk-actions {
+    top: calc(var(--header-height, 0px) * -1 - 1px);
+}
+
 /* Manual Reorder */
 body.is-dragging #main-header,
 body.is-dragging .manual-reorder-bar {
@@ -1209,15 +1298,15 @@ body.reorder-active-mode .gallery-item .select-checkbox {
 }
 
 /* Administrative Tasks and Admin Views Exception: Never blur */
-body.reorder-active-mode .gallery-item.blur-content .blur-wrapper > img,
+body.reorder-active-mode .gallery-item.blur-content .blur-wrapper>img,
 body.reorder-active-mode .album-thumb-blur img,
 body.reorder-active-mode #nav-prev-btn #nav-prev-thumb,
 body.reorder-active-mode #nav-next-btn #nav-next-thumb,
-.selection-mode .gallery-item.blur-content .blur-wrapper > img,
+.selection-mode .gallery-item.blur-content .blur-wrapper>img,
 .selection-mode .album-thumb-blur img,
-.gallery-item.selected.blur-content .blur-wrapper > img,
+.gallery-item.selected.blur-content .blur-wrapper>img,
 #admin-panel .blur-content img,
-#admin-panel .blur-wrapper > img,
+#admin-panel .blur-wrapper>img,
 #admin-panel .album-thumb-blur img,
 .mpicker-gallery img,
 .mpicker-container img,

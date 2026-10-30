@@ -10,6 +10,7 @@ class TagImplicationManager {
         this.saveBtn = this.form.querySelector('button[type="submit"]');
         this.cancelBtn = document.getElementById('tag-implication-cancel');
         this.applyAllBtn = document.getElementById('apply-all-implications');
+        this.backfillBtn = document.getElementById('backfill-implied-tags-btn');
         this.searchBar = document.getElementById('tag-implication-search-bar');
         this.searchInput = document.getElementById('tag-implication-search');
         this.paginationContainer = document.getElementById('tag-implication-pagination');
@@ -37,6 +38,10 @@ class TagImplicationManager {
 
         if (this.applyAllBtn) {
             this.applyAllBtn.addEventListener('click', () => this.handleApplyAll());
+        }
+
+        if (this.backfillBtn) {
+            this.backfillBtn.addEventListener('click', () => this.handleBackfillImpliedTags());
         }
 
         // Target input: validation + autocomplete.
@@ -379,7 +384,7 @@ class TagImplicationManager {
             this.showStatus(window.i18n.t('notifications.save_success'), 'success');
             this.resetForm();
             this.loadImplications(this.currentPage, this.currentSearch);
-            window.app.content.loadTagStats();
+            window.adminPanel.content.loadTagStats();
         } catch (e) {
             console.error('Save error:', e);
             this.showStatus(e.message, 'error');
@@ -400,7 +405,7 @@ class TagImplicationManager {
                     this.showStatus(window.i18n.t('notifications.delete_success'), 'success');
                     if (this.editingId === id) this.resetForm();
                     this.loadImplications(this.currentPage, this.currentSearch);
-                    window.app.content.loadTagStats();
+                    window.adminPanel.content.loadTagStats();
                 } catch (e) {
                     this.showStatus(e.message, 'error');
                 }
@@ -449,11 +454,13 @@ class TagImplicationManager {
             if (typeof BulkManualTagEditorModal !== 'undefined') {
                 const affectedIds = affectedMedia.map(m => m.media_id);
                 const prefillTags = {};
+                const prefillImpliedBy = {};
                 affectedMedia.forEach(m => {
                     prefillTags[m.media_id] = m.added_tags;
+                    prefillImpliedBy[m.media_id] = m.implied_by || {};
                 });
 
-                const modal = new BulkManualTagEditorModal({ prefillTags });
+                const modal = new BulkManualTagEditorModal({ prefillTags, prefillImpliedBy });
                 modal.show(affectedIds);
             } else {
                 this.showStatus(`Found ${affectedMedia.length} affected media items, but bulk editor is not loaded.`, 'error');
@@ -464,6 +471,61 @@ class TagImplicationManager {
         } finally {
             if (this.applyAllBtn) {
                 this.applyAllBtn.disabled = false;
+            }
+        }
+    }
+
+    handleBackfillImpliedTags() {
+        new ModalHelper({
+            type: 'warning',
+            title: window.i18n.t('common.confirm_1_title'),
+            message: window.i18n.t('admin.tags_implications.backfill_implied_confirm_msg'),
+            confirmText: window.i18n.t('common.yes'),
+            cancelText: window.i18n.t('common.no'),
+            onConfirm: async () => {
+                await this.executeBackfillImpliedTags();
+            }
+        }).show();
+    }
+
+    async executeBackfillImpliedTags() {
+        if (this.backfillBtn) {
+            this.backfillBtn.disabled = true;
+        }
+
+        this.showStatus(window.i18n.t('admin.tags_implications.backfill_implied_processing'), 'info');
+        try {
+            const response = await fetch('/api/tag-implications/backfill-implied-tags', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({}));
+                throw new Error(error.detail || 'Failed to backfill implied tags');
+            }
+
+            const data = await response.json();
+            const updatedTags = data.updated_tags_count || 0;
+            const updatedMedia = data.updated_media_count || 0;
+
+            if (updatedTags === 0) {
+                this.showStatus(window.i18n.t('admin.tags_implications.backfill_implied_none'), 'info');
+            } else {
+                this.showStatus(
+                    window.i18n.t('admin.tags_implications.backfill_implied_success', {
+                        tags: updatedTags,
+                        media: updatedMedia
+                    }),
+                    'success'
+                );
+            }
+        } catch (e) {
+            console.error('Error backfilling implied tags:', e);
+            this.showStatus(e.message, 'error');
+        } finally {
+            if (this.backfillBtn) {
+                this.backfillBtn.disabled = false;
             }
         }
     }

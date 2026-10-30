@@ -439,15 +439,13 @@ class UploadUploaderShell {
                     }
                     if (archiveErr.name === 'AbortError' || signal.aborted) break;
                     console.error(`Failed to process archive ${archiveFile.name}:`, archiveErr);
-                    if (window.app && window.app.showNotification) {
-                        window.app.showNotification(
-                            window.i18n.t('upload.progress.extracted_error', {
-                                filename: archiveFile.name,
-                                error: archiveErr.message || ''
-                            }),
-                            'error'
-                        );
-                    }
+                    window.app.showNotification(
+                        window.i18n.t('upload.progress.extracted_error', {
+                            filename: archiveFile.name,
+                            error: archiveErr.message || ''
+                        }),
+                        'error'
+                    );
                     if (this.isSystemicError(archiveErr)) {
                         break;
                     }
@@ -504,7 +502,7 @@ class UploadUploaderShell {
                 }
             }
 
-            if (!signal.aborted && window.app && window.app.showNotification) {
+            if (!signal.aborted) {
                 if (totalDuplicates > 0) {
                     if (totalStaged === 0 && totalDuplicates === 1 && totalFailed === 0 && lastDuplicateMsg) {
                         window.app.showNotification(window.i18n.t(lastDuplicateMsg), 'warning');
@@ -535,9 +533,7 @@ class UploadUploaderShell {
                 return;
             }
             console.error('Error staging files:', e);
-            if (window.app && window.app.showNotification) {
-                window.app.showNotification(window.i18n.t(e.message), 'error');
-            }
+            window.app.showNotification(window.i18n.t(e.message), 'error');
         } finally {
             this.isProcessingFiles = false;
             this.uploadArea?.classList.remove('opacity-50', 'pointer-events-none');
@@ -781,14 +777,12 @@ class UploadUploaderShell {
         try {
             const result = await this.session.commit();
 
-            if (window.app && window.app.showNotification) {
-                window.app.showNotification(window.i18n.t('upload.progress.upload_success', { count: result.total_created }), 'success');
-                if (result.total_duplicates > 0) {
-                    window.app.showNotification(
-                        window.i18n.t('upload.progress.duplicates_skipped', { count: result.total_duplicates }),
-                        'warning'
-                    );
-                }
+            window.app.showNotification(window.i18n.t('upload.progress.upload_success', { count: result.total_created }), 'success');
+            if (result.total_duplicates > 0) {
+                window.app.showNotification(
+                    window.i18n.t('upload.progress.duplicates_skipped', { count: result.total_duplicates }),
+                    'warning'
+                );
             }
 
             // Refresh media statistics if available
@@ -797,9 +791,7 @@ class UploadUploaderShell {
             }
         } catch (e) {
             console.error('Error committing upload session:', e);
-            if (window.app && window.app.showNotification) {
-                window.app.showNotification(e.message, 'error');
-            }
+            window.app.showNotification(e.message, 'error');
         } finally {
             if (submitBtn) {
                 submitBtn.disabled = false;
@@ -867,6 +859,8 @@ class UploadUploaderShell {
             baseDescription: metadata.description || '',
             categoryHints: metadata.categoryHints || null,
             userAssignedTags: metadata.userAssignedTags || null,
+            booru_date: metadata.booru_date || metadata.uploaded_at || null,
+            custom_date: metadata.custom_date || null,
             ...options,
             signal,
         });

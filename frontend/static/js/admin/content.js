@@ -4,6 +4,8 @@ class AdminContent {
         this.isScanning = false;
         this.scanAbortController = null;
         this._scanOriginalText = null;
+        this.isTranscoding = false;
+        this._transcodeOriginalText = null;
     }
 
     cancelScan() {
@@ -515,9 +517,9 @@ class AdminContent {
                 skipped: result.skipped,
                 failed: result.failed,
             });
-            resultDiv.innerHTML = `<div class="bg-success p-3 tag-text"><strong>${msg}</strong></div>`;
+            resultDiv.innerHTML = `<div class="bg-success p-3 tag-text"><strong>${escapeHtml(msg)}</strong></div>`;
         } catch (error) {
-            resultDiv.innerHTML = `<div class="bg-danger p-3 tag-text"><strong>Error:</strong> ${error.message}</div>`;
+            resultDiv.innerHTML = `<div class="bg-danger p-3 tag-text"><strong>${escapeHtml(window.i18n.t('common.error'))}:</strong> ${escapeHtml(error.message)}</div>`;
         } finally {
             btn.disabled = false;
             allBtn.disabled = false;
@@ -555,9 +557,9 @@ class AdminContent {
                         generated: result.generated,
                         failed: result.failed,
                     });
-                    resultDiv.innerHTML = `<div class="bg-success p-3 tag-text"><strong>${msg}</strong></div>`;
+                    resultDiv.innerHTML = `<div class="bg-success p-3 tag-text"><strong>${escapeHtml(msg)}</strong></div>`;
                 } catch (error) {
-                    resultDiv.innerHTML = `<div class="bg-danger p-3 tag-text"><strong>Error:</strong> ${error.message}</div>`;
+                    resultDiv.innerHTML = `<div class="bg-danger p-3 tag-text"><strong>${escapeHtml(window.i18n.t('common.error'))}:</strong> ${escapeHtml(error.message)}</div>`;
                 } finally {
                     btn.disabled = false;
                     missingBtn.disabled = false;
@@ -603,6 +605,154 @@ class AdminContent {
         } finally {
             btn.disabled = false;
             btn.textContent = originalText;
+        }
+    }
+
+    async checkTranscodeStatus() {
+        if (this.isTranscoding) return;
+        try {
+            const status = await app.apiCall('/api/admin/transcode-media/status');
+            if (status && status.running) {
+                await this.pollTranscodeJob();
+            }
+        } catch (error) {
+            console.error('Error checking transcode status:', error);
+        }
+    }
+
+    async pollTranscodeJob() {
+        if (this.isTranscoding) return;
+        this.isTranscoding = true;
+
+        const btn = document.getElementById('transcode-media-btn');
+        const statusDiv = document.getElementById('transcode-media-status');
+        const resultDiv = document.getElementById('transcode-media-result');
+        const originalText = this._transcodeOriginalText || btn?.textContent;
+        if (btn && !this._transcodeOriginalText) {
+            this._transcodeOriginalText = originalText;
+        }
+
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = window.i18n.t('common.processing');
+        }
+        if (statusDiv) statusDiv.style.display = 'block';
+
+        const updateProgressUI = (status) => {
+            if (!resultDiv) return;
+            if (!status.total) {
+                resultDiv.innerHTML = `<div class="bg-primary primary-text p-3"><strong>${window.i18n.t('common.processing')}</strong></div>`;
+                return;
+            }
+            const fileInfo = status.current_file ? ` (${escapeHtml(status.current_file)})` : '';
+            const text = window.i18n.t('admin.media_management.maintenance.transcoding.progress', {
+                current: status.current,
+                total: status.total,
+                file: fileInfo,
+                transcoded: status.transcoded,
+                skipped: status.skipped + status.already_transcoded,
+            });
+            resultDiv.innerHTML = `<div class="bg-primary primary-text p-3"><strong>${escapeHtml(text)}</strong></div>`;
+        };
+
+        try {
+            let done = false;
+            let finalStatus = null;
+            while (!done) {
+                const status = await app.apiCall('/api/admin/transcode-media/status');
+                if (status.error) {
+                    throw new Error(status.error);
+                }
+                if (!status.running) {
+                    done = true;
+                    finalStatus = status.last_result || status;
+                } else {
+                    updateProgressUI(status);
+                    await new Promise((resolve) => setTimeout(resolve, 1000));
+                }
+            }
+
+            const msg = window.i18n.t('admin.media_management.maintenance.transcoding.done', {
+                transcoded: finalStatus.transcoded,
+                skipped: finalStatus.skipped + finalStatus.already_transcoded,
+                failed: finalStatus.failed
+            });
+            if (resultDiv) {
+                resultDiv.innerHTML = `<div class="bg-success p-3 tag-text"><strong>${escapeHtml(msg)}</strong></div>`;
+            }
+            app.showNotification(msg, 'success');
+            await this.loadMediaStats();
+        } catch (error) {
+            if (resultDiv) {
+                resultDiv.innerHTML = `<div class="bg-danger p-3 tag-text"><strong>${window.i18n.t('common.error')}:</strong> ${escapeHtml(error.message)}</div>`;
+            }
+            app.showNotification(error.message, 'error');
+        } finally {
+            this.isTranscoding = false;
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = this._transcodeOriginalText || originalText;
+            }
+        }
+    }
+
+    async transcodeMedia() {
+        if (this.isTranscoding) return;
+        const btn = document.getElementById('transcode-media-btn');
+        const statusDiv = document.getElementById('transcode-media-status');
+        const resultDiv = document.getElementById('transcode-media-result');
+        if (!btn) return;
+        const originalText = this._transcodeOriginalText || btn.textContent;
+        this._transcodeOriginalText = originalText;
+
+        btn.disabled = true;
+        btn.textContent = window.i18n.t('common.processing');
+        if (statusDiv) statusDiv.style.display = 'block';
+        if (resultDiv) {
+            resultDiv.innerHTML = `<div class="bg-primary primary-text p-3"><strong>${window.i18n.t('common.processing')}</strong></div>`;
+        }
+
+        try {
+            const res = await fetch('/api/admin/transcode-media', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (res.status === 409) {
+                // Check if transcoding job is already running to reattach
+                const status = await app.apiCall('/api/admin/transcode-media/status');
+                if (status && status.running) {
+                    await this.pollTranscodeJob();
+                    return;
+                }
+                throw new Error(window.i18n.t('common.processing'));
+            }
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                let errorMsg = errData.detail || 'API call failed';
+                if (typeof errorMsg === 'string') {
+                    const translated = window.i18n.t(`notifications.admin.${errorMsg}`);
+                    if (translated !== `notifications.admin.${errorMsg}`) {
+                        errorMsg = translated;
+                    } else {
+                        const directTranslated = window.i18n.t(errorMsg);
+                        if (directTranslated !== errorMsg) {
+                            errorMsg = directTranslated;
+                        }
+                    }
+                }
+                throw new Error(errorMsg);
+            }
+
+            await this.pollTranscodeJob();
+        } catch (error) {
+            if (resultDiv) {
+                resultDiv.innerHTML = `<div class="bg-danger p-3 tag-text"><strong>${window.i18n.t('common.error')}:</strong> ${escapeHtml(error.message)}</div>`;
+            }
+            app.showNotification(error.message, 'error');
+            btn.disabled = false;
+            btn.textContent = this._transcodeOriginalText || originalText;
         }
     }
 
@@ -702,6 +852,9 @@ class AdminContent {
 
         const applyAliasesBtn = document.getElementById('apply-aliases-btn');
         applyAliasesBtn?.addEventListener('click', () => this.handleApplyAllAliases());
+
+        const applyTagRatingsBtn = document.getElementById('apply-tag-ratings-btn');
+        applyTagRatingsBtn?.addEventListener('click', () => this.handleApplyTagRatings());
 
         // Clear tags
         const clearBtn = document.getElementById('clear-tags-btn');
@@ -820,6 +973,8 @@ class AdminContent {
         } catch (error) {
             console.error('Error loading media stats:', error);
         }
+
+        await this.checkTranscodeStatus();
     }
 
     async uploadCSV(file) {
@@ -944,35 +1099,31 @@ class AdminContent {
                     }
                 }
 
-                let ratingLabel = 'err';
-                if (tag.rating) {
-                    const ratings = [
-                        { value: 'none', label: window.i18n.t('common.none')},
-                        { value: 'safe', label: window.i18n.t('common.safe') },
-                        { value: 'questionable', label: window.i18n.t('common.questionable') },
-                        { value: 'explicit', label: window.i18n.t('common.explicit') },
-                    ];
-                    ratingLabel = (ratings.find(c => c.value === tag.rating) || ratings[0]).label;
-                }
+                const tagRatingVal = tag.rating || 'none';
+                const ratingBadgeHtml = (typeof TagRating !== 'undefined')
+                    ? TagRating.renderBadge(tagRatingVal)
+                    : `<span class="tag rating-${tagRatingVal} tag-text uppercase text-[10px] font-bold tracking-wider px-2 py-0.5 select-none">${tagRatingVal}</span>`;
 
                 return `
-                <div class="bg px-2 py-1.5 ${i === arr.length - 1 ? '' : 'border-b'} flex flex-wrap items-center gap-2">
+                <div class="bg px-2 py-1.5 ${i === arr.length - 1 ? '' : 'border-b'} flex flex-wrap items-center gap-2" data-tag-rating="${tagRatingVal}">
                     <div class="flex items-center gap-2 min-w-0">
                         <button class="manage-tag-btn flex-shrink-0 flex items-center justify-center w-7 h-7 bg-primary primary-text hover:bg-primary border-primary hover:border-primary transition-colors cursor-pointer"
                             data-tag-id="${tag.id}"
                             data-tag-name="${escapeHtml(tag.name)}"
                             data-tag-category="${tag.category}"
-                            data-tag-rating="${tag.rating}"
+                            data-tag-rating="${tagRatingVal}"
                             title="${window.i18n.t('admin.tags_management.manage_tag')}">
                             ${window.Icons.tagMenu({ size: 14 })}
                         </button>
-                        <a href="/?q=${encodeURIComponent(tag.name)}" class="tag ${tag.category} tag-text overflow-hidden whitespace-nowrap text-ellipsis">${tag.name}</a>
+                        <a href="/?q=${encodeURIComponent(tag.name)}" class="tag ${tag.category} tag-text overflow-hidden whitespace-nowrap text-ellipsis" data-tag-rating="${tagRatingVal}">${tag.name}</a>
                     </div>
                     <div class="flex justify-between items-center gap-2 flex-1">
                         <span class="text-xs text-secondary">(${tag.post_count})</span>
                         ${creationDateStr ? `<span class="text-xs text-secondary text-center">${creationDateStr}</span>` : ''}
-                        <span class="text-xs text-secondary uppercase flex-1 text-right">${ratingLabel}</span>
-                        <span class="text-xs text-secondary uppercase">${tag.category}</span>
+                        <div class="flex items-center gap-2 ml-auto">
+                            <span class="text-xs text-secondary uppercase">${tag.category}</span>
+                            ${ratingBadgeHtml}
+                        </div>
                     </div>
                 </div>
                 `;
@@ -1206,6 +1357,78 @@ class AdminContent {
             }
         } catch (e) {
             console.error('Error applying tag aliases:', e);
+            if (typeof app !== 'undefined' && app.showNotification) {
+                app.showNotification(e.message, 'error');
+            }
+        } finally {
+            if (applyBtn) {
+                applyBtn.disabled = false;
+            }
+        }
+    }
+
+    handleApplyTagRatings() {
+        new ModalHelper({
+            type: 'warning',
+            title: window.i18n.t('common.confirm_1_title'),
+            message: window.i18n.t('admin.tags_management.apply_tag_ratings_confirm_msg'),
+            confirmText: window.i18n.t('common.yes'),
+            cancelText: window.i18n.t('common.no'),
+            onConfirm: async () => {
+                this.executeApplyTagRatings();
+            }
+        }).show();
+    }
+
+    async executeApplyTagRatings() {
+        const applyBtn = document.getElementById('apply-tag-ratings-btn');
+        if (applyBtn) {
+            applyBtn.disabled = true;
+        }
+
+        if (typeof app !== 'undefined' && app.showNotification) {
+            app.showNotification(window.i18n.t('admin.tags_management.apply_tag_ratings_processing'), 'info');
+        }
+
+        try {
+            const response = await fetch('/api/admin/simulate-apply-tag-ratings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to simulate applying tag ratings');
+            }
+
+            const data = await response.json();
+            const affectedMedia = data.affected_media || [];
+
+            if (affectedMedia.length === 0) {
+                if (typeof app !== 'undefined' && app.showNotification) {
+                    app.showNotification(window.i18n.t('admin.tags_management.apply_tag_ratings_no_affected'), 'info');
+                }
+            } else if (typeof BulkRatingModal !== 'undefined') {
+                const affectedIds = affectedMedia.map(m => m.media_id);
+                const prefillRatings = {};
+                affectedMedia.forEach(m => {
+                    if (m.new_rating) {
+                        prefillRatings[m.media_id] = m.new_rating;
+                    }
+                });
+
+                const modal = new BulkRatingModal({
+                    prefillRatings,
+                    onSave: () => {
+                        window.adminPanel.content.loadTagStats();
+                    }
+                });
+                modal.show(affectedIds);
+            } else {
+                console.error('BulkRatingModal is not loaded');
+            }
+        } catch (e) {
+            console.error('Error applying tag ratings:', e);
             if (typeof app !== 'undefined' && app.showNotification) {
                 app.showNotification(e.message, 'error');
             }
@@ -1452,6 +1675,7 @@ class AdminContent {
             }
 
             // Reload data
+            await this.refreshAlbumTree();
             await this.app.content.loadAlbumStats();
             await this.loadAlbums();
 
@@ -1465,6 +1689,19 @@ class AdminContent {
         const query = searchInput ? searchInput.value.trim() : '';
         if (this.albumTree) {
             this.albumTree.handleSearch(query);
+        }
+    }
+
+    async refreshAlbumTree() {
+        if (this.albumTree) {
+            await this.albumTree.loadAlbums();
+            const searchInput = document.getElementById('album-search-input');
+            const query = searchInput ? searchInput.value.trim() : '';
+            if (query) {
+                this.albumTree.handleSearch(query);
+            } else {
+                this.albumTree.render();
+            }
         }
     }
 
@@ -1616,7 +1853,7 @@ class AdminContent {
                 });
 
                 app.showNotification(window.i18n.t('notifications.admin.album_renamed'), 'success');
-                await this.searchAlbums();
+                await this.refreshAlbumTree();
                 await this.loadAlbums();
                 await this.app.content.loadAlbumStats();
 
@@ -1817,7 +2054,7 @@ class AdminContent {
                 });
 
                 app.showNotification(window.i18n.t('notifications.admin.parent_album_updated'), 'success');
-                await this.searchAlbums();
+                await this.refreshAlbumTree();
                 await this.loadAlbums();
                 await this.app.content.loadAlbumStats();
 
@@ -1863,7 +2100,7 @@ class AdminContent {
                         method: 'DELETE'
                     });
                     app.showNotification(window.i18n.t('notifications.admin.album_deleted'), 'success');
-                    await this.searchAlbums();
+                    await this.refreshAlbumTree();
                     await this.loadAlbums();
                     await this.app.content.loadAlbumStats();
                     // Don't return to manage modal since album is deleted

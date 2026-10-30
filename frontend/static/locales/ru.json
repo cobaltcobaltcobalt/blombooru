@@ -188,6 +188,13 @@
                     "done_relinked": "Готово! Перепривязано: {count}.",
                     "done_none": "Нет медиафайлов для перепривязки.",
                     "unresolved_warning": "{count} медиафайлов не удалось перепривязать."
+                },
+                "transcoding": {
+                    "title": "",
+                    "hint": "",
+                    "button": "",
+                    "progress": "",
+                    "done": ""
                 }
             },
             "booru_import": {
@@ -431,6 +438,10 @@
             "apply_aliases_confirm_1_msg": "Это действие применит все псевдонимы ко всем медиафайлам в базе данных. Замещенные теги будут удалены, чтобы избежать дублирования тег-псевдоним. Затронутые медиафайлы будут открыты в новой вкладке для просмотра. Продолжить?",
             "apply_aliases_processing": "Применение псевдонимов ко всем тегам...",
             "apply_aliases_no_affected": "Не найдено медиафайлов, которые требуют применения псевдонимов",
+            "apply_tag_ratings_to_all": "",
+            "apply_tag_ratings_confirm_msg": "",
+            "apply_tag_ratings_processing": "",
+            "apply_tag_ratings_no_affected": "",
             "delete_all_tags": "Удалить все теги",
             "drop_csv": "Перетащите CSV файл сюда или нажмите, чтобы выбрать",
             "import_csv": "Импорт тегов из CSV",
@@ -439,7 +450,7 @@
                 "search_manage_tags": "Поиск и управление тегами",
                 "search_manage_tags_description": "Используйте для быстрого поиска, редактирования, управления псевдонимами или слияния тегов.",
                 "apply_rules_title": "Применить правила тегов",
-                "apply_rules_hint": "Данная функция проходится по всей базе и применяет настроенные псевдонимы тегов и связки тегов ко всем медиафайлам."
+                "apply_rules_hint": ""
             },
             "manage_tag": "Управление тегом",
             "edit_tag": "Редактировать тег",
@@ -453,6 +464,7 @@
             "confirm_merge_alias": "Тег '{source_tag}' и все его псевдонимы будут добавлены как псевдонимы к тегу '{target_tag}'.",
             "tag_name": "Название тега",
             "tag_category": "Категория тега",
+            "tag_rating": "",
             "tag_aliases": "Псевдонимы тега",
             "tag_aliases_hint": "Список псевдонимов, разделенных пробелом.",
             "tags_exist_hint": "Теги, которые уже существуют (или существуют как псевдонимы), будут проигнорированы",
@@ -475,6 +487,11 @@
             "apply_all_confirm_1_msg": "Это действие применит все настроенные связки тегов ко всем медиафайлам в базе данных. Затронутые медиафайлы будут открыты в новой вкладке для просмотра",
             "apply_all_processing": "Применение связок тегов ко всем медиафайлам...",
             "apply_all_no_affected": "Не найдено медиафайлов, которые требуют применения связок тегов",
+            "backfill_implied": "",
+            "backfill_implied_confirm_msg": "",
+            "backfill_implied_processing": "",
+            "backfill_implied_none": "",
+            "backfill_implied_success": "",
             "merge_confirm_title": "Слияние связок тегов",
             "merge_confirm_msg": "Связка с целевым(-и) тегом(-ами) \"{target}\" уже существует для тегов \"{existing}\". Вы хотите объединить новые связанные теги \"{new}\" с существующими?",
             "merge_confirm_btn": "Объединить",
@@ -569,13 +586,17 @@
             "add_tags": "Добавить",
             "remove_tags": "Удалить"
         },
+        "rating": {
+            "quick_apply": "",
+            "review_ratings": "",
+            "reset_rating": ""
+        },
         "ai_tags": {
             "default_media_name": "Медиафайл {id}",
             "empty_message": "Новые AI-теги не найдены в метаданных выбранных элементов",
             "title": "Массово добавить AI-теги"
         },
         "buttons": {
-            "clear_tags": "Очистить теги",
             "refresh_tags": "Обновить теги"
         },
         "defaults": {
@@ -598,8 +619,11 @@
             "fetching_metadata": "Получение метаданных...",
             "initializing_tagger": "Инициализация AI теггера...",
             "items_fetched": "элементов получено",
-            "items_processed": "элементов обработано",
+            "items_processed": "",
             "predicting_tags": "Предсказание тегов с помощью AI...",
+            "skipped": "",
+            "tagged": "",
+            "tagging_complete": "",
             "tags_checked": "теги проверены",
             "validating_tags": "Валидация тегов..."
         },
@@ -742,6 +766,7 @@
         "sort_random": "В случайном порядке",
         "sort_regen_random": "Новый случайный порядок",
         "sort_tag_count": "Количество тегов",
+        "sort_custom_date": "",
         "sort_toggle_order": "Переключить порядок",
         "sort_manual": "Вручную",
         "sort_edit_order": "Редактировать порядок",
@@ -779,6 +804,8 @@
         "info": {
             "save_source": "Сохранить источник",
             "source_url": "URL источника",
+            "custom_date": "",
+            "save_custom_date": "",
             "filename": "Имя файла",
             "type": "Тип",
             "size": "Вес файла",
@@ -845,6 +872,8 @@
             "append_ai_tags": "Дополнить AI теги",
             "edit_tags": "Редактировать теги",
             "filter_results": "Фильтровать результаты",
+            "hide_implied_tags": "",
+            "implied_tag_popover": "",
             "predict_tags": "Предсказать теги (AI)",
             "save_tags": "Сохранить теги",
             "search_by": "Искать по",
@@ -999,7 +1028,8 @@
             "replacement_file": "Файл для замены",
             "change_file": "Изменить файл",
             "keep_filename_hint": "Сохранить текущее название файла {name}",
-            "new_filename_hint": "Обновить название файла на {name}"
+            "new_filename_hint": "Обновить название файла на {name}",
+            "update_date_from_file": ""
         }
     },
     "nav": {
@@ -1124,6 +1154,8 @@
             "parent_set": "Родитель успешно установлен",
             "removed_from_album": "Удалено из альбома",
             "source_updated": "Источник успешно обновлен",
+            "date_updated": "",
+            "error_updating_date": "",
             "description_updated": "Описание успешно обновлено",
             "error_updating_description": "Ошибка обновления описания",
             "rating_updated": "Рейтинг успешно обновлен",
@@ -1222,7 +1254,12 @@
             "final_tags": "Финальные теги",
             "title": "Загруженные медиафайлы",
             "remove_confirm": "Вы действительно хотите удалить этот элемент из очереди загрузки?",
-            "remove_item_title": "Удалить элемент"
+            "remove_item_title": "Удалить элемент",
+            "origin_sidecar": "",
+            "origin_exif": "",
+            "origin_booru": "",
+            "origin_client": "",
+            "origin_explicit": ""
         },
         "bulk": {
             "editing_selected": "Редактирование {count} выбранных элемент(-а/ов)",
@@ -1232,8 +1269,9 @@
             "source_applied": "URL источника добавлен ко всем выбранным элементам",
             "description_applied": "Описание добавлено ко всем выбранным элементам",
             "album_added": "Альбом добавлен ко всем выбранным элементам",
-            "common_folder_album": "Общий альбом папки",
-            "common_tags": "Общие теги"
+            "common_folder_album": "",
+            "common_tags": "Общие теги",
+            "date_applied": ""
         },
         "progress": {
             "duplicates_skipped": "{count} дублей пропущено",

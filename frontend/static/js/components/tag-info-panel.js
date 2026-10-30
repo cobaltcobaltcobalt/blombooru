@@ -132,7 +132,7 @@ class TagInfoPanel {
                 itemSpan.className = 'inline-flex items-center gap-1 min-w-0';
                 const cat = TagInfoPanel.safeCategory(rel.category);
                 itemSpan.innerHTML = `
-                    <a href="/?q=${encodeURIComponent(rel.name)}" class="tag ${cat} tag-text text-xs px-2 py-0.5 hover:opacity-80 transition-opacity">${escapeHtml(rel.name)}</a>
+                    <a href="/?q=${encodeURIComponent(rel.name)}" class="tag ${cat} tag-text text-xs px-2 py-0.5 hover:opacity-80 transition-opacity" data-tag-rating="${rel.rating || 'none'}">${escapeHtml(rel.name)}</a>
                     <span class="text-secondary text-[11px] font-mono whitespace-nowrap">(${escapeHtml(String(rel.count))}/${escapeHtml(String(rel.cooccurrence))})</span>
                 `;
                 itemsContainer.appendChild(itemSpan);
@@ -226,6 +226,7 @@ class TagInfoPanel {
                 const tagEl = document.createElement('a');
                 tagEl.href = `/?q=${encodeURIComponent(t.name)}`;
                 tagEl.className = `tag ${TagInfoPanel.safeCategory(t.category)} tag-text text-xs px-2 py-0.5 hover:opacity-80 transition-opacity`;
+                tagEl.dataset.tagRating = t.rating || 'none';
                 tagEl.textContent = t.name;
                 itemsContainer.appendChild(tagEl);
             });
@@ -322,6 +323,7 @@ class TagInfoPanel {
         const createChip = ({ implicationId, tag: impTag, totalImpliedCount, isSoleRule, imp }) => {
             const chip = document.createElement('span');
             const cat = TagInfoPanel.safeCategory(impTag.category);
+            chip.dataset.tagRating = impTag.rating || 'none';
 
             if (!isAdmin) {
                 chip.className = `inline-flex items-center gap-1.5 tag ${cat} tag-text px-2 py-0.5 text-xs font-medium`;

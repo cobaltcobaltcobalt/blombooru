@@ -58,6 +58,8 @@ def get_media_sort_clauses(
         sort_column = Media.file_size
     elif sort_by == "file_type":
         sort_column = Media.file_type
+    elif sort_by == "custom_date":
+        sort_column = Media.custom_date
     else:
         sort_column = Media.uploaded_at
 

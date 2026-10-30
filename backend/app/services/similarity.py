@@ -305,6 +305,7 @@ class SimilarityIndex:
         limit: int = 12,
         album_media_ids: Optional[Set[int]] = None,
         excluded_media_ids: Optional[Set[int]] = None,
+        candidate_media_ids: Optional[Set[int]] = None,
     ) -> List[Tuple[int, float]]:
         """
         Find top similar media items using cosine similarity of category-weighted TF-IDF vectors.
@@ -314,6 +315,7 @@ class SimilarityIndex:
             limit: Maximum number of results to return.
             album_media_ids: Optional set of media IDs to restrict results to (for album context).
             excluded_media_ids: Optional set of media IDs to exclude from results.
+            candidate_media_ids: Optional set of media IDs to restrict results to (e.g. from active search query and filters).
 
         Returns:
             List of (media_id, similarity_score) sorted descending by score.
@@ -343,17 +345,25 @@ class SimilarityIndex:
                 if ex_row is not None:
                     scores[ex_row] = -1.0
 
-        if album_media_ids is not None:
-            # Mask out items not in the album
-            album_row_indices = [
+        # Determine allowed candidates
+        allowed_ids = None
+        if album_media_ids is not None and candidate_media_ids is not None:
+            allowed_ids = set(album_media_ids) & set(candidate_media_ids)
+        elif album_media_ids is not None:
+            allowed_ids = set(album_media_ids)
+        elif candidate_media_ids is not None:
+            allowed_ids = set(candidate_media_ids)
+
+        if allowed_ids is not None:
+            allowed_row_indices = [
                 data.media_id_to_row[mid]
-                for mid in album_media_ids
+                for mid in allowed_ids
                 if mid in data.media_id_to_row and mid != media_id and (not excluded_media_ids or mid not in excluded_media_ids)
             ]
-            if not album_row_indices:
+            if not allowed_row_indices:
                 return []
             mask = np.zeros(data.num_media, dtype=bool)
-            mask[album_row_indices] = True
+            mask[allowed_row_indices] = True
             scores[~mask] = -1.0
 
         # Filter positive scores

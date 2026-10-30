@@ -16,7 +16,10 @@ class BulkManualTagEditorModal extends BulkTagModalBase {
         const prefix = this.options.classPrefix;
         return `
             <div class="${prefix}-content flex-1 flex flex-col min-h-0" style="display: none;">
-                <p class="text-secondary mb-3 text-xs sm:text-sm flex-shrink-0">${window.i18n.t('bulk_modal.messages.review_tags')}</p>
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3 flex-shrink-0">
+                    <p class="text-secondary text-xs sm:text-sm">${window.i18n.t('bulk_modal.messages.review_tags')}</p>
+                    ${this.getHideImpliedCheckboxHTML()}
+                </div>
                 <div class="flex gap-2 mb-3 flex-shrink-0 items-start relative z-20">
                     <div class="relative flex-1 min-w-0">
                         <div id="${prefix}-quick-input"
@@ -42,6 +45,10 @@ class BulkManualTagEditorModal extends BulkTagModalBase {
 
         if (!quickInput || !addBtn || !removeBtn) return;
 
+        this.quickImpliedTagsMap = new Map();
+        this.quickExpandedTriggers = new Set();
+        this.quickHiddenImpliedTags = new Set();
+
         if (typeof TagAutocomplete !== 'undefined') {
             new TagAutocomplete(quickInput, {
                 multipleValues: true,
@@ -55,7 +62,27 @@ class BulkManualTagEditorModal extends BulkTagModalBase {
             this.tagInputHelper.setupTagInput(quickInput, `${prefix}-quick`, {
                 onValidate: () => { },
                 validationCache: this.tagInputHelper.tagValidationCache,
-                checkFunction: (tag) => this.tagInputHelper.checkTagExists(tag)
+                checkFunction: (tag) => this.tagInputHelper.checkTagExists(tag),
+                getHighlightTags: () => null,
+                getImpliedTags: () => this.quickImpliedTagsMap,
+                getHiddenImpliedTags: () => this.quickHiddenImpliedTags,
+                getExpandedTriggers: () => this.quickExpandedTriggers,
+                onImplicationExpanded: (impliedByMap, impliedTags) => {
+                    for (const tagName of (impliedTags || [])) {
+                        const lower = String(tagName || '').toLowerCase().trim();
+                        if (!lower) continue;
+                        const groups = (impliedByMap && impliedByMap[lower]) || (impliedByMap && impliedByMap[tagName]) || [];
+                        const existingGroups = this.quickImpliedTagsMap.get(lower) || [];
+                        const merged = [...existingGroups];
+                        for (const g of groups) {
+                            if (Array.isArray(g) && !merged.some(eg => JSON.stringify(eg) === JSON.stringify(g))) {
+                                merged.push(g);
+                            }
+                        }
+                        this.quickImpliedTagsMap.set(lower, merged);
+                    }
+                },
+                isHideImpliedActive: () => false
             });
             this.triggerValidation(quickInput);
         }
@@ -79,33 +106,157 @@ class BulkManualTagEditorModal extends BulkTagModalBase {
 
         if (resolvedTags.length === 0) return;
 
-        // Apply in-memory to every item in this.itemsData
-        this.itemsData.forEach(item => {
-            const currentTags = item.newTags || [];
-            const currentSet = new Set(currentTags.map(t => t.toLowerCase()));
+        if (action === 'add') {
+            let explicitTags = [];
+            let impliedTags = [];
+            let impliedBy = {};
 
-            if (action === 'add') {
-                const toAdd = resolvedTags.filter(t => !currentSet.has(t.toLowerCase()));
-                item.newTags = [...currentTags, ...toAdd];
-                if (!item.prefilledTags) item.prefilledTags = [];
-                toAdd.forEach(t => {
-                    if (!item.prefilledTags.some(pt => pt.toLowerCase() === t.toLowerCase())) {
-                        item.prefilledTags.push(t);
+            if (this.quickImpliedTagsMap instanceof Map && this.quickImpliedTagsMap.size > 0) {
+                for (const tag of resolvedTags) {
+                    const lower = tag.toLowerCase().trim();
+                    if (this.quickImpliedTagsMap.has(lower)) {
+                        impliedTags.push(tag);
+                        impliedBy[lower] = this.quickImpliedTagsMap.get(lower) || [];
+                    } else {
+                        explicitTags.push(tag);
                     }
-                });
+                }
             } else {
-                const toRemoveSet = new Set(resolvedTags.map(t => t.toLowerCase()));
-                item.newTags = currentTags.filter(t => !toRemoveSet.has(t.toLowerCase()));
-                if (item.prefilledTags) {
-                    item.prefilledTags = item.prefilledTags.filter(t => !toRemoveSet.has(t.toLowerCase()));
+                explicitTags = [...resolvedTags];
+            }
+
+            if (explicitTags.length > 0) {
+                try {
+                    const res = await fetch('/api/tag-implications/expand', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ tags: explicitTags })
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        for (const imp of (data.implied_tags || [])) {
+                            const impLower = imp.toLowerCase().trim();
+                            if (!impliedTags.some(t => t.toLowerCase().trim() === impLower) &&
+                                !explicitTags.some(t => t.toLowerCase().trim() === impLower)) {
+                                impliedTags.push(imp);
+                            }
+                            if (data.implied_by && data.implied_by[impLower]) {
+                                const existing = impliedBy[impLower] || [];
+                                const merged = [...existing];
+                                for (const g of data.implied_by[impLower]) {
+                                    if (Array.isArray(g) && !merged.some(eg => JSON.stringify(eg) === JSON.stringify(g))) {
+                                        merged.push(g);
+                                    }
+                                }
+                                impliedBy[impLower] = merged;
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error('Error expanding quick tags implications:', e);
                 }
             }
-        });
+
+            const hideActive = this.isHideImpliedEnabled();
+
+            this.itemsData.forEach(item => {
+                if (!(item.impliedTagsMap instanceof Map)) item.impliedTagsMap = new Map();
+                if (!(item.hiddenImpliedTags instanceof Set)) item.hiddenImpliedTags = new Set();
+                if (!(item.expandedTriggers instanceof Set)) item.expandedTriggers = new Set();
+                if (!Array.isArray(item.prefilledTags)) item.prefilledTags = [];
+                if (!Array.isArray(item.newTags)) item.newTags = [];
+
+                const effectiveTags = this.getEffectiveItemTags(item);
+                const currentEffectiveSet = new Set(effectiveTags.map(t => t.toLowerCase().trim()));
+
+                // 1. Explicit tags:
+                for (const t of explicitTags) {
+                    const lower = t.toLowerCase().trim();
+                    if (!lower) continue;
+
+                    // If it was previously implied on this item, promote to explicit
+                    if (item.impliedTagsMap.has(lower)) {
+                        item.impliedTagsMap.delete(lower);
+                    }
+                    if (item.hiddenImpliedTags.has(lower)) {
+                        item.hiddenImpliedTags.delete(lower);
+                    }
+
+                    if (!item.newTags.some(existing => existing.toLowerCase().trim() === lower)) {
+                        item.newTags.push(t);
+                    }
+                    if (!item.prefilledTags.some(existing => existing.toLowerCase().trim() === lower)) {
+                        item.prefilledTags.push(t);
+                    }
+                    item.expandedTriggers.add(lower);
+                }
+
+                // 2. Implied tags:
+                for (const t of impliedTags) {
+                    const lower = t.toLowerCase().trim();
+                    if (!lower) continue;
+
+                    const groups = impliedBy[lower] || [];
+
+                    // If tag was already explicit on the item, keep it explicit
+                    if (currentEffectiveSet.has(lower) && !item.impliedTagsMap.has(lower)) {
+                        continue;
+                    }
+
+                    const existingGroups = item.impliedTagsMap.get(lower) || [];
+                    const merged = [...existingGroups];
+                    for (const g of groups) {
+                        if (Array.isArray(g) && !merged.some(eg => JSON.stringify(eg) === JSON.stringify(g))) {
+                            merged.push(g);
+                        }
+                    }
+                    item.impliedTagsMap.set(lower, merged);
+                    item.expandedTriggers.add(lower);
+
+                    if (hideActive) {
+                        item.hiddenImpliedTags.add(lower);
+                        item.newTags = item.newTags.filter(existing => existing.toLowerCase().trim() !== lower);
+                    } else {
+                        if (!item.newTags.some(existing => existing.toLowerCase().trim() === lower)) {
+                            item.newTags.push(t);
+                        }
+                    }
+                }
+            });
+        } else {
+            const toRemoveSet = new Set(resolvedTags.map(t => t.toLowerCase().trim()));
+            this.itemsData.forEach(item => {
+                if (Array.isArray(item.newTags)) {
+                    item.newTags = item.newTags.filter(t => !toRemoveSet.has(t.toLowerCase().trim()));
+                }
+                if (item.hiddenImpliedTags instanceof Set) {
+                    for (const rem of toRemoveSet) {
+                        item.hiddenImpliedTags.delete(rem);
+                    }
+                }
+                if (item.impliedTagsMap instanceof Map) {
+                    for (const rem of toRemoveSet) {
+                        item.impliedTagsMap.delete(rem);
+                    }
+                }
+                if (item.expandedTriggers instanceof Set) {
+                    for (const rem of toRemoveSet) {
+                        item.expandedTriggers.delete(rem);
+                    }
+                }
+                if (Array.isArray(item.prefilledTags)) {
+                    item.prefilledTags = item.prefilledTags.filter(t => !toRemoveSet.has(t.toLowerCase().trim()));
+                }
+            });
+        }
 
         // Re-render items in DOM
         this.renderItems();
 
         quickInput.textContent = '';
+        if (this.quickImpliedTagsMap instanceof Map) this.quickImpliedTagsMap.clear();
+        if (this.quickExpandedTriggers instanceof Set) this.quickExpandedTriggers.clear();
+        if (this.quickHiddenImpliedTags instanceof Set) this.quickHiddenImpliedTags.clear();
         this.triggerValidation(quickInput);
     }
 
@@ -117,6 +268,9 @@ class BulkManualTagEditorModal extends BulkTagModalBase {
             quickInput.textContent = '';
             this.triggerValidation(quickInput);
         }
+        if (this.quickImpliedTagsMap instanceof Map) this.quickImpliedTagsMap.clear();
+        if (this.quickExpandedTriggers instanceof Set) this.quickExpandedTriggers.clear();
+        if (this.quickHiddenImpliedTags instanceof Set) this.quickHiddenImpliedTags.clear();
     }
 
     getBodyHTML() {
@@ -199,13 +353,17 @@ class BulkManualTagEditorModal extends BulkTagModalBase {
                     return null;
                 }
 
-                return {
+                const itemObj = {
                     mediaId: item.id,
                     currentTags: [...currentTags],
                     newTags: newTags,
                     prefilledTags: prefilledTags,
                     filename: item.filename || window.i18n.t('bulk_modal.ai_tags.default_media_name', { id: item.id })
                 };
+                const prefillImpliedBy = this.options.prefillImpliedBy
+                    ? this.options.prefillImpliedBy[item.id]
+                    : null;
+                return this.initItemImplicationState(itemObj, tags, prefillImpliedBy);
             }).filter(Boolean);
 
             if (this.itemsData.length === 0) {
@@ -243,14 +401,28 @@ class BulkManualTagEditorModal extends BulkTagModalBase {
             saveBtn.textContent = window.i18n.t('modal.buttons.saving');
         }
 
+        // Flush all inputs to itemsData first
+        const container = this.modalElement?.querySelector(`.${prefix}-items`);
+        if (container) {
+            const inputs = container.querySelectorAll(`.${prefix}-input`);
+            inputs.forEach(input => {
+                const index = parseInt(input.dataset.index, 10);
+                if (!isNaN(index)) {
+                    this.flushInputState(input, index);
+                }
+            });
+        }
+
         // Build list of items to update from authoritative itemsData
         const updateItems = [];
         for (let i = 0; i < this.itemsData.length; i++) {
             const item = this.itemsData[i];
-            const tags = item.newTags || [];
+            const tags = this.getEffectiveItemTags(item);
+            const impliedTagsPayload = this.getItemImpliedTagsPayload(item, tags);
             updateItems.push({
                 id: item.mediaId,
-                tags: tags
+                tags: tags,
+                implied_tags: impliedTagsPayload
             });
         }
 
@@ -386,8 +558,32 @@ class BulkManualTagEditorModal extends BulkTagModalBase {
             }
 
             if (changed) {
-                item.newTags = sortedTagNames;
-                inputElement.textContent = sortedTagNames.join(' ');
+                if (!(item.impliedTagsMap instanceof Map)) item.impliedTagsMap = new Map();
+                if (!(item.hiddenImpliedTags instanceof Set)) item.hiddenImpliedTags = new Set();
+                for (const t of (mediaData.tags || [])) {
+                    if (typeof t === 'object' && t !== null && t.implied) {
+                        const lower = (t.name || '').toLowerCase().trim();
+                        if (lower && !item.impliedTagsMap.has(lower)) {
+                            item.impliedTagsMap.set(lower, Array.isArray(t.implied_by) ? t.implied_by : []);
+                        }
+                    }
+                }
+                if (this.isHideImpliedEnabled()) {
+                    const visible = [];
+                    for (const t of sortedTagNames) {
+                        const lower = t.toLowerCase().trim();
+                        if (item.impliedTagsMap.has(lower)) {
+                            item.hiddenImpliedTags.add(lower);
+                        } else {
+                            visible.push(t);
+                        }
+                    }
+                    item.newTags = visible;
+                    inputElement.textContent = visible.join(' ');
+                } else {
+                    item.newTags = sortedTagNames;
+                    inputElement.textContent = sortedTagNames.join(' ');
+                }
                 this.triggerValidation(inputElement);
                 this.flashButton(index, 'var(--primary)');
             } else {

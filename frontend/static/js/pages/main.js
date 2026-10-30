@@ -73,10 +73,48 @@ function formatBytes(bytes, options = {}) {
     return formatFileSize(bytes, options);
 }
 
+function toLocalInputDateTime(dateOrIso) {
+    if (!dateOrIso) return '';
+    const d = (dateOrIso instanceof Date) ? dateOrIso : new Date(dateOrIso);
+    if (isNaN(d.getTime())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    const year = String(d.getFullYear()).padStart(4, '0');
+    return `${year}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function parseLocalInputDateTime(value) {
+    if (!value) return null;
+    const trimmed = typeof value === 'string' ? value.trim() : String(value);
+    if (!trimmed) return null;
+    const d = new Date(trimmed);
+    if (isNaN(d.getTime())) return null;
+    return d.toISOString();
+}
+
+function formatCustomDateOriginBadge(origin) {
+    if (!origin) return '';
+    const keyMap = {
+        sidecar: 'upload.preview.origin_sidecar',
+        exif: 'upload.preview.origin_exif',
+        booru: 'upload.preview.origin_booru',
+        client: 'upload.preview.origin_client',
+        explicit: 'upload.preview.origin_explicit'
+    };
+    const translationKey = keyMap[origin];
+    if (translationKey) {
+        const label = window.i18n.t(translationKey);
+        return `<span class="badge bg-primary primary-text border border-color text-[10px] px-1.5 py-0.5 shrink-0" title="${escapeHtml(label)}">${escapeHtml(label)}</span>`;
+    }
+    return '';
+}
+
 window.escapeHtml = escapeHtml;
 window.escapeAttr = escapeAttr;
 window.formatFileSize = formatFileSize;
 window.formatBytes = formatBytes;
+window.toLocalInputDateTime = toLocalInputDateTime;
+window.parseLocalInputDateTime = parseLocalInputDateTime;
+window.formatCustomDateOriginBadge = formatCustomDateOriginBadge;
 
 class I18n {
     constructor() {
@@ -310,6 +348,26 @@ class AutoScrollEngine {
     }
 }
 
+window.getCookie = function (name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) {
+        const raw = parts.pop().split(';').shift();
+        try {
+            return decodeURIComponent(raw);
+        } catch {
+            return raw;
+        }
+    }
+    return null;
+};
+
+window.setCookie = function (name, value, days = 365) {
+    const expires = new Date();
+    expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000);
+    document.cookie = `${name}=${encodeURIComponent(value)};expires=${expires.toUTCString()};path=/;SameSite=Lax`;
+};
+
 window.AutoScrollEngine = AutoScrollEngine;
 window.autoScroll = new AutoScrollEngine();
 
@@ -317,8 +375,8 @@ window.autoScroll = new AutoScrollEngine();
 class Blombooru {
     constructor() {
         this.autoScroll = window.autoScroll;
-        this.isAdminMode = this.getCookie('admin_mode') === 'true';
-        this.isAuthenticated = !!this.getCookie('admin_token');
+        this.isAdminMode = window.getCookie('admin_mode') === 'true';
+        this.isAuthenticated = !!window.getCookie('admin_token');
         this.currentPage = 1;
         this.isLoading = false;
         this.hasMore = true;
@@ -333,11 +391,11 @@ class Blombooru {
         this.updateUI();
 
         // Load settings from localStorage or cookie
-        const savedRating = localStorage.getItem('selectedRating') || this.getCookie('rating_filter');
+        const savedRating = localStorage.getItem('selectedRating') || window.getCookie('rating_filter');
         if (savedRating) {
             this.setRatingFilter(savedRating);
             localStorage.setItem('selectedRating', savedRating);
-            this.setCookie('rating_filter', savedRating, 365);
+            window.setCookie('rating_filter', savedRating, 365);
         }
 
         // Check albums visibility
@@ -374,7 +432,7 @@ class Blombooru {
         if (adminToggle) {
             adminToggle.addEventListener('click', (e) => {
                 e.preventDefault();
-                this.handleAdminToggle();
+                this.toggleAdminMode();
             });
         }
 
@@ -538,6 +596,9 @@ class Blombooru {
         messageEl.className = 'text-sm opacity-90';
         messageEl.textContent = message;
 
+        notification.setAttribute('role', type === 'error' ? 'alert' : 'status');
+        notification.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
+
         notification.appendChild(titleEl);
         notification.appendChild(messageEl);
 
@@ -659,35 +720,41 @@ class Blombooru {
             }
         } catch (error) {
             console.error('Random search error:', error);
-            this.showNotification(window.i18n.t('gallery.errors.loading_random_media'), 'error');
+            this.showNotification(`${window.i18n.t('gallery.error_label')} ${error.message}`, 'error');
         }
     }
 
-    getCookie(name) {
-        const value = `; ${document.cookie}`;
-        const parts = value.split(`; ${name}=`);
-        if (parts.length === 2) return parts.pop().split(';').shift();
-        return null;
-    }
-
-    setCookie(name, value, days) {
-        const expires = new Date();
-        expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000);
-        document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/;SameSite=Lax`;
-    }
-
     async apiCall(endpoint, options = {}) {
-        const defaultOptions = {
-            headers: {
-                'Content-Type': 'application/json'
-            }
+        const headers = { ...options.headers };
+        const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+        if (!isFormData && !headers['Content-Type'] && !headers['content-type']) {
+            headers['Content-Type'] = 'application/json';
+        }
+
+        const fetchOptions = {
+            ...options,
+            headers
         };
 
-        const response = await fetch(endpoint, { ...defaultOptions, ...options });
+        const response = await fetch(endpoint, fetchOptions);
 
         if (!response.ok) {
-            const error = await response.json();
-            let errorMessage = error.detail || 'API call failed';
+            if (response.status === 401 && window.location.pathname.startsWith('/admin')) {
+                window.location.href = `/login?return=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+                // Never resolve so callers do not run with undefined while the page unloads
+                return new Promise(() => { });
+            }
+
+            let errorData = null;
+            try {
+                errorData = await response.json();
+            } catch {
+                // Non-JSON response
+            }
+
+            let errorMessage = (errorData && errorData.detail)
+                ? (typeof errorData.detail === 'string' ? errorData.detail : JSON.stringify(errorData.detail))
+                : `HTTP ${response.status}: ${response.statusText || 'API call failed'}`;
 
             // Check if error detail is an i18n key (starts with error_, exists in notifications.admin, or is a direct key)
             if (typeof errorMessage === 'string') {
@@ -705,7 +772,17 @@ class Blombooru {
             throw new Error(errorMessage);
         }
 
-        return response.json();
+        if (response.status === 204 || response.headers.get('content-length') === '0') {
+            return null;
+        }
+
+        const text = await response.text();
+        if (!text) return null;
+        try {
+            return JSON.parse(text);
+        } catch {
+            throw new Error(`Invalid JSON response (HTTP ${response.status})`);
+        }
     }
 
     async showSearchSyntaxGuide() {

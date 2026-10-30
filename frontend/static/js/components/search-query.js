@@ -8,7 +8,8 @@ function canonicalizeQuery(queryString) {
         'id', 'width', 'height', 'duration', 'filesize', 'file_size', 'size',
         'date', 'age', 'filetype', 'source', 'md5',
         'album', 'pool', 'album_tree', 'pool_tree', 'parent', 'child',
-        'order', 'sort', 'uploaded_at', 'time', 'created_at'
+        'order', 'sort', 'uploaded_at', 'time', 'created_at',
+        'custom_date', 'custom_age'
     ]);
 
     const orderedKeys = [];
@@ -103,7 +104,7 @@ function canonicalizeQuery(queryString) {
         const keyLower = key ? key.toLowerCase() : null;
 
         // 1. Date
-        if (!keyLower || ['date', 'uploaded_at', 'created_at', 'time'].includes(keyLower)) {
+        if (!keyLower || ['date', 'uploaded_at', 'created_at', 'time', 'custom_date'].includes(keyLower)) {
             const dateMatch = clean.match(/^(>=|<=|>|<|!=)?(\d{4}-\d{2}-\d{2})$/);
             if (dateMatch) {
                 const op = dateMatch[1] || '==';
@@ -122,7 +123,7 @@ function canonicalizeQuery(queryString) {
         }
 
         // 2. Age
-        if (keyLower === 'age') {
+        if (keyLower && ['age', 'custom_age'].includes(keyLower)) {
             const ageMatch = clean.match(/^(>=|<=|>|<|!=)?(\d+)\s*([a-zA-Z]+)?$/);
             if (ageMatch) {
                 const op = ageMatch[1] || '==';

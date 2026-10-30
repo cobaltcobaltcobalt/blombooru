@@ -1,7 +1,7 @@
 ## Media
 
 > [!NOTE]
-> Last updated: `October 10, 2026`
+> Last updated: `October 24, 2026`
 
 **Base path:** `/api/media`
 
@@ -16,7 +16,7 @@ GET /api/media
 | `page` | int | Page number (default: 1) |
 | `limit` | int | Items per page (default: from settings) |
 | `rating` | string | Rating filter: `safe`, `questionable`, or `explicit` |
-| `sort` | string | Sort field: `uploaded_at` (default), `filename`, `file_size`, `file_type` |
+| `sort` | string | Sort field: `uploaded_at` (default), `custom_date`, `filename`, `file_size`, `file_type` |
 | `order` | string | `asc` or `desc` (default: `desc`) |
 
 **Response:**
@@ -53,14 +53,38 @@ Every endpoint returning media records outputs a `MediaResponse`:
   "description": "Artwork description text",
   "description_enlarged": false,
   "uploaded_at": "2026-09-08T18:00:00+00:00",
+  "custom_date": "2022-11-02T18:00:00+00:00",
   "is_shared": false,
   "share_uuid": null,
   "share_language": null,
   "parent_id": null,
   "has_children": false,
-  "tags": [ /* TagResponse[] */ ]
+  "tags": [
+    {
+      "id": 10,
+      "name": "corgi",
+      "category": "general",
+      "post_count": 42,
+      "created_at": "2026-08-14T10:00:00+00:00",
+      "implied": false,
+      "implied_by": []
+    },
+    {
+      "id": 5,
+      "name": "dog",
+      "category": "general",
+      "post_count": 120,
+      "created_at": "2026-08-14T10:00:00+00:00",
+      "implied": true,
+      "implied_by": [["corgi"]]
+    }
+  ]
 }
 ```
+
+Each tag entry in `MediaResponse.tags` is a `MediaTagResponse` extending `TagResponse` with:
+- `implied` (`bool`): `true` if the tag was added to this media item by a tag implication rule, `false` if added explicitly.
+- `implied_by` (`string[][]`): List of trigger tag name groups (one group per matching rule) that caused the tag to be implied on this media item. Dynamically resolved from stored trigger tag IDs so tag renames and merges are reflected automatically.
 
 ### Get media item by ID
 
@@ -90,6 +114,7 @@ Returns a `MediaDetailResponse` extending `MediaResponse` with parsed descriptio
   "description_enlarged": false,
   "description_html": "<p class=\"mb-3 text-xs last:mb-0 leading-relaxed\">Artwork description text</p>",
   "uploaded_at": "2026-09-08T18:00:00+00:00",
+  "custom_date": "2022-11-02T18:00:00+00:00",
   "is_shared": false,
   "share_uuid": null,
   "share_language": null,
@@ -124,13 +149,14 @@ Content-Type: application/json
 GET /api/media/{id}/related
 ```
 
-Returns related media items using category-weighted TF-IDF tag similarity.
+Returns related media items using category-weighted TF-IDF tag similarity. When filters or a search query are specified (`q`, `rating`, `custom_filter`, `album_id`), candidate posts are pre-filtered before ranking by similarity, ensuring up to `limit` relevant items are returned.
 
 | Query param | Type | Default | Description |
 |---|---|---|---|
 | `limit` | int | 12 | Maximum items to return (1-100) |
 | `album_id` | int | | Optional album ID to constrain related results within |
-| `rating` | string | | Rating filter: `safe`, `questionable`, `explicit`, or shorthands `s`, `q`, `e` (comma-separated) |
+| `q` | string | | Optional search query string to filter candidate media |
+| `rating` | string | | Rating filter: `safe`, `questionable`, `explicit`, or shorthands `s`, `q`, `e` (comma-separated). A `rating:` term inside `q` takes precedence over this parameter. |
 | `custom_filter` | string[] | | Custom filter tag expressions |
 
 **Response:** `{ "items": [ /* MediaResponse[] */ ], "status": "ready" }`
@@ -204,7 +230,8 @@ Content-Type: application/json
       "filename": "image.webp",
       "file_type": "image",
       "tags": [
-        { "name": "fox", "category": "general" }
+        { "name": "fox", "category": "general", "implied": false, "implied_by": [] },
+        { "name": "canine", "category": "general", "implied": true, "implied_by": [["fox"]] }
       ]
     }
   ]
@@ -223,7 +250,7 @@ Includes extracted metadata alongside the slim item shape:
       "filename": "image.webp",
       "file_type": "image",
       "tags": [
-        { "name": "fox", "category": "general" }
+        { "name": "fox", "category": "general", "implied": false, "implied_by": [] }
       ],
       "metadata": { /* EXIF or AI generation metadata, or null */ }
     }
@@ -284,6 +311,7 @@ Content-Type: multipart/form-data
 | `album_ids` | string | No | Comma-separated album IDs |
 | `source` | string | No | Source URL |
 | `description` | string | No | Optional media description |
+| `custom_date` | string | No | Optional custom media date (ISO 8601 string or YYYY-MM-DD). If omitted, automatically resolved from booru URL, sidecar, EXIF, or upload time. |
 | `category_hints` | string | No | JSON object mapping tag names to category strings, e.g. `{"bob": "artist"}` |
 
 If the uploaded file format requires transcoding (such as `.heic`, `.mkv`, or `.avi`), the transcoded file is generated in `media/transcoded/` and used as the source for the thumbnail.
@@ -300,17 +328,47 @@ Content-Type: application/json
 
 {
   "rating": "safe",
-  "tags": ["tag1", "tag2"],
+  "tags": ["corgi", "dog"],
+  "implied_tags": {
+    "dog": [["corgi"]]
+  },
   "source": "https://...",
   "description": "...",
   "description_enlarged": false,
+  "custom_date": "2022-11-02T18:00:00+00:00",
   "parent_id": null
 }
 ```
 
-All fields are optional. Supplying `tags` replaces the tag list entirely. Setting `parent_id` to `null` clears the parent relationship.
+All fields are optional. Supplying `tags` replaces the tag list entirely without auto-expanding tag implications server-side. Existing `implied` and `implied_by` metadata is preserved for tags that remain on the item. When `implied_tags` (`Record<string, string[][]>`) is provided, each entry is validated against active tag implication rules and persisted for matching implied tags in `tags`. Setting `parent_id` to `null` clears the parent relationship. Setting `custom_date` to `null` resets the custom date to `uploaded_at`.
 
 **Response:** Updated `MediaResponse`.
+
+### Bulk update media tags
+
+Requires `require_admin_mode`. Updates tags across multiple media items in a single request.
+
+```
+POST /api/media/bulk-update-tags
+Content-Type: application/json
+
+{
+  "updates": [
+    {
+      "media_id": 1,
+      "tags": ["corgi", "dog"],
+      "implied_tags": {
+        "dog": [["corgi"]]
+      }
+    }
+  ]
+}
+```
+
+- When `implied_tags` is omitted (`null`), all tags on the media item are evaluated against active implication rules and any implied tags are added and marked with `implied: true` and `implied_by`.
+- When `implied_tags` is provided, client-supplied implication groups are validated against active rules, existing implied tags on the item are preserved unless removed, and only newly added explicit tags are expanded server-side.
+
+**Response:** `{ "updated": 1, "errors": [] }`
 
 ### Update post from source
 
@@ -327,10 +385,12 @@ Content-Type: application/json
   "description": "Updated description",
   "filename": "new_name.jpg",
   "file_url": "https://example.com/new_image.jpg",
+  "custom_date": "2022-11-02T18:00:00+00:00",
   "update_rating": true,
   "update_tags": true,
   "update_source": true,
   "update_description": true,
+  "update_custom_date": true,
   "update_filename": false,
   "update_file": true,
   "merge_tags": true,
@@ -345,6 +405,8 @@ Content-Type: application/json
 | `merge_tags` | bool | When `true` and `update_tags` is `true`, merges new tags into existing tags instead of replacing them |
 | `update_source` | bool | When `true`, updates the source URL |
 | `update_description` | bool | When `true`, updates the description |
+| `update_custom_date` | bool | When `true`, updates the custom date with `custom_date` |
+| `custom_date` | string | Custom date ISO string (required when `update_custom_date` is `true`) |
 | `update_filename` | bool | When `true`, renames the media file and transcoded file on disk |
 | `update_file` | bool | When `true`, downloads the replacement file from `file_url`, recalculates hash, and regenerates transcoded media and thumbnails |
 
@@ -365,6 +427,7 @@ upload_id=<uuid>&update_filename=false
 |---|---|---|
 | `upload_id` | string | UUID of the completed chunked upload |
 | `update_filename` | bool | Optional (default: `false`). When `true`, adopts the uploaded file's sanitized filename; when `false`, retains the post's current filename stem. |
+| `update_custom_date` | bool | Optional (default: `false`). When `true`, attempts EXIF date extraction from the replacement file and updates `custom_date` if found. |
 
 Replaces the stored file, updates or creates transcoded media, regenerates thumbnails, and refreshes dimensions and metadata.
 

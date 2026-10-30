@@ -249,6 +249,21 @@ class UploadMediaEditor {
                     </div>
                 </div>
 
+                <!-- Date Row -->
+                <div class="mb-3">
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="block text-xs font-bold">
+                            ${window.i18n.t('media.info.custom_date')}
+                        </label>
+                        <div id="editor-single-date-badge-container">
+                            ${formatCustomDateOriginBadge(item.custom_date_origin)}
+                        </div>
+                    </div>
+                    <input type="datetime-local" id="editor-single-custom-date"
+                        class="w-full bg px-3 py-1.5 border text-xs focus:outline-none focus:border-primary hover:border-primary transition-colors"
+                        value="${toLocalInputDateTime(item.custom_date)}">
+                </div>
+
                 <!-- Description -->
                 <div class="mb-3">
                     <label class="block text-xs font-bold mb-1">
@@ -372,18 +387,21 @@ class UploadMediaEditor {
         let sharedRating = items[0].rating;
         let sharedSource = items[0].source;
         let sharedDescription = items[0].description;
+        let sharedDate = items[0].custom_date;
 
         for (let i = 1; i < items.length; i++) {
             const it = items[i];
             if (sharedRating !== undefined && it.rating !== sharedRating) sharedRating = undefined;
             if (sharedSource !== undefined && it.source !== sharedSource) sharedSource = undefined;
             if (sharedDescription !== undefined && it.description !== sharedDescription) sharedDescription = undefined;
+            if (sharedDate !== undefined && it.custom_date !== sharedDate) sharedDate = undefined;
         }
 
         return {
             rating: sharedRating !== undefined ? sharedRating : '',
             source: sharedSource !== undefined ? sharedSource : '',
-            description: sharedDescription !== undefined ? sharedDescription : ''
+            description: sharedDescription !== undefined ? sharedDescription : '',
+            custom_date: sharedDate !== undefined ? sharedDate : ''
         };
     }
 
@@ -454,6 +472,21 @@ class UploadMediaEditor {
                                 ${window.i18n.t('common.apply')}
                             </button>
                         </div>
+                    </div>
+                </div>
+
+                <!-- Bulk Date -->
+                <div class="mb-3">
+                    <label class="block text-xs font-bold mb-1">
+                        ${window.i18n.t('media.info.custom_date')}
+                    </label>
+                    <div class="flex items-center gap-1.5">
+                        <input type="datetime-local" id="editor-bulk-custom-date"
+                            class="flex-1 bg px-3 py-1.5 border text-xs focus:outline-none focus:border-primary hover:border-primary transition-colors"
+                            value="${toLocalInputDateTime(shared.custom_date)}">
+                        <button type="button" id="editor-bulk-apply-date-btn" class="btn-primary text-xs px-2.5 py-1.5 cursor-pointer shrink-0">
+                            ${window.i18n.t('common.apply')}
+                        </button>
                     </div>
                 </div>
 
@@ -593,9 +626,7 @@ class UploadMediaEditor {
             const source = sourceInput?.value.trim();
             if (source !== undefined && itemIds.length > 0) {
                 await this.session.bulkUpdate(itemIds, { source });
-                if (window.app && window.app.showNotification) {
-                    window.app.showNotification(window.i18n.t('upload.bulk.source_applied'), 'success');
-                }
+                window.app.showNotification(window.i18n.t('upload.bulk.source_applied'), 'success');
                 if (this.options.onItemChanged) this.options.onItemChanged();
             }
         };
@@ -608,6 +639,19 @@ class UploadMediaEditor {
                 }
             });
         }
+
+        // Bulk Custom Date
+        const bulkDateInput = this.container.querySelector('#editor-bulk-custom-date');
+        const bulkDateApplyBtn = this.container.querySelector('#editor-bulk-apply-date-btn');
+        const applyBulkDate = async () => {
+            const isoStr = parseLocalInputDateTime(bulkDateInput?.value);
+            if (itemIds.length > 0) {
+                await this.session.bulkUpdate(itemIds, { custom_date: isoStr });
+                window.app.showNotification(window.i18n.t('upload.bulk.date_applied'), 'success');
+                if (this.options.onItemChanged) this.options.onItemChanged();
+            }
+        };
+        if (bulkDateApplyBtn) bulkDateApplyBtn.addEventListener('click', applyBulkDate);
 
         // Bulk Description
         const descInput = this.container.querySelector('#editor-bulk-description');
@@ -622,9 +666,7 @@ class UploadMediaEditor {
             const description = descInput?.value.trim();
             if (description !== undefined && itemIds.length > 0) {
                 await this.session.bulkUpdate(itemIds, { description });
-                if (window.app && window.app.showNotification) {
-                    window.app.showNotification(window.i18n.t('upload.bulk.description_applied'), 'success');
-                }
+                window.app.showNotification(window.i18n.t('upload.bulk.description_applied'), 'success');
                 if (this.options.onItemChanged) this.options.onItemChanged();
             }
         };
@@ -659,9 +701,7 @@ class UploadMediaEditor {
                 if (aid && itemIds.length > 0) {
                     await this.session.bulkUpdate(itemIds, { add_album_ids: [aid] });
                     this.refreshBulkAlbumBadges();
-                    if (window.app && window.app.showNotification) {
-                        window.app.showNotification(window.i18n.t('upload.bulk.album_added'), 'success');
-                    }
+                    window.app.showNotification(window.i18n.t('upload.bulk.album_added'), 'success');
                     if (this.options.onItemChanged) this.options.onItemChanged();
                 }
             });
@@ -863,6 +903,22 @@ class UploadMediaEditor {
             sourceInput.addEventListener('input', (e) => {
                 item.source = e.target.value.trim();
                 this.debouncedSave(item.item_id, { source: item.source });
+            });
+        }
+
+        // Custom Date input
+        const singleDateInput = this.container.querySelector('#editor-single-custom-date');
+        if (singleDateInput) {
+            singleDateInput.addEventListener('change', (e) => {
+                const isoStr = parseLocalInputDateTime(e.target.value);
+                item.custom_date = isoStr;
+                item.custom_date_origin = isoStr ? 'explicit' : null;
+                const badgeContainer = this.container.querySelector('#editor-single-date-badge-container');
+                if (badgeContainer) {
+                    badgeContainer.innerHTML = formatCustomDateOriginBadge(item.custom_date_origin);
+                }
+                this.debouncedSave(item.item_id, { custom_date: isoStr });
+                if (this.options.onItemChanged) this.options.onItemChanged(item);
             });
         }
 

@@ -59,7 +59,6 @@ class Gallery extends BaseGallery {
                 this.selectedCustomFilters.forEach(cf => apiParams.append('custom_filter', cf));
             }
 
-            console.log('Loading gallery:', endpoint, apiParams.toString());
 
             const response = await fetch(`${endpoint}?${apiParams.toString()}`, {
                 credentials: 'include'

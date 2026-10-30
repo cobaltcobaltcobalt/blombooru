@@ -9,7 +9,10 @@ from ..models import Media
 from .logger import logger
 from .format_registry import format_registry, FormatCategory
 from .media_processor import calculate_file_hash, get_mime_type
-from .transcoder import get_transcoded_path_for_original, transcode_media_if_needed
+from .transcoder import (get_transcode_target_ext,
+                         get_transcoded_path_for_original,
+                         is_transcoding_required,
+                         transcode_media_if_needed)
 
 def is_supported_file(filename: str) -> bool:
     """Check if file extension is supported for media gallery"""
@@ -165,10 +168,11 @@ def relink_media_files(db: Optional[Session] = None) -> dict:
                     media.filename = new_filename
 
                     # Handle transcoding if needed
-                    fmt = format_registry.get_format(file_path.name)
                     transcoded_file = None
-                    if fmt and fmt.requires_transcode:
-                        expected_transcoded = get_transcoded_path_for_original(file_path, fmt.transcode_target)
+                    needs_transcode = is_transcoding_required(file_path)
+                    if needs_transcode is True:
+                        target_ext = get_transcode_target_ext(file_path)
+                        expected_transcoded = get_transcoded_path_for_original(file_path, target_ext)
                         old_transcoded = (base_dir / media.transcoded_path) if media.transcoded_path else None
 
                         # If previous transcoded file exists on disk, move/rename it
@@ -186,12 +190,13 @@ def relink_media_files(db: Optional[Session] = None) -> dict:
                             transcoded_file = transcode_media_if_needed(file_path)
                             if transcoded_file:
                                 media.transcoded_path = str(transcoded_file.relative_to(base_dir))
-                    else:
+                    elif needs_transcode is False:
                         if media.transcoded_path:
                             old_transcoded = base_dir / media.transcoded_path
                             if old_transcoded.exists() and old_transcoded.is_file():
                                 old_transcoded.unlink(missing_ok=True)
                             media.transcoded_path = None
+                    # If needs_transcode is None (probe failure/unknown), leave media.transcoded_path untouched
 
                     # Check thumbnail health
                     thumb_missing = True

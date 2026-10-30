@@ -9,6 +9,8 @@ class TagAutocomplete {
             appendSpace: true,
             allowCreate: false,
             enableQualifiers: false,
+            enableRatingFilter: false,
+            ratingFilter: null,
             ...options
         };
 
@@ -47,6 +49,10 @@ class TagAutocomplete {
         this.input.addEventListener('input', this.onInputBound);
         this.input.addEventListener('keydown', this.onKeydownBound);
         document.addEventListener('click', this.onDocumentClickBound);
+
+        this.onReposition = () => this.positionSuggestions();
+        window.addEventListener('scroll', this.onReposition, true);
+        window.addEventListener('resize', this.onReposition);
 
         if (this.options.enableQualifiers) {
             this._prefetchQualifierExamples();
@@ -178,18 +184,149 @@ class TagAutocomplete {
         return beforeCursor.substring(lastSpace + 1).trim();
     }
 
+    static resolveStoredRatingFilter() {
+        const validRatings = ['safe', 'questionable', 'explicit'];
+        const sidebarMode = (document.body && document.body.dataset.sidebarMode) || window.SIDEBAR_FILTER_MODE || 'rating';
+        if (sidebarMode === 'custom' || sidebarMode === 'off') {
+            return '';
+        }
+
+        let raw = null;
+        try {
+            raw = localStorage.getItem('selectedRating');
+        } catch (e) {
+            raw = null;
+        }
+        if (!raw) {
+            raw = window.getCookie('rating_filter');
+        }
+
+        const ratings = (raw || '')
+            .split(',')
+            .map(r => r.trim().toLowerCase())
+            .filter(r => validRatings.includes(r));
+
+        return (ratings.length > 0 ? ratings : ['safe']).join(',');
+    }
+
+    getRatingFilter() {
+        if (typeof this.options.ratingFilter === 'function') {
+            return this.options.ratingFilter();
+        }
+        if (typeof this.options.ratingFilter === 'string') {
+            return this.options.ratingFilter;
+        }
+        if (this.options.enableRatingFilter) {
+            if (window.tagsGallery && window.tagsGallery.currentRating !== undefined) {
+                return window.tagsGallery.currentRating;
+            }
+            if (window.gallery && window.gallery.currentRating !== undefined) {
+                return window.gallery.currentRating;
+            }
+            return TagAutocomplete.resolveStoredRatingFilter();
+        }
+        return null;
+    }
+
     async fetchSuggestions(query) {
-        const response = await fetch(`/api/tags/autocomplete?q=${encodeURIComponent(query)}`);
+        if (!this.options.enableQualifiers) {
+            return this._fetchPlainSuggestions(query);
+        }
+
+        let rest = query;
+        let negation = false;
+        if (rest.startsWith('-')) {
+            negation = true;
+            rest = rest.slice(1);
+        }
+
+        const isPattern = /[*?]/.test(rest);
+        if (!negation && !isPattern) {
+            return this._fetchPlainSuggestions(query);
+        }
+
+        const results = [];
+        const seen = new Set();
+        const push = (item) => {
+            if (seen.has(item.name)) return;
+            seen.add(item.name);
+            results.push(item);
+        };
+
+        // Tags that literally start with "-" (only when no wildcard follows)
+        if (negation && !isPattern) {
+            try {
+                (await this._fetchPlainSuggestions(query)).forEach(push);
+            } catch (e) {
+                // fall through to the base term suggestions
+            }
+        }
+
+        if (rest.length > 0) {
+            const base = await this._fetchPlainSuggestions(rest);
+            for (const tag of base) {
+                if (!negation) {
+                    push(tag);
+                    continue;
+                }
+                const decorated = { ...tag, name: '-' + tag.name, negated: true };
+                if (tag.alias_name) decorated.alias_name = '-' + tag.alias_name;
+                push(decorated);
+            }
+        }
+
+        return results;
+    }
+
+    async _fetchPlainSuggestions(query) {
+        let url = `/api/tags/autocomplete?q=${encodeURIComponent(query)}`;
+        const rating = this.getRatingFilter();
+        if (rating) {
+            url += `&rating=${encodeURIComponent(rating)}`;
+        }
+        const response = await fetch(url);
         if (!response.ok) throw new Error('Failed to fetch suggestions');
         return response.json();
     }
 
-    showSuggestions(suggestions, query) {
-        const hasResults = suggestions.length > 0;
+    // Excluding the tag currently being edited
+    getExistingTags() {
+        const existing = new Set();
+        if (!this.options.multipleValues) return existing;
 
+        const value = this.getInputValue();
+        const cursorPos = this.getCursorPosition();
+        const re = /\S+/g;
+        let m;
+        while ((m = re.exec(value)) !== null) {
+            const start = m.index;
+            const end = start + m[0].length;
+            if (start < cursorPos && cursorPos <= end) continue;
+            const name = m[0].replace(/^[~-]/, '').toLowerCase();
+            if (name) existing.add(name);
+            existing.add(m[0].toLowerCase());
+        }
+        return existing;
+    }
+
+    // Render a name, highlighting a leading "-" in bold danger color when it is the negation operator
+    _negatedNameHtml(name, negated) {
+        if (!negated || !name.startsWith('-')) return escapeHtml(name);
+        return `<span class="text-danger font-bold">-</span>${escapeHtml(name.slice(1))}`;
+    }
+
+    showSuggestions(suggestions, query) {
         const isQualifier = suggestions.some(t => t.is_qualifier);
         const normalizedQuery = query ? query.toLowerCase().replace(/ /g, '_') : '';
         const exactMatchExists = suggestions.some(t => t.name === normalizedQuery || (t.is_alias && t.alias_name === normalizedQuery));
+
+        if (!isQualifier) {
+            const existing = this.getExistingTags();
+            if (existing.size > 0) {
+                suggestions = suggestions.filter(t => !existing.has(String(t.name).toLowerCase()) && (!t.alias_name || !existing.has(String(t.alias_name).toLowerCase())));
+            }
+        }
+        const hasResults = suggestions.length > 0;
         const hasCreate = !isQualifier && this.options.allowCreate && query && query.length > 0 && !exactMatchExists;
 
         if (!hasResults && !hasCreate) {
@@ -203,11 +340,11 @@ class TagAutocomplete {
             html = suggestions.map((tag, index) => {
                 if (tag.is_alias) {
                     return `
-                    <div class="tag-suggestion tag-alias-info" data-index="${index}" data-name="${escapeHtml(tag.name)}">
+                    <div class="tag-suggestion tag-alias-info" data-index="${index}" data-name="${escapeHtml(tag.name)}" data-tag-rating="${escapeHtml(tag.rating || 'none')}">
                         <span style="display: flex; align-items: center; gap: 0.5rem;">
-                            <span class="text-secondary italic">${escapeHtml(tag.alias_name)}</span>
+                            <span class="text-secondary italic">${this._negatedNameHtml(tag.alias_name, tag.negated)}</span>
                             <span class="text-secondary">&#8594;</span>
-                            <span class="tag-name">${escapeHtml(tag.name)}</span>
+                            <span class="tag-name">${tag.negated ? escapeHtml(tag.name.slice(1)) : escapeHtml(tag.name)}</span>
                         </span>
                         ${tag.count !== undefined && tag.count !== null && tag.count !== '' ? `<span class="tag-count">${escapeHtml(String(tag.count))}</span>` : ''}
                     </div>
@@ -225,10 +362,10 @@ class TagAutocomplete {
                 `;
                 }
                 return `
-                <div class="tag-suggestion" data-index="${index}" data-name="${escapeHtml(tag.name)}">
+                <div class="tag-suggestion" data-index="${index}" data-name="${escapeHtml(tag.name)}" data-tag-rating="${escapeHtml(tag.rating || 'none')}">
                     <span>
                         <span class="tag-category"><span class="tag-text ${escapeHtml(tag.category)}">${escapeHtml(tag.category)}</span></span>
-                        <span class="tag-name">${escapeHtml(tag.name)}</span>
+                        <span class="tag-name">${this._negatedNameHtml(tag.name, tag.negated)}</span>
                     </span>
                     ${tag.count !== undefined && tag.count !== null && tag.count !== '' ? `<span class="tag-count">${escapeHtml(String(tag.count))}</span>` : ''}
                 </div>
@@ -255,6 +392,7 @@ class TagAutocomplete {
 
         this.suggestionsEl.innerHTML = html;
         this.suggestionsEl.classList.remove('hidden');
+        this.positionSuggestions();
 
         // Add click handlers
         this.suggestionsEl.querySelectorAll('.tag-suggestion').forEach(el => {
@@ -272,6 +410,29 @@ class TagAutocomplete {
                 }
             });
         });
+    }
+
+    positionSuggestions() {
+        const el = this.suggestionsEl;
+        if (!el || el.classList.contains('hidden')) return;
+
+        const rect = this.input.getBoundingClientRect();
+        const margin = 8;
+        const maxHeight = 200;
+        const spaceBelow = window.innerHeight - rect.bottom - margin;
+        const spaceAbove = rect.top - margin;
+        const openUp = spaceBelow < Math.min(maxHeight, el.scrollHeight) && spaceAbove > spaceBelow;
+
+        el.style.left = `${rect.left}px`;
+        el.style.width = `${rect.width}px`;
+        el.style.maxHeight = `${Math.max(80, Math.min(maxHeight, openUp ? spaceAbove : spaceBelow))}px`;
+        if (openUp) {
+            el.style.top = 'auto';
+            el.style.bottom = `${window.innerHeight - rect.top}px`;
+        } else {
+            el.style.bottom = 'auto';
+            el.style.top = `${rect.bottom}px`;
+        }
     }
 
     hideSuggestions() {
@@ -309,6 +470,11 @@ class TagAutocomplete {
             // Trigger input event for validation
             const event = new Event('input', { bubbles: true });
             this.input.dispatchEvent(event);
+
+            // Run validation and implication expansion
+            if (this.isContentEditable && shouldAppendSpace) {
+                this.input.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', code: 'Space', bubbles: true }));
+            }
         }
 
         this.hideSuggestions();
@@ -866,8 +1032,8 @@ class TagAutocomplete {
                 const lLower = (ex.label || '').toLowerCase();
                 const idStr = String(ex.id || '');
                 return vLower.startsWith(searchTerm) || lLower.startsWith(searchTerm) ||
-                       vLower.includes(searchTerm) || lLower.includes(searchTerm) ||
-                       (idStr && idStr === searchTerm);
+                    vLower.includes(searchTerm) || lLower.includes(searchTerm) ||
+                    (idStr && idStr === searchTerm);
             });
 
             if (matched.length > 0) {
@@ -1122,6 +1288,10 @@ class TagAutocomplete {
         if (this.onDocumentClickBound) {
             document.removeEventListener('click', this.onDocumentClickBound);
         }
+        if (this.onReposition) {
+            window.removeEventListener('scroll', this.onReposition, true);
+            window.removeEventListener('resize', this.onReposition);
+        }
 
         if (this.suggestionsEl && this.suggestionsEl.parentNode) {
             this.suggestionsEl.parentNode.removeChild(this.suggestionsEl);
@@ -1151,10 +1321,13 @@ TagAutocomplete.QUALIFIERS = {
     duration: ['>30', '<=60', '10..60', '>0', '0'],
     filesize: ['>5mb', '<1mb', '1mb..5mb', '<=10mb', '>500kb'],
     date: ['>=2024-01-01', '2024-01-01', '2024-01-01..2024-12-31', '<2023-01-01'],
+    custom_date: ['>=2024-01-01', '2024-01-01', '2024-01-01..2024-12-31', '<2023-01-01'],
     age: ['<24h', '<7d', '1w..1mo', '>1y'],
+    custom_age: ['<24h', '<7d', '1w..1mo', '>1y'],
     md5: ['<checksum>'],
     order: [
         'id_desc', 'id_asc', 'date_desc', 'date_asc',
+        'custom_date_desc', 'custom_date_asc',
         'filesize_desc', 'filesize_asc', 'width_desc', 'height_desc',
         'mpixels_desc', 'duration_desc', 'duration_asc',
         'landscape', 'portrait', 'rating_asc', 'rating_desc',

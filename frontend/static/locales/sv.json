@@ -188,6 +188,13 @@
                     "done_relinked": "Lyckades återskapa länk för {count} mediafil(er).",
                     "done_none": "Alla mediafiler är korrekt länkade. Inga flyttade eller omdöpta filer hittades.",
                     "unresolved_warning": "{count} mediafil(er) hittades ej."
+                },
+                "transcoding": {
+                    "title": "Mediatranskodning",
+                    "hint": "Transkoda media med codecs eller ljud som är inkompatibla med webbläsare till ett webbkompatibelt format.",
+                    "button": "Transkoda Inkompatibel Media",
+                    "progress": "Transkodar: {current}/{total}{file} - Transkodade: {transcoded}, Överhoppade: {skipped}",
+                    "done": "Klart! Transkodade: {transcoded}, Överhoppade: {skipped}, Misslyckades: {failed}."
                 }
             },
             "booru_import": {
@@ -431,6 +438,10 @@
             "apply_aliases_confirm_1_msg": "Detta kommer att tillämpa alla taggalias på varje mediaobjekt i ditt bibliotek. Ersatta taggar tas bort så att taggar inte finns som både tagg och alias. Påverkade media öppnas i en redigeringsmodal för granskning.",
             "apply_aliases_processing": "Tillämpar taggalias på all media...",
             "apply_aliases_no_affected": "Ingen media påverkades av de befintliga taggaliasen.",
+            "apply_tag_ratings_to_all": "Tillämpa Taggbetyg på All Media",
+            "apply_tag_ratings_confirm_msg": "Detta söker efter media vars klassificering är lägre än konfigurerade taggar och öppnar dem i massredigeraren för granskning.",
+            "apply_tag_ratings_processing": "Kontrollerar media mot tagg-klassificering...",
+            "apply_tag_ratings_no_affected": "Inga mediabetyg behöver eskaleras.",
             "delete_all_tags": "Radera alla taggar",
             "drop_csv": "Släpp CSV-fil här eller klicka för att bläddra",
             "import_csv": "Importera taggar från CSV",
@@ -439,7 +450,7 @@
                 "search_manage_tags": "Sök & Hantera Taggar",
                 "search_manage_tags_description": "Använd detta för att snabbt hitta och redigera taggar, hantera dess alias eller för att slå ihop med andra taggar.",
                 "apply_rules_title": "Applicera Taggregler",
-                "apply_rules_hint": "Applicera konfigurerade tagg-alias och implikationer retroaktivt på alla media."
+                "apply_rules_hint": "Applicera konfigurerade taggregler retroaktivt på alla media."
             },
             "manage_tag": "Hantera Taggar",
             "edit_tag": "Redigera Taggar",
@@ -453,6 +464,7 @@
             "confirm_merge_alias": "Taggen '{source_tag}' och alla dess alias kommer att läggas till som alias för taggen '{target_tag}'.",
             "tag_name": "Taggnamn",
             "tag_category": "Taggkategori",
+            "tag_rating": "Taggbetyg",
             "tag_aliases": "Taggalias",
             "tag_aliases_hint": "Mellanslags-separerad lista med taggalias",
             "tags_exist_hint": "Taggar som redan finns (eller finns som alias) kommer att ignoreras.",
@@ -475,6 +487,11 @@
             "apply_all_confirm_1_msg": "Detta kommer att tillämpa alla taggimplikationer på varje medieobjekt i ditt bibliotek. Berörda medieobjekt öppnas i en batchredigeringsmodal för granskning.",
             "apply_all_processing": "Tillämpar taggimplikationer på all media...",
             "apply_all_no_affected": "Inga medieobjekt berördes av de nuvarande taggimplikationerna.",
+            "backfill_implied": "Efterfyll Implicerad Status",
+            "backfill_implied_confirm_msg": "Detta skannar all befintlig media och markerar taggar som matchar nuvarande implikationsregler som implicerade (tillsammans med deras utlösande taggar). Vill du fortsätta?",
+            "backfill_implied_processing": "Efterfyller implicerad taggstatus...",
+            "backfill_implied_none": "Inga mediataggar behövde uppdateras med implicerad status.",
+            "backfill_implied_success": "Markerade {tags} taggar som implicerade över {media} medieobjekt.",
             "merge_confirm_title": "Slå ihop taggimplikation",
             "merge_confirm_msg": "En implikation för måltagg(ar) \"{target}\" finns redan med implicerade tagg(ar): \"{existing}\". Vill du slå ihop de nya implicerade tagg(arna) \"{new}\" med den befintliga implikationen?",
             "merge_confirm_btn": "Slå ihop",
@@ -569,14 +586,18 @@
             "add_tags": "Lägg till",
             "remove_tags": "Ta bort"
         },
+        "rating": {
+            "quick_apply": "Tillämpa betyg på alla",
+            "review_ratings": "Granska och ändra betyg för alla objekt.",
+            "reset_rating": "Återställ betyg"
+        },
         "ai_tags": {
             "default_media_name": "Media {id}",
             "empty_message": "Inga nya AI-taggar hittades i de valda objektens metadata.",
             "title": "Masslägg till AI-taggar"
         },
         "buttons": {
-            "clear_tags": "Rensa taggar",
-            "refresh_tags": "Uppdatera taggar"
+            "refresh_tags": "Återställ taggar"
         },
         "defaults": {
             "empty_message": "Inga taggar hittades för de valda objekten.",
@@ -598,8 +619,11 @@
             "fetching_metadata": "Hämtar metadata...",
             "initializing_tagger": "Initierar AI-taggare...",
             "items_fetched": "objekt hämtade",
-            "items_processed": "objekt bearbetade",
+            "items_processed": "{scannedMedia} / {totalMedia} bearbetade",
             "predicting_tags": "Förutsäger taggar med AI...",
+            "skipped": "{count} opåverkade",
+            "tagged": "{count} taggade",
+            "tagging_complete": "Taggning klar",
             "tags_checked": "taggar kontrollerade",
             "validating_tags": "Validerar taggar..."
         },
@@ -742,6 +766,7 @@
         "sort_random": "Slumpmässig",
         "sort_regen_random": "Slumpa igen",
         "sort_tag_count": "Antal taggar",
+        "sort_custom_date": "Anpassat datum",
         "sort_toggle_order": "Växla sorteringsordning",
         "sort_manual": "Manuell",
         "sort_edit_order": "Ändra ordning",
@@ -777,8 +802,10 @@
         },
         "fullscreen_close_hint": "Tryck ESC eller klicka utanför media för att stänga",
         "info": {
-            "save_source": "Spara källa",
+            "save_source": "Spara Källa",
             "source_url": "Käll-URL",
+            "custom_date": "Datum",
+            "save_custom_date": "Spara Datum",
             "filename": "Filnamn",
             "type": "Typ",
             "size": "Storlek",
@@ -845,6 +872,8 @@
             "append_ai_tags": "Lägg till AI-taggar",
             "edit_tags": "Redigera taggar",
             "filter_results": "Filtrera Resultat",
+            "hide_implied_tags": "Dölj implicerade taggar",
+            "implied_tag_popover": "Implicerad tagg",
             "predict_tags": "Förutsäg taggar (AI)",
             "save_tags": "Spara taggar",
             "search_by": "Sök med",
@@ -999,7 +1028,8 @@
             "replacement_file": "Ersättningsfil",
             "change_file": "Byt Fil",
             "keep_filename_hint": "Behåll nuvarande filnamn: {name}",
-            "new_filename_hint": "Uppdatera filnamnet till: {name}"
+            "new_filename_hint": "Uppdatera filnamnet till: {name}",
+            "update_date_from_file": "Uppdatera Datum från Ersättningsfil"
         }
     },
     "nav": {
@@ -1124,6 +1154,8 @@
             "parent_set": "Förälder satt",
             "removed_from_album": "Borttagen från album",
             "source_updated": "Källa uppdaterad",
+            "date_updated": "Datum uppdaterades",
+            "error_updating_date": "Kunde inte uppdatera datum",
             "description_updated": "Beskrivning uppdaterad",
             "error_updating_description": "Fel vid uppdatering av beskrivning",
             "rating_updated": "Betyg uppdaterat",
@@ -1222,7 +1254,12 @@
             "final_tags": "Slutliga taggar",
             "title": "Förberedd media",
             "remove_confirm": "Är du säker på att du vill ta bort det här medieobjektet från uppladdningskön?",
-            "remove_item_title": "Ta bort media"
+            "remove_item_title": "Ta bort media",
+            "origin_sidecar": "Från följefil",
+            "origin_exif": "Från EXIF",
+            "origin_booru": "Från booru",
+            "origin_client": "Klientdatum",
+            "origin_explicit": "Explicit"
         },
         "bulk": {
             "editing_selected": "Redigerar: {count} valda objekt",
@@ -1233,7 +1270,8 @@
             "description_applied": "Beskrivning applicerad på valda objekt",
             "album_added": "Album lades till för valda objekt",
             "common_folder_album": "Gemensamt mappalbum",
-            "common_tags": "Gemensamma taggar"
+            "common_tags": "Gemensamma taggar",
+            "date_applied": "Datum tillämpades på valda objekt"
         },
         "progress": {
             "duplicates_skipped": "{count} dubblett(er) hoppades över.",

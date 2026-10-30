@@ -474,3 +474,142 @@ async def relink_media(
     except Exception as e:
         logger.error(f"Error relinking media: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+_transcode_status = {
+    "running": False,
+    "current": 0,
+    "total": 0,
+    "transcoded": 0,
+    "already_transcoded": 0,
+    "skipped": 0,
+    "failed": 0,
+    "current_file": None,
+    "error": None,
+    "last_result": None,
+}
+
+def _do_transcode_incompatible_media() -> dict:
+    """Worker for transcoding incompatible media files in the library with progressive commits."""
+    global _transcode_status
+    from ...database import SessionLocal
+    from ...utils.transcoder import (
+        is_transcoding_required,
+        transcode_media_if_needed,
+    )
+
+    base_dir = settings.BASE_DIR
+
+    db = SessionLocal()
+    try:
+        all_media = db.query(Media).all()
+        total_items = len(all_media)
+        transcoded_count = 0
+        already_ok_count = 0
+        skipped_count = 0
+        failed_count = 0
+
+        _transcode_status["total"] = total_items
+
+        for idx, item in enumerate(all_media):
+            _transcode_status["current"] = idx + 1
+            _transcode_status["current_file"] = item.filename
+
+            source_path = base_dir / item.path
+            if not source_path.exists() or not source_path.is_file():
+                skipped_count += 1
+                _transcode_status["skipped"] = skipped_count
+                continue
+
+            # If item already has a valid transcoded file on disk, verify it exists
+            if item.transcoded_path:
+                transc_abs = base_dir / item.transcoded_path
+                if transc_abs.exists() and transc_abs.is_file() and transc_abs.stat().st_size > 0:
+                    already_ok_count += 1
+                    _transcode_status["already_transcoded"] = already_ok_count
+                    continue
+
+            # Check if transcoding is required
+            req = is_transcoding_required(source_path)
+            if req is True:
+                trans_dest = transcode_media_if_needed(source_path)
+                if trans_dest and trans_dest.exists() and trans_dest.stat().st_size > 0:
+                    item.transcoded_path = str(trans_dest.relative_to(base_dir))
+                    transcoded_count += 1
+                    _transcode_status["transcoded"] = transcoded_count
+                    # Progressive commit: save immediately on each transcode
+                    db.commit()
+                else:
+                    failed_count += 1
+                    _transcode_status["failed"] = failed_count
+            elif req is False:
+                skipped_count += 1
+                _transcode_status["skipped"] = skipped_count
+            else:
+                # Probe error or unknown
+                failed_count += 1
+                _transcode_status["failed"] = failed_count
+
+            # Periodic commit every 50 items
+            if (idx + 1) % 50 == 0:
+                db.commit()
+
+        db.commit()
+
+        result = {
+            "transcoded": transcoded_count,
+            "already_transcoded": already_ok_count,
+            "skipped": skipped_count,
+            "failed": failed_count,
+            "total": total_items,
+        }
+        _transcode_status["last_result"] = result
+        return result
+    except Exception as e:
+        _transcode_status["error"] = str(e)
+        raise
+    finally:
+        _transcode_status["running"] = False
+        _transcode_status["current_file"] = None
+        db.close()
+
+@router.post("/transcode-media")
+async def transcode_media(
+    current_user: User = Depends(require_admin_mode),
+):
+    """Start background library transcoding for incompatible codecs/containers."""
+    if not _maintenance_lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="common.processing")
+
+    _transcode_status.update({
+        "running": True,
+        "current": 0,
+        "total": 0,
+        "transcoded": 0,
+        "already_transcoded": 0,
+        "skipped": 0,
+        "failed": 0,
+        "current_file": None,
+        "error": None,
+        "last_result": None,
+    })
+
+    def worker():
+        try:
+            _do_transcode_incompatible_media()
+        except Exception as e:
+            logger.error(f"Error in background transcoding maintenance: {e}", exc_info=True)
+        finally:
+            _transcode_status["running"] = False
+            _maintenance_lock.release()
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+
+    return {"status": "started", "message": "Transcoding job started in background"}
+
+@router.get("/transcode-media/status")
+async def get_transcode_media_status(
+    current_user: User = Depends(require_admin_mode),
+):
+    """Get the current progress status of background library transcoding."""
+    return _transcode_status

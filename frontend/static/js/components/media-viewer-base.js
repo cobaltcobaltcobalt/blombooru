@@ -38,6 +38,40 @@ class MediaViewerBase {
 
     renderInfo(media, options = {}) {
         const { downloadUrl, isShared } = options;
+        const isAdmin = !isShared && Boolean(options.isAdmin || (typeof app !== 'undefined' && app.isAdminMode));
+
+        const getChevronHtml = (id) => {
+            if (typeof window !== 'undefined' && window.Icons?.chevronDown) {
+                return window.Icons.chevronDown({ size: 12, id, class: 'transition-transform duration-200 shrink-0' });
+            }
+            return `<svg width="12" height="12" viewBox="0 0 24 24" id="${id}" class="transition-transform duration-200 shrink-0"><use href="#icon-chevron-down"></use></svg>`;
+        };
+
+        const dateFormatted = new Date(media.custom_date || media.uploaded_at).toLocaleDateString();
+
+        let dateRowHtml = '';
+        if (isAdmin) {
+            dateRowHtml = `
+                <div class="info-row flex-col">
+                    <div id="edit-date-toggle" class="flex justify-between items-center w-full cursor-pointer hover:text-primary transition-colors group select-none">
+                        <span class="flex items-center gap-1.5 flex-shrink-0">
+                            ${window.i18n.t('media.info.custom_date')}
+                            ${getChevronHtml('edit-date-chevron')}
+                        </span>
+                        <strong class="text-right">${dateFormatted}</strong>
+                    </div>
+                    <div id="edit-date-content" style="display: none;" class="w-full mt-2">
+                        <input type="datetime-local" id="custom-date-input"
+                            class="w-full bg px-2 py-1 border text-xs focus:outline-none hover:border-primary transition-colors focus:border-primary">
+                        <button id="save-custom-date-btn" class="btn-primary w-full px-3 py-1 mt-2 cursor-pointer" style="display: none;">
+                            ${window.i18n.t('media.info.save_custom_date')}
+                        </button>
+                    </div>
+                </div>
+            `;
+        } else {
+            dateRowHtml = `<div class="info-row"><span class="flex-shrink-0">${window.i18n.t('media.info.custom_date')}</span><strong class="text-right">${dateFormatted}</strong></div>`;
+        }
 
         let infoHTML = `
             <div class="info-row"><span class="flex-shrink-0">${window.i18n.t('media.info.filename')}</span><strong class="truncate ml-4 text-right min-w-0" title="${escapeHtml(media.filename)}">${escapeHtml(media.filename)}</strong></div>
@@ -45,16 +79,45 @@ class MediaViewerBase {
             <div class="info-row"><span class="flex-shrink-0">${window.i18n.t('media.info.size')}</span><strong class="text-right">${formatFileSize(media.file_size, 'long')}</strong></div>
             <div class="info-row"><span class="flex-shrink-0">${window.i18n.t('media.info.dimensions')}</span><strong class="text-right">${media.width}x${media.height}</strong></div>
             <div class="info-row"><span class="flex-shrink-0">${window.i18n.t('media.info.rating')}</span><strong class="text-right">${media.rating}</strong></div>
+            ${dateRowHtml}
             <div class="info-row"><span class="flex-shrink-0">${window.i18n.t('media.info.uploaded')}</span><strong class="text-right">${new Date(media.uploaded_at).toLocaleDateString()}</strong></div>
             ${media.duration ? `<div class="info-row"><span class="flex-shrink-0">${window.i18n.t('media.info.duration')}</span><strong class="text-right">${this.formatDuration(media.duration)}</strong></div>` : ''}
         `;
 
-        if (media.source) {
+        if (isAdmin) {
+            const sourceDisplayHtml = media.source
+                ? `<a href="${escapeAttr(media.source)}" target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer"
+                       class="text-primary hover:underline block truncate" title="${escapeHtml(media.source)}">
+                        ${escapeHtml(media.source)}
+                   </a>`
+                : `<span class="text-secondary italic">${window.i18n.t('common.none')}</span>`;
+
+            infoHTML += `
+                <div class="info-row flex-col">
+                    <div id="edit-source-toggle" class="flex justify-between items-center w-full cursor-pointer hover:text-primary transition-colors group select-none">
+                        <span class="flex items-center gap-1.5 flex-shrink-0">
+                            ${window.i18n.t('media.info.source')}
+                            ${getChevronHtml('edit-source-chevron')}
+                        </span>
+                        <strong class="truncate min-w-0 text-right flex-1 ml-4">
+                            ${sourceDisplayHtml}
+                        </strong>
+                    </div>
+                    <div id="edit-source-content" style="display: none;" class="w-full mt-2">
+                        <input type="url" id="source-input" placeholder="https://example.com/source"
+                            class="w-full bg px-2 py-1 border text-xs focus:outline-none hover:border-primary transition-colors focus:border-primary">
+                        <button id="save-source-btn" class="btn-primary w-full px-3 py-1 mt-2 cursor-pointer" style="display: none;">
+                            ${window.i18n.t('media.info.save_source')}
+                        </button>
+                    </div>
+                </div>
+            `;
+        } else if (media.source) {
             infoHTML += `
                 <div class="info-row">
                     <span class="flex-shrink-0 mr-4">${window.i18n.t('media.info.source')}</span>
                     <strong class="truncate min-w-0 text-right flex-1">
-                        <a href="${media.source}" target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer"
+                        <a href="${escapeAttr(media.source)}" target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer"
                            class="text-primary hover:underline block truncate" title="${escapeHtml(media.source)}">
                             ${escapeHtml(media.source)}
                         </a>
@@ -95,8 +158,8 @@ class MediaViewerBase {
                     <div class="tag-list">
                         ${tags.map(tag =>
                 clickable
-                    ? `<a href="/?q=${encodeURIComponent(tag.name)}" class="tag ${category} tag-text">${tag.name}</a>`
-                    : `<span class="tag ${category} tag-text">${tag.name}</span>`
+                    ? `<a href="/?q=${encodeURIComponent(tag.name)}" class="tag ${category} tag-text" data-tag-rating="${tag.rating || 'none'}">${tag.name}</a>`
+                    : `<span class="tag ${category} tag-text" data-tag-rating="${tag.rating || 'none'}">${tag.name}</span>`
             ).join('')}
                     </div>
                 </div>

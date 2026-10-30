@@ -10,7 +10,6 @@ class AdminStats {
         // Check rate limit
         const now = Date.now();
         if (this.isInitialized && now - this.lastLoadTime < this.minLoadInterval) {
-            console.log('Stats load rate limited');
             return;
         }
 
@@ -70,9 +69,7 @@ class AdminStats {
 
     showError(message) {
         this.hideLoading();
-        if (window.app && window.app.showNotification) {
-            window.app.showNotification(message, 'error', window.i18n.t('notifications.admin.error_loading_stats'));
-        }
+        window.app.showNotification(message, 'error', window.i18n.t('notifications.admin.error_loading_stats'));
     }
 
     updateStatCards(data) {

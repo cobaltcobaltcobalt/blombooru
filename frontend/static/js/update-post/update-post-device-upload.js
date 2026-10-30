@@ -41,16 +41,8 @@ class UpdatePostDeviceUpload extends UpdatePostModalBase {
         modal.innerHTML = `
             <div class="surface w-full h-full sm:h-auto sm:max-h-[85vh] sm:max-w-2xl sm:mx-4 flex flex-col border-t sm:border shadow-2xl safe-area-bottom">
                 <!-- Header -->
-                <div class="flex items-center justify-between p-4 border-b border-color flex-shrink-0">
-                    <div class="flex items-center gap-2 min-w-0">
-                        <button id="upm-device-back" type="button" class="p-1 hover:text-primary transition-colors cursor-pointer text-secondary flex items-center justify-center" title="${window.i18n.t('common.back')}">
-                            ${window.Icons.chevronLeft({ size: 16 })}
-                        </button>
-                        <h2 class="text-base sm:text-lg font-bold truncate">${window.i18n.t('modal.update_post.from_device')}</h2>
-                    </div>
-                    <button id="upm-device-close" type="button" class="p-1 hover:text-primary transition-colors cursor-pointer text-secondary flex items-center justify-center" title="${window.i18n.t('common.close')}">
-                        ${window.Icons.close({ size: 14 })}
-                    </button>
+                <div class="flex items-center p-4 border-b border-color flex-shrink-0">
+                    <h2 class="text-base sm:text-lg font-bold truncate">${window.i18n.t('modal.update_post.from_device')}</h2>
                 </div>
 
                 <!-- Body -->
@@ -153,8 +145,9 @@ class UpdatePostDeviceUpload extends UpdatePostModalBase {
                             <p class="text-xs font-bold text-secondary uppercase tracking-wide mb-2">
                                 ${window.i18n.t('modal.update_post.what_to_update')}
                             </p>
-                            <div class="w-full">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 ${this._checkboxRow('upm-device-upd-filename', window.i18n.t('modal.update_post.update_filename'), false)}
+                                ${this._checkboxRow('upm-device-upd-custom-date', window.i18n.t('modal.update_post.update_date_from_file'), false)}
                             </div>
                             <p id="upm-device-filename-hint" class="text-[11px] text-secondary mt-2 text-center"></p>
                         </div>
@@ -195,12 +188,7 @@ class UpdatePostDeviceUpload extends UpdatePostModalBase {
         const q = (sel) => modal.querySelector(sel);
 
         // Navigation actions
-        q('#upm-device-back').addEventListener('click', () => this._onBack());
         q('#upm-device-cancel').addEventListener('click', () => this._onBack());
-        q('#upm-device-close').addEventListener('click', () => {
-            this.hide();
-            document.body.style.overflow = '';
-        });
 
         // Fullscreen preview triggers
         const openCurrentFullscreen = () => {
@@ -382,6 +370,8 @@ class UpdatePostDeviceUpload extends UpdatePostModalBase {
         const applyBtn = this._modal?.querySelector('#upm-device-apply');
         const chk = this._modal?.querySelector('#upm-device-upd-filename');
         const updateFilename = chk ? chk.checked : false;
+        const chkDate = this._modal?.querySelector('#upm-device-upd-custom-date');
+        const updateCustomDate = chkDate ? chkDate.checked : false;
 
         if (applyBtn) {
             applyBtn.disabled = true;
@@ -428,6 +418,7 @@ class UpdatePostDeviceUpload extends UpdatePostModalBase {
             const finalizeForm = new FormData();
             finalizeForm.append('upload_id', uploadId);
             finalizeForm.append('update_filename', updateFilename ? 'true' : 'false');
+            finalizeForm.append('update_custom_date', updateCustomDate ? 'true' : 'false');
 
             const finalRes = await fetch(`/api/media/${this.mediaId}/update-file-finalize`, {
                 method: 'POST',

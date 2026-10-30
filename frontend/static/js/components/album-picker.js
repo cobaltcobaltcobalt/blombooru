@@ -6,11 +6,13 @@ class AlbumPicker {
             onConfirm: options.onConfirm || (() => { }),
             onCancel: options.onCancel || (() => { }),
             preSelected: options.preSelected || [], // Array of album IDs
-            title: options.title || window.i18n.t('album_picker.title')
+            title: options.title || window.i18n.t('album_picker.title'),
+            ...options
         };
 
         this.modal = null;
         this.tree = null;
+        this._escapeHandler = null;
     }
 
     async show() {
@@ -40,6 +42,11 @@ class AlbumPicker {
         // Remove existing modal if any
         const existing = document.getElementById('album-picker-modal');
         if (existing) existing.remove();
+
+        if (this._escapeHandler) {
+            document.removeEventListener('keydown', this._escapeHandler);
+            this._escapeHandler = null;
+        }
 
         // Create modal structure
         this.modal = document.createElement('div');
@@ -82,10 +89,11 @@ class AlbumPicker {
         this.modal.querySelector('#album-picker-cancel').addEventListener('click', () => this.hide());
         this.modal.querySelector('#album-picker-confirm').addEventListener('click', () => this.confirm());
 
-        // Close on outside click
-        this.modal.addEventListener('click', (e) => {
-            if (e.target === this.modal) this.hide();
-        });
+        // Close on Escape key
+        this._escapeHandler = (e) => {
+            if (e.key === 'Escape') this.hide();
+        };
+        document.addEventListener('keydown', this._escapeHandler);
 
         // Prevent modal from closing when clicking inside content
         this.modal.querySelector('.modal-content').addEventListener('click', (e) => {
@@ -98,15 +106,21 @@ class AlbumPicker {
         const selectedAlbums = this.tree.albums.filter(a => selectedIds.includes(a.id));
 
         this.options.onConfirm(selectedIds, selectedAlbums);
-        this.hide();
+        this.hide(false);
     }
 
-    hide() {
+    hide(triggerCancel = true) {
+        if (this._escapeHandler) {
+            document.removeEventListener('keydown', this._escapeHandler);
+            this._escapeHandler = null;
+        }
         if (this.modal) {
             this.modal.remove();
             this.modal = null;
         }
-        this.options.onCancel();
+        if (triggerCancel && typeof this.options.onCancel === 'function') {
+            this.options.onCancel();
+        }
     }
 
     // Static helper method to show picker with promise

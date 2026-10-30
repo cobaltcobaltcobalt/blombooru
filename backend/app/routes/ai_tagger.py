@@ -100,6 +100,7 @@ def enrich_predicted_tags(tags: List[dict], db: Session) -> List[dict]:
         result.append({
             "name": bt.name,
             "category": bt.category,
+            "rating": getattr(bt, "rating", "none") or "none",
             "confidence": conf
         })
 
@@ -124,6 +125,7 @@ class PredictedTag(BaseModel):
     name: str
     category: str
     confidence: float
+    rating: str = "none"
 
 class PredictTagsResponse(BaseModel):
     media_id: int

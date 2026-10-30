@@ -135,6 +135,14 @@ class UploadSession {
         if (options.userAssignedTags) {
             formData.append('user_assigned_tags', JSON.stringify(options.userAssignedTags));
         }
+        const clientDate = options.clientDate || (new Date()).toISOString();
+        formData.append('client_date', clientDate);
+        if (options.booruDate || options.booru_date) {
+            formData.append('booru_date', options.booruDate || options.booru_date);
+        }
+        if (options.customDate || options.custom_date) {
+            formData.append('custom_date', options.customDate || options.custom_date);
+        }
 
         const signal = this._getSignal(options);
         const response = await fetch(`/api/uploads/sessions/${this.sessionId}/files`, {
@@ -210,6 +218,9 @@ class UploadSession {
             base_description: options.baseDescription || null,
             category_hints: options.categoryHints ? JSON.stringify(options.categoryHints) : null,
             user_assigned_tags: options.userAssignedTags ? JSON.stringify(options.userAssignedTags) : null,
+            client_date: options.clientDate || (new Date()).toISOString(),
+            booru_date: options.booruDate || options.booru_date || null,
+            custom_date: options.customDate || options.custom_date || null,
         };
 
         const signal = this._getSignal(options);
@@ -298,6 +309,9 @@ class UploadSession {
         };
         if (updateData.suggested_album_path !== undefined) {
             payload.suggested_album_path = updateData.suggested_album_path;
+        }
+        if (updateData.custom_date !== undefined) {
+            payload.custom_date = updateData.custom_date;
         }
 
         const response = await fetch(`/api/uploads/sessions/${this.sessionId}/items/bulk-update`, {
